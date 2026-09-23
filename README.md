@@ -299,7 +299,7 @@ npm version patch          # 或 minor / major：改 package.json 与 lockfile�
 git push --follow-tags     # 标签推到 GitHub 后，Publish 工作流接手
 ```
 
-- `.github/workflows/ci.yml`：PR、推 main 时跑 `test` / `typecheck` / `build`，Node 22 与 24 各一遍。
+- `.github/workflows/ci.yml`：PR、推 main 时跑 `test` / `typecheck` / `build`（Node 24；`engines` 下限也是 24）。
 - `.github/workflows/publish.yml`：推 `v*` 标签时先复用一遍上面的检查，通过后才发布；也可以在
   Actions 页面手动 `workflow_dispatch`，并用输入框指定版本号（留空则用 `package.json` 里的）。
 

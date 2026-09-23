@@ -44,7 +44,7 @@
     "url": "git+https://github.com/he0119/dsh-aperture.git"
   },
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": ">=24.0.0"
   },
   "dsh": {
     "bundle": {
