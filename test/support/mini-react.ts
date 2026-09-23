@@ -303,3 +303,9 @@ export function toggle(element: HostElement, checked: boolean): void {
   if (typeof handler !== 'function') throw new Error(`<${element.type}> 没有 onChange`);
   (handler as (event: unknown) => void)({ target: { checked } });
 }
+
+/** 触发输入框的 `onBlur`（没有就不做任何事：多数输入框本来就不听这个事件）。 */
+export function blur(element: HostElement): void {
+  const handler = element.props.onBlur;
+  if (typeof handler === 'function') (handler as () => void)();
+}

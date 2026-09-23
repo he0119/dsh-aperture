@@ -596,7 +596,7 @@ window.__ModuleLoader__.load({
       editInput: '输入模态',
       editReasoning: '推理',
       editApi: '协议',
-      editHint: '显示名、容量与模态留空表示这一项不覆盖，回落到发现值；协议与推理的「跟随发现」同理。',
+      editHint: '显示名、容量与模态留空表示这一项不覆盖，回落到发现值；容量可以写成 1M、100K 这种写法；协议与推理的「跟随发现」同理。',
       effectiveHint: '生效 {value}',
       effectiveSource: '生效 {value} · 来自 {source}',
       optionAuto: '跟随发现',
@@ -699,7 +699,7 @@ window.__ModuleLoader__.load({
       editInput: 'Input modalities',
       editReasoning: 'Reasoning',
       editApi: 'Protocol',
-      editHint: 'An empty display name, capacity or modality drops that override and falls back to discovery; the same goes for “follow discovery” on protocol and reasoning.',
+      editHint: 'An empty display name, capacity or modality drops that override and falls back to discovery; capacities accept 1M or 100K; the same goes for “follow discovery” on protocol and reasoning.',
       effectiveHint: 'in effect: {value}',
       effectiveSource: 'in effect: {value} · from {source}',
       optionAuto: 'follow discovery',
@@ -719,6 +719,51 @@ window.__ModuleLoader__.load({
     /** token 计数的千位分隔符；跟随浏览器语言。 */
     function formatCount(value) {
       return value.toLocaleString();
+    }
+
+    /** 容量能写成的样子：十进制数加一个可选的 K/M 后缀。 */
+    const CAPACITY_PATTERN = /^(\d+(?:\.\d+)?)([km])?$/i;
+    /** 后缀是十进制的：`1M` 就是 1000K，跟容量平时的说法一致。 */
+    const CAPACITY_SCALE = { k: 1e3, m: 1e6 };
+
+    /**
+     * 读输入框里的容量，好让人写 `1M`、`100K` 而不必去数零。
+     *
+     * 与官方「模型」页同一套写法（它的 `parseCapacity`）：空串是「这一项不覆盖」，读不出来的
+     * 返回 `NaN`——由调用方在本地挡下来，不让它写进设置文档。
+     *
+     * @param {string} text - 输入框里的原文。
+     * @returns {number|undefined} token 数；空串给 `undefined`，读不出来给 `NaN`。
+     */
+    function parseCapacity(text) {
+      const trimmed = text.trim();
+      if (trimmed.length === 0) return undefined;
+      const match = CAPACITY_PATTERN.exec(trimmed);
+      if (match === null) return NaN;
+      const suffix = match[2] === undefined ? '' : match[2].toLowerCase();
+      const scale = suffix === 'k' || suffix === 'm' ? CAPACITY_SCALE[suffix] : 1;
+      const scaled = Number(match[1]) * scale;
+      const rounded = Math.round(scaled);
+      // 浮点误差落在整数边上的（`1.0000001M`）吃掉；真不是整数的（`0.5`）原样返回，交给
+      // 调用方按「必须是不小于 1 的整数」拒绝。
+      return Math.abs(scaled - rounded) < 1e-6 ? rounded : scaled;
+    }
+
+    /**
+     * 把存下来的 token 数写回输入框，取能原样读回来的最短写法。
+     *
+     * `1000000` 写成 `1M`、`384000` 写成 `384K`；`1048576` 不是整千，就照原样写出来——官方
+     * `formatCapacity` 同此，两边读写的是一套 K/M 词汇。
+     *
+     * @param {number|undefined} value - 存下来的容量。
+     * @returns {string} 输入框里的文本；没有值时是空串。
+     */
+    function formatCapacity(value) {
+      if (value === undefined) return '';
+      if (!Number.isInteger(value) || value <= 0) return String(value);
+      if (value % CAPACITY_SCALE.m === 0) return `${String(value / CAPACITY_SCALE.m)}M`;
+      if (value % CAPACITY_SCALE.k === 0) return `${String(value / CAPACITY_SCALE.k)}K`;
+      return String(value);
     }
 
     /** ISO 时间戳 → 本地时间；宿主只报 ISO，时区是浏览器的事。 */
@@ -839,8 +884,9 @@ window.__ModuleLoader__.load({
       const initialOf = (model) => ({
         name: model.name,
         alias: model.alias ?? '',
-        contextWindow: model.contextWindow === undefined ? '' : String(model.contextWindow),
-        maxTokens: model.maxTokens === undefined ? '' : String(model.maxTokens),
+        // 容量回写成能原样读回来的最短写法（`1M`、`384K`），与官方「模型」页同一套词汇。
+        contextWindow: formatCapacity(model.contextWindow),
+        maxTokens: formatCapacity(model.maxTokens),
         text: model.input.includes('text'),
         image: model.input.includes('image'),
         // 「跟随发现」= 用户层里没写过这个键。写过了，生效值就是用户写的那个值。
@@ -908,13 +954,10 @@ window.__ModuleLoader__.load({
 
         for (const [field, label] of [['contextWindow', 'editContextWindow'], ['maxTokens', 'editMaxTokens']]) {
           if (draft[field] === initial[field]) continue;
-          const raw = draft[field].trim();
-          if (raw === '') {
-            patch[field] = null;
-            continue;
-          }
-          const value = Number(raw);
-          if (!Number.isInteger(value) || value < 1) bad.push(t(label));
+          // 容量认 `1M`、`100K` 这种写法（官方「模型」页同一套）；空串是「这一项不覆盖」。
+          const value = parseCapacity(draft[field]);
+          if (value === undefined) patch[field] = null;
+          else if (!Number.isInteger(value) || value < 1) bad.push(t(label));
           else patch[field] = value;
         }
 
@@ -1232,7 +1275,7 @@ window.__ModuleLoader__.load({
         ? t('effectiveHint', { value })
         : t('effectiveSource', { value, source: t(SOURCE_KEYS[source] ?? source) });
 
-      /** 编辑面板里的一个文本输入框。 */
+      /** 编辑面板里的一个文本输入框。`capacity` 那一格认 `1M` / `100K` 的写法。 */
       const textField = (model, name, label, options = {}) => {
         const id = `dap-model-${model.id}-${name}`;
         return field(
@@ -1242,13 +1285,22 @@ window.__ModuleLoader__.load({
             id,
             className: 'dap-input',
             type: 'text',
-            inputMode: options.numeric === true ? 'numeric' : undefined,
+            inputMode: options.capacity === true ? 'numeric' : undefined,
             spellCheck: false,
             autoComplete: 'off',
             placeholder: options.placeholder,
             value: draftOf(model)[name],
             disabled: !configuration.writable,
             onChange: (event) => edit(model, name, event.target.value),
+            // 失焦时把写法定形：`100k` 变回 `100K`、`1000000` 变回 `1M`。既让人看见自己那套写法
+            // 被认下了，也让「只是换个写法」不至于变成一次没必要的覆盖——值没变却写进用户层，
+            // 那一行就会凭空多一颗「已覆盖」。读不出来的写法原样留着，好让人看见自己写了什么。
+            onBlur: options.capacity === true
+              ? () => {
+                const value = parseCapacity(draftOf(model)[name]);
+                if (value !== undefined && !Number.isNaN(value)) edit(model, name, formatCapacity(value));
+              }
+              : undefined,
           }),
           options.note,
         );
@@ -1298,11 +1350,11 @@ window.__ModuleLoader__.load({
             }),
             textField(model, 'alias', t('editAlias'), { placeholder: t('noAlias') }),
             textField(model, 'contextWindow', t('editContextWindow'), {
-              numeric: true,
+              capacity: true,
               note: inEffect(count(model.contextWindow), model.provenance.limits),
             }),
             textField(model, 'maxTokens', t('editMaxTokens'), {
-              numeric: true,
+              capacity: true,
               note: inEffect(count(model.maxTokens), model.provenance.limits),
             }),
             field(

@@ -21,6 +21,7 @@ import vm from 'node:vm';
 import { PANEL_INVOCATIONS, PANEL_NAMESPACE, PANEL_PACKAGE } from '../src/remote.ts';
 import {
   MiniReact,
+  blur,
   change,
   click,
   findAll,
@@ -1246,19 +1247,77 @@ describe('浏览器半边', () => {
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', null]]);
   });
 
+  it('容量认 1M、100K 这种写法，回写成能原样读回来的最短那个', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
+    const tree = mini.tree();
+
+    // 回写：384000 是整千，写成 384K；1048576 不是整千，照原样写出来（官方 formatCapacity 同此）。
+    assert.equal(findById(tree, 'dap-model-deepseek-flash-maxTokens').props.value, '384K');
+    assert.equal(findById(tree, 'dap-model-deepseek-flash-contextWindow').props.value, '1048576');
+    assert.match(text(tree), /1M、100K/u, '写法写在提示里，不然没人猜得到');
+
+    change(findById(tree, 'dap-model-deepseek-flash-contextWindow'), '1M');
+    await mini.flush();
+    change(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens'), '100k');
+    await mini.flush();
+    click(findById(mini.tree(), 'dap-model-deepseek-flash-save'));
+    await mini.flush();
+
+    // K/M 是十进制的：1M = 1000000、100k = 100000，大小写一样。
+    assert.deepEqual(plain(harness.editCalls), [
+      ['deepseek-flash', { contextWindow: 1_000_000, maxTokens: 100_000 }],
+    ]);
+  });
+
+  it('失焦时写法定形，只换个写法不算改动', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
+
+    // 小写 k 定形回大写 K。
+    change(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens'), '100k');
+    await mini.flush();
+    blur(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens'));
+    await mini.flush();
+    assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens').props.value, '100K');
+
+    // 写成展开的 384000（生效值就是 384K）：值没变，因此不该出现「待保存」，保存键也还禁用。
+    change(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens'), '384000');
+    await mini.flush();
+    blur(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens'));
+    await mini.flush();
+    assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens').props.value, '384K');
+    assert.doesNotMatch(text(mini.tree()), /待保存/u);
+    assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-save').props.disabled, true);
+    assert.deepEqual(harness.editCalls, []);
+  });
+
   it('非法的容量在本地就被挡下来，不打端点', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
     await openModel(mini, 'deepseek-flash');
 
-    change(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens'), '0');
+    // 不在词汇里的写法（后缀只认 K/M）、不是整数的、小于 1 的，都在本地挡下。
+    for (const bad of ['0', '1.5', '1G', '一百', '1MB']) {
+      change(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens'), bad);
+      await mini.flush();
+      click(findById(mini.tree(), 'dap-model-deepseek-flash-save'));
+      await mini.flush();
+      assert.deepEqual(harness.editCalls, [], `${bad} 不该发出去`);
+      assert.match(text(mini.tree()), /必须是不小于 1 的整数/u, `${bad} 该有一句人话`);
+    }
+
+    // 改回一个读得出来的写法就能存。
+    change(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens'), '64K');
     await mini.flush();
     click(findById(mini.tree(), 'dap-model-deepseek-flash-save'));
     await mini.flush();
-
-    assert.deepEqual(harness.editCalls, []);
-    assert.match(text(mini.tree()), /必须是不小于 1 的整数/u);
+    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { maxTokens: 64_000 }]]);
   });
 
   it('未服务的模型可以就地指定协议，让它变得可服务', async () => {

@@ -91,11 +91,11 @@ aperture  openai-completions  11 models  ●                 [▾ Collapse]
     │ Display name  [DeepSeek V4 Flash           ]  from models.dev
     │ Catalog alias [deepseek/deepseek-v4-flash]
     │ Context       [1048576]  in effect 1,048,576 · from aperture
-    │ Max output    [384000]   in effect 384,000 · from aperture
+    │ Max output    [384K]     in effect 384,000 · from aperture
     │ Modalities    ☑ text ☑ image   in effect text+image · from config
     │ Reasoning     [follow discovery ▾]  in effect on · from models.dev
     │ Protocol      [follow discovery ▾]  in effect openai-completions
-    │ An empty display name, capacity or modality drops that override…  [Reset to default] [Cancel] [Save]
+    │ An empty display name, capacity or modality drops that override; capacities accept 1M or 100K…  [Reset to default] [Cancel] [Save]
   gemini-2.5-flash  Gemini 2.5 Flash                      [▸ Edit]
     128,000 context window · text · no reasoning
 
@@ -126,7 +126,7 @@ The interface is the **Aperture** tab under **Settings → Plugins**: it shows y
 | Tab · 保存 / 取消 | write that row only, or throw that row's edits away |
 | Tab · 恢复默认 | sits next to whatever is overridden: clear only the fields the report says really were overridden, falling back to discovery and the catalog right away |
 
-In-place edits are configuration: capacities and modalities land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. The protocol field is the only way out for an unserved model: filling it in publishes a model that only answers on its native endpoint under the matching route.
+In-place edits are configuration: capacities and modalities land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. Capacities accept the `1M` / `100K` spelling (decimal suffixes, the same vocabulary as the official Models page: `1M` is 1000000, not 1048576); what gets stored is still a plain token count, and the field spells it back in the shortest form that survives a round trip (`384000` → `384K`, while `1048576` is not a whole thousand and stays written out). The protocol field is the only way out for an unserved model: filling it in publishes a model that only answers on its native endpoint under the matching route.
 
 > "撤掉已发布的路由" withdraws once: the next refresh republishes according to the current configuration. To make it stick, turn the sync toggle off first (equivalent to `sync: false`).
 
