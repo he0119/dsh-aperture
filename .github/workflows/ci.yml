@@ -11,8 +11,9 @@ permissions:
 
 jobs:
   check:
-    # 推标签时 Publish 会以 workflow_call 复用这个 job，这里就不必再独立跑一遍。
-    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+    # 这里不能再写 if 过滤：on.push.branches 已经让标签推送不触发本工作流，
+    # 而 Publish 以 workflow_call 调进来时 github 上下文仍属于调用方（tag push），
+    # 任何形如「push 到标签就跳过」的条件都会把发布前的这道检查一起跳过。
     runs-on: ubuntu-latest
     steps:
       # v5 起这两个动作跑在 Node 24 上；v4 在 runner 上只会被警告降级执行。
