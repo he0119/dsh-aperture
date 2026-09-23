@@ -1,0 +1,52 @@
+# The dsh-aperture bundle patch. Installing the package in a profile is enough:
+# `dsh plugin --profile web add dsh-aperture` reconciles `dsh.profile.bundles`,
+# and this insert adds the row.
+#
+# Everything below is the *composition* layer of the plugin's `aperture:`
+# settings namespace. Any field may instead be written to the user layer
+# (`$DSH_HOME/settings.yaml`) under `aperture:`, which wins over this row.
+#
+# Only `baseUrl` is worth setting here; the rest exist so the defaults are
+# discoverable. The full reference is in README.md.
+- insert:
+    - id: aperture
+      name: 'dsh-aperture'
+      config:
+        # Aperture instance root, e.g. https://ai.example.ts.net — required.
+        # `/v1` is appended by the plugin, and a trailing `/v1` in this value is
+        # tolerated and stripped. Empty leaves the plugin mounted but dormant:
+        # nothing is discovered and nothing is written.
+        baseUrl: ''
+
+        # Provider routes this plugin owns inside llm-pi-ai's `providers` dict.
+        # Models whose Aperture `supported_endpoints` list `/v1/chat/completions`
+        # go to `route`; those listing `/v1/messages` go to `anthropicRoute`;
+        # models offering neither are reported as unserved and publish nowhere.
+        route: aperture
+        anthropicRoute: aperture-anthropic
+
+        # Credential reference resolved per request through the credential seam.
+        # Leave empty for a gateway authenticated by network identity (Tailscale):
+        # the plugin then writes the placeholder request header pi-ai insists on
+        # without storing any secret.
+        apiKeyEnv: ''
+
+        # `auto` maps a model's reasoning capability to reasoningEfforts;
+        # `off` declares every discovered model non-reasoning.
+        reasoning: auto
+
+        # `ignore` declares text-only; `metadata` adopts models.dev input
+        # modalities (images) for models whose metadata claims them.
+        images: ignore
+
+        # models.dev catalog used to fill in what Aperture does not state.
+        # An empty string disables the fetch; discovery is unaffected.
+        modelMetadataUrl: 'https://models.dev/models.json'
+
+        # Whether the discovered catalog is written to the llm-pi-ai settings
+        # section. false = discovery only (the /aperture command still reports).
+        sync: true
+
+        # Minutes between automatic refreshes. 0 (the default) refreshes only at
+        # load, on configuration change, and on `/aperture refresh`.
+        refreshIntervalMinutes: 0

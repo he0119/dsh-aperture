@@ -1,0 +1,71 @@
+{
+  "name": "dsh-aperture",
+  "version": "0.1.0",
+  "description": "Discover the models an Aperture gateway advertises and publish them to DeepSeek Harness as llm-pi-ai provider routes. 探测 Aperture 网关暴露的模型，并自动写入 DSH 的 llm-pi-ai 设置，使其出现在模型选择器中。",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test --test-isolation=none \"test/**/*.test.ts\"",
+    "test:live": "node --test --test-isolation=none test/live.test.ts",
+    "inspect": "node scripts/inspect-live.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "aperture",
+    "tailscale",
+    "llm",
+    "model-discovery"
+  ],
+  "license": "MIT",
+  "author": "uy/sun",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/he0119/dsh-aperture.git"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-commands": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-settings": "^0.1.5-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-commands": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-settings": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-settings-file": "^0.1.5-rc.2",
+    "@deepseek-ai/schemastery": "3.18.2",
+    "@types/node": "^22.20.0",
+    "typescript": "^5.9.0"
+  }
+}

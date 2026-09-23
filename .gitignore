@@ -1,0 +1,8 @@
+node_modules/
+lib/
+probe/
+*.tsbuildinfo
+
+# Local npm cache used when the machine-level cache is not writable.
+.npm-cache/
+.typecheck/
