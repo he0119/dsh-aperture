@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: '直接发布草稿（会生成 v* 标签，从而触发 Publish 工作流发 npm）'
+        description: '直接发布草稿（会生成 v* 标签，从而触发 Publish 工作流把版本送进 npm 暂存区）'
         required: false
         type: boolean
         default: false
