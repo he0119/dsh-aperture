@@ -38,6 +38,11 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
 
+      # lib/ 不进 git，靠 prepare（tsc -p tsconfig.json）在发布时现场编译，所以这里必须先装依赖：
+      # check job 里那份 npm ci 不会跨 job 共享工作目录，少了这一步 prepare 会因为找不到
+      # @types/node 报 TS2688，发布在打包阶段就死了，根本走不到 OIDC 换 token。
+      - run: npm ci
+
       - name: 让 package.json 与标签一致
         env:
           INPUT_VERSION: ${{ inputs.version }}
