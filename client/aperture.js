@@ -395,13 +395,11 @@ window.__ModuleLoader__.load({
 [${STYLE_MARK}] .dap-card-toggle { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 [${STYLE_MARK}] .dap-card-toggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4d6bfe); outline-offset: 2px; border-radius: 6px; }
 [${STYLE_MARK}] .dap-card-toggle .dap-chevron { color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
-/* 折起来的那一半：刷新卡的事实与地址，实例卡的编辑区。 */
-[${STYLE_MARK}] .dap-body { display: flex; flex-direction: column; gap: 12px; }
 [${STYLE_MARK}] .dap-name { font-size: 14px; font-weight: 500; line-height: 22px; }
 [${STYLE_MARK}] .dap-row-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
 [${STYLE_MARK}] .dap-row-actions .dap-button { height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12px; line-height: 18px; }
 /* 状态点：官方拿它说「这个提供方的凭据配好了没有」——8px 的圆、state token 上色。这里
-   沿用同一个记号，语义换成「地址填了没有」（实例卡）、「最近一次刷新成不成功」（刷新卡）
+   沿用同一个记号，语义换成「这个实例能不能用」（实例卡：地址可用、上一轮刷新没失败）
    与「有没有路由把它服务出去」（模型卡）。颜色不是唯一的说法：title 与 aria-label 里写着
    同一句话。 */
 [${STYLE_MARK}] .dap-dot { box-sizing: border-box; display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; }
@@ -446,6 +444,10 @@ window.__ModuleLoader__.load({
 [${STYLE_MARK}] .dap-banner[data-ok="true"] { color: var(--dsw-alias-state-success-primary, inherit); }
 /* 状态段是一串「标签 + 值」，不用表格：值本身可能是地址或一列路由名，会很长。 */
 [${STYLE_MARK}] .dap-facts { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+/* 「最近一次刷新」是这张卡的一份只读诊断，跟着实例走：同一块浅色面上切一条线（与模型参数面
+   同一套做法），不另起一张卡、也不铺第二层底色。 */
+[${STYLE_MARK}] .dap-status { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: .5px solid var(--dsw-alias-border-l2, rgba(127,127,127,.18)); }
+[${STYLE_MARK}] .dap-status-head { font-size: 12px; font-weight: 500; line-height: 18px; color: var(--dsw-alias-label-secondary, inherit); }
 [${STYLE_MARK}] .dap-fact { display: flex; gap: 12px; padding: 5px 0; border-top: .5px solid var(--dsw-alias-border-l2, rgba(127,127,127,.18)); }
 [${STYLE_MARK}] .dap-fact:first-child { border-top: none; padding-top: 0; }
 [${STYLE_MARK}] .dap-fact > dt { flex: 0 0 84px; font-size: 12px; line-height: 22px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
@@ -520,8 +522,8 @@ window.__ModuleLoader__.load({
       reset: '恢复默认',
       resetHint: '从设置文件里删掉这一项，回到组合层与默认值。',
       dotConfigured: '实例地址已配置',
+      dotReady: '实例地址已配置，最近一次刷新成功',
       dotMissing: '没有实例地址',
-      dotRefreshOk: '最近一次刷新成功',
       dotRefreshFailed: '最近一次刷新失败',
       dotPublished: '这一轮已写入 llm-pi-ai',
       dotUnpublished: '这一轮没有写入 llm-pi-ai：{reason}',
@@ -623,8 +625,8 @@ window.__ModuleLoader__.load({
       reset: 'Reset to default',
       resetHint: 'Remove this key from your settings file and fall back to the composition layer and defaults.',
       dotConfigured: 'instance address configured',
+      dotReady: 'instance address configured and the last refresh succeeded',
       dotMissing: 'no instance address',
-      dotRefreshOk: 'last refresh succeeded',
       dotRefreshFailed: 'last refresh failed',
       dotPublished: 'written into llm-pi-ai this round',
       dotUnpublished: 'not written into llm-pi-ai this round: {reason}',
@@ -1010,6 +1012,16 @@ window.__ModuleLoader__.load({
       const disabled = busy !== '' || !configuration.writable;
       const dirty = draft.baseUrl !== configuration.baseUrl || draft.sync !== configuration.sync;
       const dormant = draft.baseUrl.trim().length === 0;
+      // 卡头那颗点说的是**整张卡**：地址能不能用，以及最近一次刷新成不成功。两件事现在都在这张
+      // 卡里，因此哪种出问题都让它变红，标题点名是哪一种——折起来时它是唯一的信号，而颜色不是
+      // 唯一的说法（`title` 与 `aria-label` 写着同一句话）。
+      const refreshFailed = report !== null && report.refresh !== undefined && !report.refresh.ok;
+      const refreshed = report !== null && report.refresh !== undefined;
+      const headState = dormant || refreshFailed ? 'bad' : 'ok';
+      // 三种「没事」的说法不一样：还没刷新过就只说地址，刷新过了就把两件事一起说清。
+      const headTitle = dormant
+        ? t('dotMissing')
+        : refreshFailed ? t('dotRefreshFailed') : refreshed ? t('dotReady') : t('dotConfigured');
 
       /** 「标签 + 值」的一行；没有标签时就是一个整行的值（错误什么的）。 */
       const fact = (key, label, value) => h(
@@ -1092,9 +1104,9 @@ window.__ModuleLoader__.load({
       /**
        * 身份里的状态点。
        *
-       * 官方拿这个 8px 的圆点说「这个提供方的凭据配好了没有」；这里沿用同一个记号，两种状态
-       * 分别说「地址填了没有」（实例卡）与「最近一次刷新成不成功」（刷新卡）。颜色不是唯一的
-       * 说法：`title` 与 `aria-label` 里写着同一句话，悬停与读屏都拿得到。
+       * 官方拿这个 8px 的圆点说「这个提供方的凭据配好了没有」；这里沿用同一个记号，实例卡上
+       * 说「地址可用、上一轮刷新没失败」，路由卡上说「这一轮有没有把它写进 `llm-pi-ai`」。颜色
+       * 不是唯一的说法：`title` 与 `aria-label` 里写着同一句话，悬停与读屏都拿得到。
        *
        * @param {'ok'|'bad'} state - 圆点的状态。
        * @param {string} label - 与圆点同义的文案。
@@ -1592,13 +1604,33 @@ window.__ModuleLoader__.load({
             [
               h('span', { className: 'dap-name' }, t('tab')),
               draft.sync ? null : h('span', { className: 'dap-tag' }, t('syncOffTag')),
-              dot(dormant ? 'bad' : 'ok', dormant ? t('dotMissing') : t('dotConfigured')),
+              dot(headState, headTitle),
             ],
-            // 卡头上不再挂「已覆盖」与「恢复默认」：它们各自跟着自己描述的那个字段走（见下面
-            // 两处 overrideBadges），卡头只留身份。
-            undefined,
+            // 「立即刷新」与「撤下路由」是这张卡的动作，因此留在卡头、折叠开关**外面**：卡折着也
+            // 按得到。表单自己的「取消 / 保存」在卡体里，因为它改的就是卡体里的那两个字段。
+            // 卡头上不挂「已覆盖」与「恢复默认」：它们各自跟着自己描述的那个字段走（见两处
+            // `overrideBadges`），卡头只留身份。
+            [
+              h('button', {
+                type: 'button',
+                className: 'dap-button',
+                disabled,
+                onClick: () => run('refresh', () => panel.refresh(), () => setReportRevision((value) => value + 1)),
+              }, busy === 'refresh' ? t('refreshing') : t('refresh')),
+              h('button', {
+                type: 'button',
+                className: 'dap-button',
+                'data-danger': 'true',
+                disabled,
+                onClick: () => run('withdraw', () => panel.withdraw(), () => setReportRevision((value) => value + 1)),
+              }, busy === 'withdraw' ? t('withdrawing') : t('withdraw')),
+            ],
             { key: 'instance', open: sectionOpen('instance') },
           ),
+          // 动作的反馈留在折叠体**外面**：卡折着的时候按了「立即刷新」，也得看得见结果。
+          banner === null
+            ? null
+            : h('p', { className: 'dap-banner', 'data-ok': banner.ok ? 'true' : 'false' }, banner.text),
           // 折起来时整块不渲染（官方也是 `open ? body : null`）：DOM 里不留一个藏着的输入框。
           sectionOpen('instance') ? h(
             'div',
@@ -1674,52 +1706,20 @@ window.__ModuleLoader__.load({
                 }),
               }, busy === 'save' ? t('saving') : t('save')),
             ),
-          ) : null,
-        ),
-
-        h(
-          'div',
-          { className: 'dap-section' },
-          cardHead(
-            [
-              h('span', { className: 'dap-name' }, t('statusHeading')),
-              report === null || report.refresh === undefined
+            // 「最近一次刷新」跟着实例走：同一块浅色面上切一条线，不再另起一张卡，也不再铺第二层
+            // 底色（与模型参数面同一套做法）。它是只读诊断，因此排在表单动作之后——卡里那两半的
+            // 分界正是那排按钮。
+            h(
+              'div',
+              { className: 'dap-status' },
+              h('div', { className: 'dap-status-head' }, t('statusHeading')),
+              report === null
+                ? h('p', { className: 'dap-hint' }, t('neverRefreshed'))
+                : statusFacts(report),
+              report === null
                 ? null
-                : dot(
-                  report.refresh.ok ? 'ok' : 'bad',
-                  report.refresh.ok ? t('dotRefreshOk') : t('dotRefreshFailed'),
-                ),
-            ],
-            [
-              h('button', {
-                type: 'button',
-                className: 'dap-button',
-                disabled,
-                onClick: () => run('refresh', () => panel.refresh(), () => setReportRevision((value) => value + 1)),
-              }, busy === 'refresh' ? t('refreshing') : t('refresh')),
-              h('button', {
-                type: 'button',
-                className: 'dap-button',
-                'data-danger': 'true',
-                disabled,
-                onClick: () => run('withdraw', () => panel.withdraw(), () => setReportRevision((value) => value + 1)),
-              }, busy === 'withdraw' ? t('withdrawing') : t('withdraw')),
-            ],
-            { key: 'status', open: sectionOpen('status') },
-          ),
-          // 动作的反馈留在折叠体**外面**：卡折着的时候按了「立即刷新」，也得看得见结果。
-          banner === null
-            ? null
-            : h('p', { className: 'dap-banner', 'data-ok': banner.ok ? 'true' : 'false' }, banner.text),
-          sectionOpen('status') ? h(
-            'div',
-            { className: 'dap-body', id: 'dap-body-status' },
-            report === null
-              ? h('p', { className: 'dap-hint' }, t('neverRefreshed'))
-              : statusFacts(report),
-            report === null
-              ? null
-              : h('p', { className: 'dap-hint' }, `Aperture：${report.place.length === 0 ? t('noAddress') : report.place}`),
+                : h('p', { className: 'dap-hint' }, `Aperture：${report.place.length === 0 ? t('noAddress') : report.place}`),
+            ),
           ) : null,
         ),
 

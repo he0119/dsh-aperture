@@ -655,14 +655,14 @@ describe('浏览器半边', () => {
     assert.match(cssRule(css, '.dap-row-actions .dap-button'), /height:\s*28px/u);
     assert.match(cssRule(css, '.dap-row-actions .dap-button'), /border-radius:\s*14px/u);
 
-    // 实例与刷新各一张段卡；模型段是页面级的一节，下面是一张路由卡与一张「未服务」卡。
+    // 实例卡一张；模型段是页面级的一节，下面是一张路由卡与一张「未服务」卡。
     const sections = findAll(tree, (node) => node.props.className === 'dap-section');
-    assert.equal(sections.length, 2, '实例、最近一次刷新');
+    assert.equal(sections.length, 1, '实例与最近一次刷新合成了一张卡');
     const heads = findAll(tree, (node) => node.props.className === 'dap-card-head');
-    assert.equal(heads.length, 4, '两张段卡 + 一张路由卡 + 一张未服务卡');
+    assert.equal(heads.length, 3, '一张段卡 + 一张路由卡 + 一张未服务卡');
     assert.equal(text(findAll(heads[0]!, (node) => node.props.className === 'dap-name')[0]), 'Aperture');
-    assert.equal(text(findAll(heads[2]!, (node) => node.props.className === 'dap-name')[0]), 'aperture');
-    assert.equal(text(findAll(heads[3]!, (node) => node.props.className === 'dap-name')[0]), '未服务');
+    assert.equal(text(findAll(heads[1]!, (node) => node.props.className === 'dap-name')[0]), 'aperture');
+    assert.equal(text(findAll(heads[2]!, (node) => node.props.className === 'dap-name')[0]), '未服务');
 
     const title = findAll(tree, (node) => node.props.className === 'dap-title');
     assert.deepEqual(title.map((node) => text(node)), ['Aperture 模型发现', '模型与路由']);
@@ -689,12 +689,11 @@ describe('浏览器半边', () => {
     const dots = findAll(mini.tree(), (node) => node.props.className === 'dap-dot');
     assert.deepEqual(
       dots.map((node) => node.props['data-state']),
-      ['ok', 'ok', 'ok', 'bad'],
-      '地址填了、刷新成功、路由写进了 llm-pi-ai、未服务那张卡没有路由',
+      ['ok', 'ok', 'bad'],
+      '地址填了且上一轮成功、路由写进了 llm-pi-ai、未服务那张卡没有路由',
     );
     assert.deepEqual(dots.map((node) => node.props.title), [
-      '实例地址已配置',
-      '最近一次刷新成功',
+      '实例地址已配置，最近一次刷新成功',
       '这一轮已写入 llm-pi-ai',
       '这些模型没有路由可用',
     ]);
@@ -704,19 +703,29 @@ describe('浏览器半边', () => {
     }
   });
 
-  it('地址留空、刷新失败时状态点都变红', async () => {
+  it('地址留空或上一轮失败，卡头那颗点都变红，标题点名是哪一种', async () => {
     const refresh = report().refresh!;
-    const { mini, element } = driveClient({
+
+    // 地址空着：它是休眠的根因，因此标题说地址，不说刷新。
+    const dormant = driveClient({
       configuration: { baseUrl: '' },
       report: report({ refresh: { ...refresh, ok: false, error: '网关不可达' } }),
     });
-    mini.mount(element);
-    await mini.flush();
+    dormant.mini.mount(dormant.element);
+    await dormant.mini.flush();
+    const empty = findAll(dormant.mini.tree(), (node) => node.props.className === 'dap-dot');
+    assert.deepEqual(empty.map((node) => node.props['data-state']), ['bad', 'ok', 'bad']);
+    assert.equal(empty[0]?.props.title, '没有实例地址');
+    assert.match(text(dormant.mini.tree()), /发现处于休眠/u);
 
-    const dots = findAll(mini.tree(), (node) => node.props.className === 'dap-dot');
-    assert.deepEqual(dots.map((node) => node.props['data-state']), ['bad', 'bad', 'ok', 'bad']);
-    assert.deepEqual(dots.map((node) => node.props.title).slice(0, 2), ['没有实例地址', '最近一次刷新失败']);
-    assert.match(text(mini.tree()), /发现处于休眠/u);
+    // 地址填着，只是这一轮失败了：同一颗点变红，标题换成失败。
+    const failed = driveClient({ report: report({ refresh: { ...refresh, ok: false, error: '网关不可达' } }) });
+    failed.mini.mount(failed.element);
+    await failed.mini.flush();
+    const red = findAll(failed.mini.tree(), (node) => node.props.className === 'dap-dot');
+    assert.deepEqual(red.map((node) => node.props['data-state']), ['bad', 'ok', 'bad']);
+    assert.equal(red[0]?.props.title, '最近一次刷新失败');
+    assert.match(text(failed.mini.tree()), /网关不可达/u);
   });
 
   it('两级展开：路由卡里装模型清单，模型行自己再展开参数面', async () => {
@@ -796,9 +805,9 @@ describe('浏览器半边', () => {
     off.mini.mount(off.element);
     await off.mini.flush();
     const dots = findAll(off.mini.tree(), (node) => node.props.className === 'dap-dot');
-    assert.deepEqual(dots.map((node) => node.props['data-state']), ['ok', 'ok', 'bad', 'bad']);
+    assert.deepEqual(dots.map((node) => node.props['data-state']), ['ok', 'bad', 'bad']);
     assert.equal(
-      dots[2]!.props.title,
+      dots[1]!.props.title,
       '这一轮没有写入 llm-pi-ai：同步已禁用',
       '没写进去时把原因一起说出来，而不是让人去别处找',
     );
@@ -809,7 +818,7 @@ describe('浏览器半边', () => {
     assert.deepEqual(
       findAll(unknown.mini.tree(), (node) => node.props.className === 'dap-dot')
         .map((node) => node.props['data-state']),
-      ['ok', 'ok', 'bad'],
+      ['ok', 'bad'],
       '报告里没有同步结果就没有状态可说：路由卡不画点，未服务那张照旧',
     );
   });
@@ -841,28 +850,28 @@ describe('浏览器半边', () => {
     );
   });
 
-  it('刷新与撤下路由是「最近一次刷新」卡头上的动作，报告没回来时也还在', async () => {
+  it('刷新与撤下路由是实例卡头上的动作，报告没回来时也还在', async () => {
     const { mini, element } = driveClient({ fails: 'status' });
     mini.mount(element);
     await mini.flush();
     const tree = mini.tree();
 
     const heads = findAll(tree, (node) => node.props.className === 'dap-card-head');
-    assert.equal(heads.length, 2, '报告没回来时只有实例与刷新两张卡');
-    const actions = findAll(heads[1]!, (node) => node.props.className === 'dap-row-actions')[0]!;
+    assert.equal(heads.length, 1, '报告没回来时就只有实例这一张卡');
+    const actions = findAll(heads[0]!, (node) => node.props.className === 'dap-row-actions')[0]!;
     assert.deepEqual(
       findAll(actions, (node) => node.type === 'button').map((node) => text(node)),
       ['立即刷新', '撤掉已发布的路由'],
     );
     assert.match(text(tree), /尚未完成任何刷新/u);
-    assert.equal(
-      findAll(heads[1]!, (node) => node.props.className === 'dap-dot').length,
-      0,
-      '还没刷新过就没有状态可说，不画点',
+    // 卡头那颗点说的是地址与刷新两件事；地址填着、只是还没刷新过，因此是绿的，标题只说地址。
+    assert.deepEqual(
+      findAll(heads[0]!, (node) => node.props.className === 'dap-dot').map((node) => node.props.title),
+      ['实例地址已配置'],
     );
   });
 
-  it('实例与刷新两张卡的头能折起来：默认展开，折起来就不渲染卡体', async () => {
+  it('实例卡的头能折起来：默认展开，折起来就不渲染卡体，动作留在外面', async () => {
     const { mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
@@ -870,8 +879,8 @@ describe('浏览器半边', () => {
     const instance = findById(mini.tree(), 'dap-card-instance-toggle');
     assert.equal(instance.props['aria-expanded'], 'true', '默认展开');
     assert.equal(instance.props['aria-controls'], 'dap-body-instance');
-    assert.equal(findById(mini.tree(), 'dap-card-status-toggle').props['aria-expanded'], 'true');
     assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-base-url').length, 1);
+    assert.match(text(mini.tree()), /最近一次刷新/u, '刷新那段现在就在同一张卡里');
 
     click(instance);
     await mini.flush();
@@ -881,32 +890,23 @@ describe('浏览器半边', () => {
       0,
       '折起来就整块不渲染，DOM 里不留一个藏着的输入框',
     );
-    assert.equal(
-      findById(mini.tree(), 'dap-card-status-toggle').props['aria-expanded'],
-      'true',
-      '两张卡各折各的',
-    );
-
-    click(findById(mini.tree(), 'dap-card-instance-toggle'));
-    await mini.flush();
-    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-base-url').length, 1, '再点一下回来');
-
-    // 折起来的是卡体，卡头还在：动作与状态点都留在原地。
-    click(findById(mini.tree(), 'dap-card-status-toggle'));
-    await mini.flush();
-    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-body-status').length, 0);
-    assert.equal(text(findById(mini.tree(), 'dap-card-status-toggle')), '最近一次刷新');
+    assert.doesNotMatch(text(mini.tree()), /最近一次刷新/u, '表单与刷新那段一起折起来');
 
     // 折叠是本地状态，重渲染不会把它弹回来；而按了卡头上的动作，反馈必须看得见——它留在
     // 折叠体外面，否则「折着按了立即刷新」就成了一个没有任何回音的按钮。
     click(findButton(mini.tree(), '立即刷新'));
     await mini.flush();
     assert.equal(
-      findAll(mini.tree(), (node) => node.props.id === 'dap-body-status').length,
+      findAll(mini.tree(), (node) => node.props.id === 'dap-body-instance').length,
       0,
       '刷新一轮之后它还是折着的',
     );
     assert.match(text(mini.tree()), /已重新发现并发布/u);
+
+    click(findById(mini.tree(), 'dap-card-instance-toggle'));
+    await mini.flush();
+    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-base-url').length, 1, '再点一下回来');
+    assert.match(text(mini.tree()), /最近一次刷新/u);
   });
 
   it('标签页挂载后先显示加载态，再渲染出配置与报告', async () => {
