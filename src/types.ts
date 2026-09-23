@@ -17,7 +17,7 @@ export type Modality = 'text' | 'image';
  */
 export type ApertureProtocol = 'openai-completions' | 'anthropic-messages';
 
-/** 一项已归一化的事实的来源，用于 `/aperture` 报告中的诊断。 */
+/** 一项已归一化的事实的来源，用于报告中的诊断。 */
 export type FactSource = 'aperture' | 'models.dev' | 'config' | 'default';
 
 /** 已发现模型携带的每个值的来源。 */

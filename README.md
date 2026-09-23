@@ -52,6 +52,8 @@ aperture:
 
 也可以写进 profile 的 `cordis.patch.yml`（组合层）；用户层覆盖组合层。
 
+重启之后也可以直接在界面里填：**设置 → 插件 → Aperture**（与「插件配置」并列的标签页），页面上的「实例地址」写的就是同一个 `aperture.baseUrl`。
+
 ### 3. 重启 DSH
 
 bundle 变化不会热加载。重启前可以先只看组合结果：
@@ -62,31 +64,65 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 
 ### 4. 确认
 
-模型会出现在选择器里，路由名 `Aperture`。用 `/aperture` 看一眼：
+模型会出现在选择器里，路由名 `Aperture`。最近一次刷新做了什么，看 **设置 → 插件 → Aperture**：状态段把每一行摆成一项事实，下面按路由列出模型。
 
 ```
-Aperture：https://ai.example.ts.net
-  最近一次刷新：配置变更 · 2026-09-22T16:31:02.184Z · 412ms · 成功
-  清单：422 个条目
-  端点：https://ai.example.ts.net/v1/models 列出了 16 行
-  路由 aperture：11 个模型，经由 openai-completions → https://ai.example.ts.net/v1
-  路由 aperture-anthropic：1 个模型，经由 anthropic-messages → https://ai.example.ts.net
-  未服务：4 个模型（gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, gemini-3.1-flash-image-preview）
-  设置：向 llm-pi-ai 写入 2 个操作（aperture, aperture-anthropic）
+最近一次刷新
+  触发  配置变更        时间  2026-09-23 12:32:36
+  耗时  286ms           结果  成功
+  清单  422 个条目      端点  https://ai.example.ts.net/v1/models 列出了 16 行
+  设置  向 llm-pi-ai 写入 2 个操作（aperture, aperture-anthropic）
+
+模型与路由                        已覆盖 1 个模型，其余沿用发现值与清单
+  aperture · openai-completions
+  → https://ai.example.ts.net/v1 · 11 个模型
+    deepseek-v4-flash  DeepSeek V4 Flash  已覆盖              [▾ 收起]
+      1,048,576 上下文窗口 · 384,000 输出 · 文本+图像 · 推理
+      │ deepseek-v4-flash · aperture · openai-completions
+      │ 显示名   [DeepSeek V4 Flash           ]   来自 models.dev
+      │ 清单别名 [deepseek/deepseek-v4-flash]
+      │ 上下文   [1048576]  生效 1,048,576 · 来自 aperture
+      │ 最大输出 [384000]   生效 384,000 · 来自 aperture
+      │ 输入模态 ☑文本 ☑图像   生效 文本+图像 · 来自 配置
+      │ 推理     [跟随发现 ▾]  生效 开 · 来自 models.dev
+      │ 协议     [跟随发现 ▾]  生效 openai-completions
+      │ 显示名、容量与模态留空表示这一项不覆盖……   [撤销覆盖] [取消] [保存]
+    gemini-2.5-flash                                         [▸ 编辑]
+      128,000 上下文窗口 · 文本 · 无推理
+  未服务：没有本插件可发布的端点
+  4 个模型
+    gemini-2.5-flash-lite                                    [▸ 编辑]
+      通告的端点：/v1beta/models/gemini-2.5-flash-lite:generateContent
 ```
+
+收起时每一行只是一条事实（模型 id 与生效的取值）；点「编辑」展开面板，每条来源就写在它描述的那个字段旁边（「生效 1,048,576 · 来自 aperture」）。一行一套「保存 / 取消」，按「保存」只写这一行，「取消」把这一行的改动整个丢掉。
+
+旁边就是改地址、立刻刷新与撤下路由的按钮。
 
 ## 使用
 
-| 命令 | 作用 |
+界面在 **设置 → 插件 → Aperture**：一个标签页，写着你当前的实例地址与最近一次刷新做了什么，下面按路由列出发现的模型，可以改地址、开关「同步到 llm-pi-ai」、按一下立刻重新发现、按一下把已经发布的路由从 `llm-pi-ai` 段撤下来，也可以就地为单个模型改参数。地址与开关在按下「保存」之前只是草稿；保存交给宿主半边写进设置接缝，因此有版本设栅——表单已经与设置文档脱节时会拒绝写入，而不是覆盖别处的改动。模型参数同理，而且**按行来**：展开的那一行改的是草稿，行上出现「待保存」，按「保存」才写，也只写这一行；「取消」把这一行的改动丢掉。
+
+| 位置 | 作用 |
 | --- | --- |
-| `/aperture` | 上一次刷新的状态（默认） |
-| `/aperture models` | 列出每个模型、它的路由，以及每条事实的来源 |
-| `/aperture refresh` | 立刻重新发现并发布 |
-| `/aperture remove` | 把本插件的路由从 `llm-pi-ai` 段里撤掉 |
+| 标签页 · 状态 | 最近一次刷新做了什么、它是被什么触发的，以及清单、端点与设置写入的结果 |
+| 标签页 · 实例地址 | 改 `baseUrl`（写入设置接缝，带「已覆盖」标记与撤销回继承） |
+| 标签页 · 同步开关 | 改 `sync`：关掉就只探测、不写 `llm-pi-ai` |
+| 标签页 · 保存 | 把地址与开关的草稿写进设置文档 |
+| 标签页 · 立即刷新 | 立刻重新发现并发布，并把这一轮的报告摆出来 |
+| 标签页 · 撤掉已发布的路由 | 把本插件的两条路由从 `llm-pi-ai` 段撤下来 |
+| 标签页 · 模型与路由 | 每个模型所在的路由，以及它生效的取值 |
+| 标签页 · 编辑 | 展开一个模型的参数：显示名、清单别名、容量、模态、推理、协议，每条事实来自哪里就写在对应字段旁边 |
+| 标签页 · 保存 / 取消 | 只写这一行，或者把这一行的改动整个丢掉 |
+| 标签页 · 撤销覆盖 | 只清掉报告里写着确实被覆盖过的那几项，随即回落到发现值与清单 |
+
+就地编辑写的都是配置：容量与模态等落在 `aperture.models` 的对应条目上，清单别名落在 `aperture.modelAliases[id]`，写入按字段合并——界面没提到的字段原样留着（比如 `reasoningEfforts`），留空则表示这一项不覆盖、回落到发现值与清单。协议那一项是「未服务」模型唯一的出路：填上它就能让只在原生端点上应答的模型在对应路由上发布。
+
+> 「撤掉已发布的路由」只撤这一次：下一次刷新会按当前配置重新发布。要让撤下长期生效，先把同步开关关掉（等价于 `sync: false`）。
 
 ## 配置
 
-所有键都可写在 `~/.dsh/settings.yaml` 的 `aperture:` 段（用户层），或 profile 的 `cordis.patch.yml`（组合层）。
+所有键都可写在 `~/.dsh/settings.yaml` 的 `aperture:` 段（用户层），或 profile 的 `cordis.patch.yml`（组合层）。`baseUrl` 与 `sync` 也可以在界面上的 Aperture 标签页里改，`models` 与 `modelAliases` 里的逐模型参数同样可以在那里就地编辑；其余键只有配置文件这一条路。
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
@@ -105,7 +141,7 @@ Aperture：https://ai.example.ts.net
 | `defaultContextWindow` | `128000` | 谁都没说容量时的上下文 |
 | `images` | `ignore` | `metadata` = 采用 models.dev 的输入模态（图片） |
 | `reasoning` | `auto` | `off` = 所有模型都当不会推理 |
-| `sync` | `true` | `false` = 只探测不写设置（`/aperture` 仍可查看） |
+| `sync` | `true` | `false` = 只探测不写设置（标签页仍可查看） |
 | `refreshIntervalMinutes` | `0` | 定时刷新间隔；`0` = 只在启动和配置变化时刷新 |
 | `timeoutMs` | `20000` | 网关与目录的单次请求超时 |
 
@@ -129,7 +165,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
 **有些模型没出现在选择器里？**
-看 `/aperture` 的「未服务」一行。只提供 Gemini 原生 `generateContent` 端点的模型接不进来——`llm-pi-ai` 只讲 OpenAI 兼容和 Anthropic Messages 两种协议。走错端点时 Aperture 会明确告诉你该用哪个：
+看标签页上的「模型与路由」（「未服务」那一行）。只提供 Gemini 原生 `generateContent` 端点的模型接不进来——`llm-pi-ai` 只讲 OpenAI 兼容和 Anthropic Messages 两种协议。走错端点时 Aperture 会明确告诉你该用哪个：
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat
@@ -153,7 +189,7 @@ aperture:
 ```
 
 **网关没列出的模型也想接？**
-用 `models` 显式补一条即可（比如 `/aperture` 里「未服务」的那几个 Gemini 模型，只要你知道它在 OpenAI 兼容端点上确实能用）：
+用 `models` 显式补一条即可（比如标签页里「未服务」的那几个 Gemini 模型，只要你知道它在 OpenAI 兼容端点上确实能用）：
 
 ```yaml
 aperture:
@@ -172,7 +208,7 @@ aperture:
     k3: moonshotai/kimi-k3
 ```
 
-**`/aperture` 说 `设置：未写入（已处于同步状态）`？**
+**标签页上说 `设置：未写入（已处于同步状态）`？**
 正常状态，表示设置里已经是最新内容。
 
 **需要真密钥而不是占位头？**
@@ -206,21 +242,19 @@ GET {baseUrl}/v1/models
 ```sh
 npm install                # 若机器级 npm 缓存不可写：npm install --cache ./.npm-cache --ignore-scripts
 npm run build              # tsc -> lib/
-npm run typecheck          # 含 test/
-npm test                   # 纯函数单测（93 个，离线，不需要 node_modules）
+npm run typecheck          # 含 test/，并用 node --check 解析浏览器半边
+npm test                   # 单元测试（119 个，离线运行；需要已安装的 devDependencies）
 npm run inspect            # 打印真实生成的 settings.yaml 与解析结果
 
 DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live   # 端到端：真实 DSH 栈 + 真实网关
 ```
 
-> `lib/` 是构建产物：git 安装与 `npm publish` 都由 `prepare` 脚本现场编译。
-> 从本地目录安装（`link:`）不会跑 `prepare`，所以本地调试前先 `npm run build`。
-
-发布流程见 [docs/releasing.md](https://github.com/he0119/dsh-aperture/blob/main/docs/releasing.md)。
+发布流程与产物构成见 [docs/releasing.md](https://github.com/he0119/dsh-aperture/blob/main/docs/releasing.md)。
 
 ## 致谢
 
 - [he0119/vscode-aperture-for-copilot](https://github.com/he0119/vscode-aperture-for-copilot)：本插件的参考实现，Aperture 模型发现的做法来自这个 VS Code 扩展。
+- [xiaoyuyu6420/dsh-backup](https://github.com/xiaoyuyu6420/dsh-backup)：界面接线的参考实现，设置标签页的注册方式与 Remote 端点的形状都来自这个插件。
 - [Aperture](https://tailscale.com/kb/1542/aperture)（Tailscale）：提供被发现的网关。
 - [models.dev](https://models.dev)：为 Aperture 未声明的容量与能力做补全。
 - `@deepseek-ai/dsh-llm-pi-ai`：本插件只做发现，协议对接交给它。

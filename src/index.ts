@@ -16,6 +16,10 @@
  *
  * 它不转换任何协议格式。这正是重点。
  *
+ * 界面在设置里：浏览器半边（`client/aperture.js`）在「插件」下挂一个 Aperture 标签页，
+ * 用来改实例地址与同步开关、立刻刷新、以及把已经发布的路由撤下来。除此之外没有别的
+ * 界面——发现本身发生在插件加载、配置变更与刷新间隔到点上。
+ *
  * ```yaml
  * - id: aperture
  *   name: 'dsh-aperture'
@@ -29,10 +33,11 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { fetchModelsListing } from './aperture.ts';
 import { ModelCatalog } from './catalog.ts';
-import { registerApertureCommand } from './command.ts';
 import { APERTURE_NAMESPACE, Config as ConfigSchema, resolveConfig, type Config } from './config.ts';
+import { createPanelOps } from './panel.ts';
 import { buildProfilePlan } from './profile.ts';
 import { buildRegistry, classifyProtocol } from './registry.ts';
+import { AperturePanelService, PANEL_CONTRIBUTION, PANEL_NAMESPACE, PANEL_PACKAGE } from './remote.ts';
 import { ApertureRuntime, type RuntimeLogger } from './runtime.ts';
 
 export { fetchModelsListing } from './aperture.ts';
@@ -46,10 +51,15 @@ export {
   resolveConfig,
 } from './config.ts';
 export type { Config as ApertureConfig, ResolvedConfig } from './config.ts';
+export { createPanelOps } from './panel.ts';
+export type { PanelAction, PanelConfiguration, PanelDeps, PanelModelPatch, PanelOps } from './panel.ts';
+export { buildReport } from './report.ts';
+export type { PanelModel, PanelModelOverride, PanelRefresh, PanelReport, PanelRoute } from './report.ts';
 export { DEFAULT_PLACEHOLDER_CREDENTIAL, buildProfilePlan } from './profile.ts';
 export type { ProfilePlan, ProfileOptions, RoutePlan } from './profile.ts';
 export { buildRegistry, classifyProtocol, isDeepSeekFamily } from './registry.ts';
 export type { RegistryResult } from './registry.ts';
+export { AperturePanelService, PANEL_CONTRIBUTION, PANEL_INVOCATIONS, PANEL_NAMESPACE, PANEL_PACKAGE } from './remote.ts';
 export { applySync, clearRoutes, planSync } from './sync.ts';
 export type { SyncOutcome } from './sync.ts';
 export type { ConfiguredModel, DiscoveredModel, FactSource, Modality, ModelProvenance } from './types.ts';
@@ -65,8 +75,8 @@ export const name = 'dsh-aperture';
  * 意味着框架会把插件挂在 PENDING 直到 settings 就绪；provider 一旦被替换就卸载插件，
  * 恢复后再重新加载——而不是留下一个已经加载、却无处发布的实例。
  *
- * `commands` 则刻意**不**声明：`/aperture` 这层界面只是顺手提供的便利，没有它的
- * 部署也应该照样获得发现能力。
+ * `typert` 则刻意**不**声明：设置界面上的标签页只是顺手提供的便利，没有它的部署（例如
+ * headless profile）也应该照样获得发现能力，因此它在下面按需注入，不在就安静地跳过。
  */
 export const inject = ['settings'];
 
@@ -146,7 +156,12 @@ export function apply(ctx: Context, config: Config): void {
     },
   });
 
-  ctx.inject(['commands'], (commandCtx) => {
-    registerApertureCommand(commandCtx, runtime, readConfig);
+  // 设置里那个标签页需要宿主半边的 Remote 面（报告、配置读写、立刻刷新、撤下路由），而
+  // Typert 注册表只有 Web 这类装配了网关的 profile 才有。其余 profile 里这一整块被跳过：
+  // 发现照常运行，只是没有可点按的界面。
+  ctx.inject(['typert'], (panelCtx) => {
+    const ops = createPanelOps({ runtime, config: readConfig, settings: ctx.settings });
+    panelCtx.effect(() => panelCtx.typert.register(PANEL_CONTRIBUTION), 'aperture panel invocations');
+    panelCtx.plugin(AperturePanelService, ops);
   });
 }

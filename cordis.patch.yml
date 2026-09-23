@@ -41,8 +41,9 @@
         modelMetadataUrl: 'https://models.dev/models.json'
 
         # 是否把发现的模型清单写进 llm-pi-ai 设置段。
-        # false = 只发现不写入（`/aperture` 命令照常汇报）。
+        # false = 只发现不写入（标签页照常显示发现结果）。
         sync: true
 
-        # 自动刷新间隔（分钟）。0（默认）表示只在加载时、配置变更时和 `/aperture refresh` 时刷新。
+        # 自动刷新间隔（分钟）。0（默认）表示只在加载时、配置变更时和标签页上的
+        # 「立即刷新」时刷新。
         refreshIntervalMinutes: 0
