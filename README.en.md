@@ -30,16 +30,62 @@ llm-pi-ai:
 ## Install
 
 ```sh
-# from a local checkout
-dsh plugin --profile web add /path/to/dsh-aperture
+# from git (pin the commit, so a later push cannot silently change what runs)
+npx @deepseek-ai/dsh plugin --profile web add github:he0119/dsh-aperture#<commit>
 
-# or from git
-dsh plugin --profile web add git@github.com:he0119/dsh-aperture.git
+# or from a local checkout
+npx @deepseek-ai/dsh plugin --profile web add /path/to/dsh-aperture
 ```
 
-`dsh plugin add` adds the package to the profile and reconciles `dsh.profile.bundles`: any dependency declaring `dsh.bundle.patch` joins the layer stack automatically. **Restart DSH afterwards** — bundle changes are not hot-reloaded.
+> **The git spec must be one pnpm recognises** (`github:owner/repo`, `git+https://…`, `git+ssh://…`).
+> The scp-style `git@github.com:he0119/dsh-aperture.git` is parsed as a **local path** on Windows —
+> the colon reads as a drive letter — and fails with
+> `Failed to resolve dependency: The filename, directory name, or volume label syntax is incorrect. (os error 123)`.
+>
+> If git over HTTPS is unusable on this machine — schannel / `SEC_E_NO_CREDENTIALS` — let it fall back to SSH with
+> `git config --global url."git@github.com:".insteadOf "https://github.com/"`.
 
-> A local-directory install is a symlink and does **not** build for you: run `npm install && npm run build` first, and re-run `npm run build` after every source change. A git install runs `prepare` and builds itself.
+Before starting, look at the composed result:
+
+```sh
+npx @deepseek-ai/dsh --profile web --dump-config   # should show a "# == dsh-aperture" layer
+```
+
+**Restart DSH afterwards** — bundle changes are not hot-reloaded.
+
+### The first install has to authorize the build (or use a prebuilt artifact)
+
+This is a TypeScript source package: a git install pulls **source**, and a `prepare` script compiles `lib/` during
+install. pnpm ≥10 refuses to run a git dependency's build scripts until it is explicitly allowed, so **the first
+`add` fails** — dsh then tells you the exact package key, which you write into the profile's `pnpm-workspace.yaml`:
+
+```yaml
+# ~/.dsh/profiles/web/pnpm-workspace.yaml
+allowBuilds:
+  dsh-aperture: true
+```
+
+(The key takes the **map** form with `true`; a list is not accepted.) Re-run the `add` afterwards.
+
+Read that authorization as "let this package's code run on your machine at install time, outside any agent sandbox".
+Authorize only source you trust, and pin the commit (`github:he0119/dsh-aperture#<sha>`) — a git install pulls code
+that can change.
+
+If you would rather **not** authorize anything, use a prebuilt artifact, and pnpm never needs to run a script of ours:
+
+```sh
+pnpm pack                                   # in this repository: dsh-aperture-0.1.0.tgz, with lib/ inside
+npx @deepseek-ai/dsh plugin --profile web add ./dsh-aperture-0.1.0.tgz
+```
+
+Once published to npm, `dsh plugin add dsh-aperture` works the same way.
+
+> pnpm may warn `Issues with peer dependencies found` during install. **That is expected**: the
+> `@deepseek-ai/cordis`, `@deepseek-ai/schemastery` and `@deepseek-ai/dsh-settings` packages this plugin peers on ship
+> with DSH and are resolved by DSH itself (they never enter the profile's `node_modules`), so pnpm not seeing them does
+> not affect running the plugin.
+
+`dsh plugin add` adds the package to the profile and reconciles `dsh.profile.bundles`: any dependency declaring `dsh.bundle.patch` joins the layer stack automatically. **Restart DSH afterwards** — bundle changes are not hot-reloaded.
 
 Then point it at your instance, either in the user layer:
 
@@ -51,17 +97,18 @@ aperture:
 
 …or in the profile's `cordis.patch.yml` (composition layer). The user layer wins.
 
-After the restart the models appear in the selector under the route `Aperture`. Confirm with `/aperture`:
+After the restart the models appear in the selector under the route `Aperture`. Confirm with `/aperture` — the
+command output and the log lines report in Chinese:
 
 ```
-Aperture: https://ai.example.ts.net
-  last refresh: load · 2026-09-22T16:31:02.184Z · 412ms · ok
-  catalog: 422 entries
-  endpoint: https://ai.example.ts.net/v1/models listed 16 row(s)
-  route aperture: 11 model(s) via openai-completions → https://ai.example.ts.net/v1
-  route aperture-anthropic: 1 model(s) via anthropic-messages → https://ai.example.ts.net
-  unserved: 4 model(s) (gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, gemini-3.1-flash-image-preview)
-  settings: wrote 2 op(s) to llm-pi-ai (aperture, aperture-anthropic)
+Aperture：https://ai.example.ts.net
+  最近一次刷新：配置变更 · 2026-09-22T16:31:02.184Z · 412ms · 成功
+  清单：422 个条目
+  端点：https://ai.example.ts.net/v1/models 列出了 16 行
+  路由 aperture：11 个模型，经由 openai-completions → https://ai.example.ts.net/v1
+  路由 aperture-anthropic：1 个模型，经由 anthropic-messages → https://ai.example.ts.net
+  未服务：4 个模型（gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, gemini-3.1-flash-image-preview）
+  设置：向 llm-pi-ai 写入 2 个操作（aperture, aperture-anthropic）
 ```
 
 ## How it works
@@ -72,7 +119,7 @@ GET {baseUrl}/v1/models
         ├─ per model: supported_endpoints ──► route
         │     /v1/chat/completions        ──► route            (openai-completions)
         │     /v1/messages                ──► anthropicRoute   (anthropic-messages)
-        │     native generateContent only ──► not published (reported as unserved)
+        │     native generateContent only ──► not published (reported under 未服务)
         │
         ├─ capacity:  Aperture fields ─► models.dev ─► default
         ├─ reasoning: Aperture fields ─► models.dev ─► off
@@ -163,6 +210,21 @@ aperture:
 
 Only then do those two pick up the catalog's reasoning flag and capacity.
 
+### Lifecycle and dependencies
+
+- `settings` is a **hard dependency** (`inject = ['settings']`). Writing into settings *is* this plugin's job, so
+  without it there is nothing to publish into: the framework holds the plugin at `PENDING`, unloads it if the
+  provider is replaced, and reloads it afterwards — rather than leaving a loaded instance with nowhere to publish.
+- `commands` is deliberately **not** declared. A deployment without the command service should still get discovery,
+  so it is attached optionally through `ctx.inject(['commands'])`.
+- The refresh timer is registered through `ctx.effect`, so it is cleaned up on unload; a configuration change
+  re-arms it with the new interval.
+- **Registering the settings section is what starts the first discovery**: `installSection` calls `setSource` and
+  then notifies `onChange` at attach, so the first refresh already sees the user layer — one pass, not a
+  composition-config pass followed by a reconciling one.
+- The section is held as a **live thunk, not a snapshot**: editing the `aperture:` section of
+  `~/.dsh/settings.yaml` reaches the next refresh with no restart and no plugin reload.
+
 ## Commands
 
 | Command | Effect |
@@ -216,7 +278,7 @@ The plugin touches exactly two keys under `llm-pi-ai.providers` (`route` and `an
 - **writes by revision** — a conflict with another writer (the Models page, another process) re-reads once and retries;
 - **removes a route that lost its models** — no empty route pointing at a stale catalog is left behind.
 
-`settings: no write (already in sync)` in `/aperture` is the normal steady state.
+`设置：未写入（已处于同步状态）` in `/aperture` is the normal steady state.
 
 ## Development
 
@@ -224,7 +286,7 @@ The plugin touches exactly two keys under `llm-pi-ai.providers` (`route` and `an
 npm install                # if the machine-level npm cache is not writable: npm install --cache ./.npm-cache --ignore-scripts
 npm run build              # tsc -> lib/
 npm run typecheck          # includes test/
-npm test                   # offline unit tests (79)
+npm test                   # offline unit tests (93, no node_modules needed)
 npm run test:live          # end-to-end: real harness stack + real gateway
 npm run inspect            # print the generated settings.yaml and its resolutions
 ```
@@ -237,12 +299,17 @@ DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live
 
 It boots the real `dsh-settings-file`, `dsh-llm`, `dsh-llm-pi-ai`, and this plugin, performs a real discovery, and then asserts that the settings file was written, both routes registered, `ctx.llm.listModels()` can see the models, and capacity and reasoning levels match. It is the only test that proves the adapter actually accepts what was written.
 
+> `lib/` is a build artifact: a git install and `npm publish` both compile it through the `prepare` script.
+> Installing from a **local directory** (`link:`) does *not* run `prepare`, so run `npm run build` before
+> debugging locally.
+
 ## Known boundaries
 
 - **No API-format conversion**, by design rather than by omission — and therefore only the two protocols `llm-pi-ai` speaks. Native Gemini endpoints cannot be attached.
 - `supported_endpoints` is the only protocol signal. A gateway that reports none is treated as OpenAI-compatible.
 - models.dev is best-effort enrichment: if it cannot be fetched, discovery still succeeds.
 - The plugin registers no provider directory (`registerConfigurableProviders`) — `llm-pi-ai` already claims that, and a duplicate registration throws.
+- **Renaming `route` / `anthropicRoute` leaves the old key behind** in `llm-pi-ai.providers`: the plugin only knows the two keys it currently owns, not the names it used before. The stale route does no harm and simply stops refreshing; delete the entry by hand to clean it up.
 
 ## License
 

@@ -1,12 +1,11 @@
 /**
- * Configuration schema and resolution.
+ * 配置 schema 与解析。
  *
- * The plugin owns one settings namespace, `aperture`, whose composition layer
- * is the bundle's `cordis.patch.yml` row and whose user layer is the `aperture:`
- * section of `$DSH_HOME/settings.yaml`. Everything it publishes it publishes
- * into a *different* namespace, `llm-pi-ai` — the adapter that actually serves
- * the routes. That split is the whole design: this plugin decides which models
- * exist, and that one decides how to talk to them.
+ * 本插件拥有一个设置命名空间 `aperture`：它的组合层是 bundle 里
+ * `cordis.patch.yml` 的那一行，用户层是 `$DSH_HOME/settings.yaml` 里的
+ * `aperture:` 段。而它发布出去的一切都写进**另一个**命名空间 `llm-pi-ai`——
+ * 真正提供这些路由的适配器。这个分工就是整个设计：本插件决定有哪些模型，
+ * 那个适配器决定怎么跟它们说话。
  *
  * @module dsh-aperture/config
  */
@@ -17,61 +16,61 @@ import { normalizeBaseUrl } from './url.ts';
 
 export { APERTURE_NAMESPACE, PI_AI_NAMESPACE } from './namespaces.ts';
 
-/** Default catalog URL; the reference extension uses the same document. */
+/** 默认清单地址；参考实现用的是同一份文档。 */
 export const DEFAULT_MODEL_METADATA_URL = 'https://models.dev/models.json';
 
-/** Context capacity assumed for a model neither Aperture nor the catalog sizes. */
+/** 当 Aperture 与清单都没给出容量时，为模型假定的上下文容量。 */
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
 
-/** A provider route key's grammar, matching the Models page's own rule. */
+/** provider 路由键的文法，与 Models 页面自身的规则一致。 */
 const ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
-/** One configured model: an override of a discovered model, or an extra one. */
+/** 一个配置好的模型：对已发现模型的覆盖，或者一个额外的模型。 */
 const modelConfig = z.object({
-  /** Model id; matches a discovered id, or adds a model the gateway did not list. */
+  /** 模型 id；与已发现的 id 对应，或者新增一个网关没有列出的模型。 */
   id: z.string().required(),
-  /** Selector label. */
+  /** 选择器里显示的名字。 */
   name: z.string(),
-  /** Protocol override: `openai-completions` or `anthropic-messages`. */
+  /** 协议覆盖：`openai-completions` 或 `anthropic-messages`。 */
   api: z.string(),
-  /** Context capacity in tokens. */
+  /** 上下文容量（token 数）。 */
   contextWindow: z.number().step(1).min(1),
-  /** Output capability in tokens. */
+  /** 输出能力（token 数）。 */
   maxTokens: z.number().step(1).min(1),
-  /** Request modalities. */
+  /** 请求模态。 */
   input: z.array(z.union([z.const('text'), z.const('image')])),
-  /** Force reasoning capability on or off. */
+  /** 强制打开或关闭推理能力。 */
   thinking: z.boolean(),
-  /** Offered reasoning levels: key = level, value = wire spelling. */
+  /** 提供的推理档位：键 = 档位，值 = 协议里的写法。 */
   reasoningEfforts: z.dict(z.union([z.string(), z.const(null)])),
 });
 
-/** Plugin configuration. */
+/** 插件配置。 */
 export interface Config {
-  /** Aperture instance root, e.g. `https://ai.example.ts.net`. Empty disables discovery. */
+  /** Aperture 实例根地址，例如 `https://ai.example.ts.net`。留空则关闭发现。 */
   baseUrl?: string;
-  /** Route key owning OpenAI-compatible models. */
+  /** 承载 OpenAI 兼容模型的路由键。 */
   route?: string;
-  /** Route key owning Anthropic Messages models. */
+  /** 承载 Anthropic Messages 模型的路由键。 */
   anthropicRoute?: string;
-  /** Selector label for the OpenAI-compatible route. */
+  /** OpenAI 兼容路由在选择器里显示的名字。 */
   displayName?: string;
-  /** Selector label for the Anthropic route. */
+  /** Anthropic 路由在选择器里显示的名字。 */
   anthropicDisplayName?: string;
-  /** Credential reference resolved per request; empty publishes a placeholder header instead. */
+  /** 按请求解析的凭据引用；留空则改为发布一个占位请求头。 */
   apiKeyEnv?: string;
-  /** Placeholder credential value; an empty string publishes no placeholder header. */
+  /** 占位凭据的值；空串表示不发布占位请求头。 */
   placeholderCredential?: string;
-  /** Extra headers sent on every route request; these win over the placeholder. */
+  /** 每条路由的请求都会带上的额外请求头；它们优先于占位凭据。 */
   headers?: Record<string, string>;
-  /** Non-empty restricts discovery to these model ids. */
+  /** 非空时，只发现这些模型 id。 */
   enabledModelIds?: string[];
   /**
-   * Gateway model id → models.dev model id, for ids the catalog spells
-   * differently (`deepseek-flash` → `deepseek/deepseek-v4-flash`).
+   * 网关模型 id → models.dev 模型 id，用于清单里写法不同的 id
+   * （`deepseek-flash` → `deepseek/deepseek-v4-flash`）。
    */
   modelAliases?: Record<string, string>;
-  /** Overrides and extras, merged by id. */
+  /** 覆盖与追加，按 id 合并。 */
   models?: Array<{
     id: string;
     name?: string;
@@ -82,23 +81,23 @@ export interface Config {
     thinking?: boolean;
     reasoningEfforts?: Record<string, string | null>;
   }>;
-  /** models.dev catalog URL; empty disables the enrichment fetch. */
+  /** models.dev 清单地址；留空则关闭这次补齐。 */
   modelMetadataUrl?: string;
-  /** Context capacity for a model nothing sizes. */
+  /** 没有任何来源给出容量时使用的上下文容量。 */
   defaultContextWindow?: number;
-  /** `metadata` adopts catalog input modalities; `ignore` declares text-only. */
+  /** `metadata` 接受清单里的输入模态；`ignore` 声明为纯文本。 */
   images?: 'ignore' | 'metadata';
-  /** `auto` maps a model's reasoning capability; `off` declares every model non-reasoning. */
+  /** `auto` 映射模型的推理能力；`off` 声明所有模型都不推理。 */
   reasoning?: 'auto' | 'off';
-  /** Whether the discovered catalog is written to the `llm-pi-ai` section. */
+  /** 是否把发现的模型清单写进 `llm-pi-ai` 段。 */
   sync?: boolean;
-  /** Minutes between automatic refreshes; `0` refreshes only at load and on change. */
+  /** 自动刷新间隔（分钟）；`0` 表示只在加载时与配置变更时刷新。 */
   refreshIntervalMinutes?: number;
-  /** Per-request timeout for the gateway and the catalog. */
+  /** 访问网关与清单的单次请求超时。 */
   timeoutMs?: number;
 }
 
-/** Runtime schema for {@link Config}. */
+/** {@link Config} 的运行时 schema。 */
 export const Config = z.object({
   baseUrl: z.string().default(''),
   route: z.string().default('aperture'),
@@ -120,17 +119,17 @@ export const Config = z.object({
   timeoutMs: z.number().step(1).min(1).default(20_000),
 });
 
-/** Validated configuration with every default resolved and the root normalized. */
+/** 校验过的配置：默认值已全部补齐，根地址已归一化。 */
 export interface ResolvedConfig {
-  /** Normalized instance root, or `undefined` when discovery is switched off. */
+  /** 归一化后的实例根地址；关闭发现时为 `undefined`。 */
   readonly instanceRoot: string | undefined;
-  /** The configured value, verbatim, for diagnostics. */
+  /** 原样保留的配置值，供诊断使用。 */
   readonly rawBaseUrl: string;
   readonly route: string;
   readonly anthropicRoute: string;
   readonly displayName: string;
   readonly anthropicDisplayName: string;
-  /** Credential reference, or `undefined` when none is configured. */
+  /** 凭据引用；未配置时为 `undefined`。 */
   readonly apiKeyEnv: string | undefined;
   readonly placeholderCredential: string;
   readonly headers: Readonly<Record<string, string>>;
@@ -147,17 +146,15 @@ export interface ResolvedConfig {
 }
 
 /**
- * Resolve one configuration section, rejecting only self-contained mistakes.
+ * 解析一段配置，只拒绝那些自身就矛盾的错误。
  *
- * A missing or unusable `baseUrl` is *not* rejected: the plugin stays mounted
- * and dormant so a profile can carry the row before anyone has filled it in,
- * which is also how the settings namespace becomes editable in the first place.
- * Route keys are rejected because a bad one cannot be corrected by a later
- * write — the plugin would silently publish nowhere.
+ * `baseUrl` 缺失或不可用**不**算错误：插件照常挂载但处于休眠，这样 profile 可以在
+ * 还没人填地址时就先带着这一行——这也正是该设置命名空间能变得可编辑的原因。
+ * 路由键则必须拒绝，因为写错的路由键无法靠后续写入补救：插件会静默地什么都不发布。
  *
- * @param config - the resolved `aperture` section.
- * @returns the validated configuration.
- * @throws Error naming the field when a route key is malformed or both routes collide.
+ * @param config - 解析好的 `aperture` 段。
+ * @returns 校验过的配置。
+ * @throws Error 当路由键不合文法、或两条路由相同时抛出，并在消息里点名字段。
  */
 export function resolveConfig(config: Config): ResolvedConfig {
   const rawBaseUrl = (config.baseUrl ?? '').trim();
@@ -171,12 +168,12 @@ export function resolveConfig(config: Config): ResolvedConfig {
   ] as const) {
     if (!ROUTE_PATTERN.test(value)) {
       throw new Error(
-        `${field} "${value}" must be a lowercase hyphenated provider route (matching ${String(ROUTE_PATTERN)})`,
+        `${field} "${value}" 必须是小写连字符形式的 provider 路由名（需匹配 ${String(ROUTE_PATTERN)}）`,
       );
     }
   }
   if (route === anthropicRoute) {
-    throw new Error(`route and anthropicRoute must differ; both are "${route}"`);
+    throw new Error(`route 与 anthropicRoute 不能相同，两者都是 "${route}"`);
   }
 
   const models = config.models ?? [];
@@ -184,15 +181,15 @@ export function resolveConfig(config: Config): ResolvedConfig {
   for (const model of models) {
     const id = model.id.trim();
     if (id.length === 0) {
-      throw new Error('models[].id must not be empty');
+      throw new Error('models[].id 不能为空');
     }
     if (seen.has(id)) {
-      throw new Error(`models lists "${id}" more than once`);
+      throw new Error(`models 里重复列出了 "${id}"`);
     }
     seen.add(id);
     if (model.api !== undefined && model.api !== 'openai-completions' && model.api !== 'anthropic-messages') {
       throw new Error(
-        `models["${id}"].api "${model.api}" is not servable; use openai-completions or anthropic-messages`,
+        `models["${id}"].api "${model.api}" 无法服务；请使用 openai-completions 或 anthropic-messages`,
       );
     }
   }

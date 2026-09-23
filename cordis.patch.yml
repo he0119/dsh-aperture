@@ -1,52 +1,48 @@
-# The dsh-aperture bundle patch. Installing the package in a profile is enough:
-# `dsh plugin --profile web add dsh-aperture` reconciles `dsh.profile.bundles`,
-# and this insert adds the row.
+# dsh-aperture 的 bundle patch。在 profile 里装上这个包就够了：
+# `dsh plugin --profile web add dsh-aperture` 会协调 `dsh.profile.bundles`，
+# 这段 insert 负责加行。启动前可以先只看组合结果——`dsh --profile web
+# --dump-config` 会打印出 "# == dsh-aperture" 这一层。
 #
-# Everything below is the *composition* layer of the plugin's `aperture:`
-# settings namespace. Any field may instead be written to the user layer
-# (`$DSH_HOME/settings.yaml`) under `aperture:`, which wins over this row.
+# 下面是本插件 `aperture:` 设置命名空间的**组合层**。用户层是
+# `$DSH_HOME/settings.yaml` 里的 `aperture:` 段，它覆盖这一行。注意：更靠后的
+# patch 层会替换整行的 `config`，而不是与它深度合并，所以覆盖这一行的 profile
+# 必须把自己仍然想要的每个键重新写全。
 #
-# Only `baseUrl` is worth setting here; the rest exist so the defaults are
-# discoverable. The full reference is in README.md.
+# 这里只有 `baseUrl` 值得设置，其余键存在的意义是让默认值可被发现。完整说明见 README.md。
 - insert:
     - id: aperture
       name: 'dsh-aperture'
       config:
-        # Aperture instance root, e.g. https://ai.example.ts.net — required.
-        # `/v1` is appended by the plugin, and a trailing `/v1` in this value is
-        # tolerated and stripped. Empty leaves the plugin mounted but dormant:
-        # nothing is discovered and nothing is written.
+        # Aperture 实例根地址，例如 https://ai.example.ts.net——必填。
+        # `/v1` 由插件追加；这里的值若自带结尾的 `/v1`，会被容忍并剥掉。
+        # 留空则插件照常挂载但处于休眠：不发现任何模型，也不写任何东西。
         baseUrl: ''
 
-        # Provider routes this plugin owns inside llm-pi-ai's `providers` dict.
-        # Models whose Aperture `supported_endpoints` list `/v1/chat/completions`
-        # go to `route`; those listing `/v1/messages` go to `anthropicRoute`;
-        # models offering neither are reported as unserved and publish nowhere.
+        # 本插件在 llm-pi-ai 的 `providers` 字典里拥有的两条路由。
+        # Aperture 的 `supported_endpoints` 里列了 `/v1/chat/completions` 的模型
+        # 走 `route`；列了 `/v1/messages` 的走 `anthropicRoute`；
+        # 两者都不提供的模型被记为“没有可服务的端点”，不发布到任何地方。
         route: aperture
         anthropicRoute: aperture-anthropic
 
-        # Credential reference resolved per request through the credential seam.
-        # Leave empty for a gateway authenticated by network identity (Tailscale):
-        # the plugin then writes the placeholder request header pi-ai insists on
-        # without storing any secret.
+        # 凭据引用，由凭据服务接缝按请求解析。网关靠网络身份认证（Tailscale）时留空：
+        # 插件随后只会写入 pi-ai 要求的占位请求头，不保存任何密钥。
         apiKeyEnv: ''
 
-        # `auto` maps a model's reasoning capability to reasoningEfforts;
-        # `off` declares every discovered model non-reasoning.
+        # `auto` 把模型的推理能力映射成 reasoningEfforts；
+        # `off` 声明所有发现的模型都不推理。
         reasoning: auto
 
-        # `ignore` declares text-only; `metadata` adopts models.dev input
-        # modalities (images) for models whose metadata claims them.
+        # `ignore` 声明纯文本；`metadata` 会接受 models.dev 为某些模型声明的输入模态（图片）。
         images: ignore
 
-        # models.dev catalog used to fill in what Aperture does not state.
-        # An empty string disables the fetch; discovery is unaffected.
+        # 用于补齐 Aperture 没有说明的部分的 models.dev 清单。
+        # 置为空串会关闭这次拉取；发现本身不受影响。
         modelMetadataUrl: 'https://models.dev/models.json'
 
-        # Whether the discovered catalog is written to the llm-pi-ai settings
-        # section. false = discovery only (the /aperture command still reports).
+        # 是否把发现的模型清单写进 llm-pi-ai 设置段。
+        # false = 只发现不写入（`/aperture` 命令照常汇报）。
         sync: true
 
-        # Minutes between automatic refreshes. 0 (the default) refreshes only at
-        # load, on configuration change, and on `/aperture refresh`.
+        # 自动刷新间隔（分钟）。0（默认）表示只在加载时、配置变更时和 `/aperture refresh` 时刷新。
         refreshIntervalMinutes: 0

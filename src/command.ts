@@ -1,9 +1,8 @@
 /**
- * The `/aperture` command.
+ * `/aperture` 命令。
  *
- * Discovery is silent by design — it runs at load and on configuration change
- * and publishes what it finds — so the command is the surface that makes it
- * observable and the only way to force a refresh without editing a file.
+ * 发现过程按设计是静默的——它在加载时与配置变更时运行，并发布自己发现的内容——因此
+ * 该命令是让它可被观测的界面，也是不编辑文件就能强制刷新的唯一途径。
  *
  * @module dsh-aperture/command
  */
@@ -14,24 +13,24 @@ import type { ResolvedConfig } from './config.ts';
 import { formatModels, formatStatus } from './report.ts';
 import { message, type ApertureRuntime } from './runtime.ts';
 
-/** Registered command name, without the leading slash. */
+/** 注册的命令名，不含前导斜杠。 */
 export const COMMAND_NAME = 'aperture';
 
-/** The sub-commands the command accepts. */
+/** 该命令接受的子命令。 */
 const USAGE = [
-  'usage: /aperture [status|models|refresh|remove]',
-  '  status   what the last refresh did (default)',
-  '  models   every discovered model, its route, and where each fact came from',
-  '  refresh  discover again and republish',
-  '  remove   withdraw this plugin\'s routes from the llm-pi-ai settings section',
+  '用法：/aperture [status|models|refresh|remove]',
+  '  status   最近一次刷新做了什么（默认）',
+  '  models   每个已发现的模型、它所在的路由，以及每条事实的来源',
+  '  refresh  重新发现并重新发布',
+  '  remove   从 llm-pi-ai 设置配置段中撤出本插件的路由',
 ].join('\n');
 
 /**
- * Register `/aperture` on the command registry.
+ * 在命令注册表上注册 `/aperture`。
  *
- * @param ctx - a context that has the `commands` service.
- * @param runtime - the discovery runtime.
- * @param config - thunk returning the currently authoritative configuration.
+ * @param ctx - 带有 `commands` 服务的上下文。
+ * @param runtime - 发现运行时。
+ * @param config - 返回当前生效配置的活引用（thunk）。
  */
 export function registerApertureCommand(
   ctx: Context,
@@ -40,7 +39,7 @@ export function registerApertureCommand(
 ): void {
   ctx.commands.register({
     name: COMMAND_NAME,
-    description: 'Aperture model discovery: status, discovered models, refresh, remove',
+    description: 'Aperture 模型发现：状态、已发现的模型、刷新、移除',
     recordInput: false,
     handler: async ({ rawInput }): Promise<CommandResult> => {
       const [subCommand] = rawInput.trim().split(/\s+/u).filter((token) => token.length > 0);
@@ -52,17 +51,17 @@ export function registerApertureCommand(
           case 'models':
             return { kind: 'success', text: formatModels(runtime.last()) };
           case 'refresh': {
-            const outcome = await runtime.refresh('command');
+            const outcome = await runtime.refresh('命令');
             const text = formatStatus(outcome, config());
             return outcome.ok ? { kind: 'success', text } : { kind: 'error', text };
           }
           case 'remove':
             return { kind: 'success', text: await runtime.remove() };
           default:
-            return { kind: 'error', text: `unknown sub-command "${subCommand}"\n${USAGE}` };
+            return { kind: 'error', text: `未知子命令 "${subCommand}"\n${USAGE}` };
         }
       } catch (error) {
-        return { kind: 'error', text: `/aperture ${subCommand ?? ''} failed: ${message(error)}` };
+        return { kind: 'error', text: `/aperture ${subCommand ?? ''} 执行失败：${message(error)}` };
       }
     },
   });

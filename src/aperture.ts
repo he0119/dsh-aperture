@@ -1,10 +1,9 @@
 /**
- * The endpoint interrogation: `GET {instance}/v1/models`.
+ * 端点问询：`GET {instance}/v1/models`。
  *
- * This is the only network call the plugin makes for discovery, and it is
- * deliberately the same listing endpoint `dsh-llm-pi-ai`'s own "fetch available
- * models" action reads — that action adopts one draft at a time, while this
- * plugin is what makes the catalog refresh itself.
+ * 这是插件为发现过程发出的唯一网络调用，并且刻意与 `dsh-llm-pi-ai` 自己的
+ * "fetch available models" 动作所读取的清单端点相同 —— 那个动作一次只采纳一份
+ * 草稿，而本插件才是让清单自行刷新的东西。
  *
  * @module dsh-aperture/aperture
  */
@@ -12,35 +11,35 @@
 import { asRecord } from './metadata/utils.ts';
 import { buildModelsEndpoint } from './url.ts';
 
-/** Bounded read: a model listing far beyond this is not one. */
+/** 有界读取：远超此值的模型清单不是模型清单。 */
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
-/** One successful listing. */
+/** 一份成功的清单。 */
 export interface ModelsListing {
-  /** Raw model entries, in endpoint order. */
+  /** 按端点顺序排列的原始模型条目。 */
   readonly entries: readonly unknown[];
-  /** The URL that answered. */
+  /** 应答的 URL。 */
   readonly endpoint: string;
 }
 
-/** Request options for one interrogation. */
+/** 一次问询的请求选项。 */
 export interface FetchModelsOptions {
-  /** Headers sent with the request, beyond `accept`. */
+  /** 随请求发送的、`accept` 之外的请求头。 */
   readonly headers?: Readonly<Record<string, string>>;
-  /** Abort the request after this many milliseconds. */
+  /** 经过这么多毫秒后中止请求。 */
   readonly timeoutMs?: number;
-  /** Caller cancellation, composed with the timeout. */
+  /** 调用方的取消信号，与超时组合使用。 */
   readonly signal?: AbortSignal;
 }
 
 /**
- * Interrogate one Aperture instance for the models it serves.
+ * 问询一个 Aperture 实例，获取它服务的模型。
  *
- * @param instanceRoot - a normalized instance root.
- * @param options - headers, timeout, and caller cancellation.
- * @returns the raw entries in endpoint order.
- * @throws Error naming the endpoint when the request fails, the endpoint
- *   refuses it, the reply is too large, or the body is not a model listing.
+ * @param instanceRoot - 一个已归一化的实例根。
+ * @param options - 请求头、超时与调用方取消信号。
+ * @returns 按端点顺序排列的原始条目。
+ * @throws 当请求失败、端点拒绝、应答过大，或响应体不是模型清单时，抛出带有端点
+ *   名称的 Error。
  */
 export async function fetchModelsListing(
   instanceRoot: string,
@@ -62,51 +61,50 @@ export async function fetchModelsListing(
       signal,
     });
   } catch (error) {
-    throw new Error(`${endpoint} could not be reached: ${describeError(error)}`, { cause: error });
+    throw new Error(`${endpoint} 无法访问：${describeError(error)}`, { cause: error });
   }
 
   if (!response.ok) {
     const detail = await readErrorDetail(response);
-    throw new Error(`${endpoint} answered HTTP ${response.status}${detail === undefined ? '' : `: ${detail}`}`);
+    throw new Error(`${endpoint} 应答 HTTP ${response.status}${detail === undefined ? '' : `: ${detail}`}`);
   }
 
   const declaredLength = Number(response.headers.get('content-length') ?? '');
   if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
-    throw new Error(`${endpoint} answered ${declaredLength} bytes, beyond the ${MAX_RESPONSE_BYTES}-byte listing bound`);
+    throw new Error(`${endpoint} 应答了 ${declaredLength} 字节，超出 ${MAX_RESPONSE_BYTES} 字节的清单上限`);
   }
 
   const text = await response.text();
   if (text.length > MAX_RESPONSE_BYTES) {
-    throw new Error(`${endpoint} answered ${text.length} bytes, beyond the ${MAX_RESPONSE_BYTES}-byte listing bound`);
+    throw new Error(`${endpoint} 应答了 ${text.length} 字节，超出 ${MAX_RESPONSE_BYTES} 字节的清单上限`);
   }
 
   let body: unknown;
   try {
     body = JSON.parse(text);
   } catch (error) {
-    throw new Error(`${endpoint} did not answer JSON: ${describeError(error)}`, { cause: error });
+    throw new Error(`${endpoint} 没有应答 JSON：${describeError(error)}`, { cause: error });
   }
 
   return { entries: readEntries(body, endpoint), endpoint };
 }
 
 /**
- * Read the model rows out of a listing body.
+ * 从清单响应体中读取出模型行。
  *
- * A `data` array wins when present; otherwise a `models` object is read, and
- * only its object-valued properties count as models. Every other shape is
- * refused rather than silently read as an empty catalog, because an empty
- * catalog would be written over a working one.
+ * 存在 `data` 数组时以它为准；否则读取 `models` 对象，且只有值为对象的属性才算
+ * 模型。其他任何形状都会被拒绝，而不是被静默当作空清单读取，因为空清单会覆盖掉
+ * 一份可用的清单。
  *
- * @param body - the parsed response.
- * @param endpoint - the URL that answered, for the diagnostic.
- * @returns the raw model rows in endpoint order.
- * @throws Error when the body is not a recognizable listing.
+ * @param body - 已解析的响应。
+ * @param endpoint - 应答的 URL，用于诊断。
+ * @returns 按端点顺序排列的原始模型行。
+ * @throws 当响应体不是可识别的清单时抛出 Error。
  */
 export function readEntries(body: unknown, endpoint: string): readonly unknown[] {
   const record = asRecord(body);
   if (!record) {
-    throw new Error(`${endpoint} did not answer a JSON object`);
+    throw new Error(`${endpoint} 没有应答 JSON 对象`);
   }
   if (Array.isArray(record.data)) {
     return record.data;
@@ -115,10 +113,10 @@ export function readEntries(body: unknown, endpoint: string): readonly unknown[]
   if (models) {
     return Object.values(models).filter((value) => asRecord(value) !== undefined);
   }
-  throw new Error(`${endpoint} answered neither a "data" array nor a "models" object`);
+  throw new Error(`${endpoint} 既没有应答 "data" 数组，也没有应答 "models" 对象`);
 }
 
-/** Read a bounded slice of an error body for the diagnostic. */
+/** 读取错误响应体的一小段，用于诊断。 */
 async function readErrorDetail(response: Response): Promise<string | undefined> {
   try {
     const text = await response.text();
@@ -129,7 +127,7 @@ async function readErrorDetail(response: Response): Promise<string | undefined> 
   }
 }
 
-/** Render an unknown throwable as a one-line reason. */
+/** 把一个未知的可抛出对象渲染成单行原因。 */
 function describeError(error: unknown): string {
   if (error instanceof Error) {
     const cause = error.cause;

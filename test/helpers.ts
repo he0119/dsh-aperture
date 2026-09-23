@@ -1,10 +1,9 @@
 /**
- * Shared fixture loading for the pipeline tests.
+ * 供流水线测试共享的夹具加载。
  *
- * Fixtures are read rather than imported so neither the tests nor the build
- * depend on JSON import attributes: `aperture-models.json` is a verbatim
- * response from a live Aperture instance, and `models-dev.json` is the subset
- * of the real models.dev document that those ids resolve against.
+ * 夹具采用读取而非导入的方式，因此测试与构建都不依赖 JSON 导入属性：
+ * `aperture-models.json` 是来自真实 Aperture 实例的原样响应，
+ * `models-dev.json` 则是这些 id 所解析依据的 models.dev 真实文档子集。
  *
  * @module dsh-aperture/test/helpers
  */
@@ -16,22 +15,22 @@ import type { BuildOptions } from '../src/types.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** Read and parse one fixture. */
+/** 读取并解析一个夹具。 */
 export function fixture<T>(name: string): T {
   return JSON.parse(readFileSync(join(HERE, 'fixtures', name), 'utf8')) as T;
 }
 
-/** The `data` array of the recorded Aperture listing. */
+/** 录制下来的 Aperture 清单中的 `data` 数组。 */
 export function apertureEntries(): unknown[] {
   return fixture<{ data: unknown[] }>('aperture-models.json').data;
 }
 
-/** The recorded models.dev document. */
+/** 录制下来的 models.dev 文档。 */
 export function catalogDocument(): unknown {
   return fixture<unknown>('models-dev.json');
 }
 
-/** Build options with every field defaulted, so tests state only what they exercise. */
+/** 所有字段都取默认值的构建选项，使测试只陈述自身要验证的内容。 */
 export function options(overrides: Partial<BuildOptions> = {}): BuildOptions {
   return {
     models: [],

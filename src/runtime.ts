@@ -1,17 +1,13 @@
 /**
- * The discovery runtime: one refresh at a time, one remembered outcome.
+ * 发现运行时：同一时刻只跑一次刷新，只记住一个结果。
  *
- * Refreshes come from four directions — plugin load, a settings change, the
- * refresh interval, and the `/aperture` command — and two of them can easily
- * overlap, because a settings change committed by this plugin's own write wakes
- * the same watcher that triggered the write. So refreshes are single-flight:
- * a request that arrives mid-refresh records itself as the next run instead of
- * starting a second one, and the loop re-runs once with the newest
- * configuration.
+ * 刷新来自四个方向——插件加载、设置变更、刷新间隔，以及 `/aperture` 命令——其中两个
+ * 很容易重叠，因为本插件自己写入并提交的设置变更会唤醒触发这次写入的同一个 watcher。
+ * 因此刷新是单飞（single-flight）的：在刷新过程中到达的请求会把自己记为下一次运行，
+ * 而不是启动第二次，循环会用最新配置再跑一遍。
  *
- * The remembered outcome is what `/aperture` reports. It is deliberately not a
- * cache of the catalog: the catalog lives in the settings document, which is
- * what actually serves requests.
+ * 记住的结果就是 `/aperture` 所报告的内容。它刻意不是清单（catalog）的缓存：清单存放
+ * 在设置文档里，而真正服务请求的正是这份文档。
  *
  * @module dsh-aperture/runtime
  */
@@ -25,7 +21,7 @@ import { buildRegistry } from './registry.ts';
 import { applySync, clearRoutes, type SyncOutcome } from './sync.ts';
 import type { DiscoveredModel } from './types.ts';
 
-/** Minimal logging surface the runtime writes diagnostics through. */
+/** 运行时用来输出诊断信息的最小日志接口。 */
 export interface RuntimeLogger {
   error(message: string, ...rest: unknown[]): void;
   info(message: string, ...rest: unknown[]): void;
@@ -33,47 +29,47 @@ export interface RuntimeLogger {
   debug(message: string, ...rest: unknown[]): void;
 }
 
-/** One completed refresh. */
+/** 一次已完成的刷新。 */
 export interface RefreshOutcome {
-  /** What asked for this refresh. */
+  /** 触发这次刷新的来源。 */
   readonly trigger: string;
-  /** Whether discovery and publication both succeeded. */
+  /** 发现与发布是否都成功。 */
   readonly ok: boolean;
-  /** When it finished. */
+  /** 完成时间。 */
   readonly at: Date;
-  /** How long it took. */
+  /** 耗时。 */
   readonly durationMs: number;
-  /** The URL that answered, when one did. */
+  /** 应答的 URL（如果有）。 */
   readonly endpoint?: string;
-  /** Number of model rows the gateway listed. */
+  /** 网关列出的模型行数。 */
   readonly listed: number;
-  /** Every normalized model. */
+  /** 全部归一化后的模型。 */
   readonly models: readonly DiscoveredModel[];
-  /** The routes the plan published. */
+  /** 该方案发布的路由。 */
   readonly routes: readonly RoutePlan[];
-  /** Models no route can serve. */
+  /** 没有任何路由能服务的模型。 */
   readonly unserved: readonly DiscoveredModel[];
-  /** What the catalog contributed. */
+  /** 清单提供的内容。 */
   readonly catalog: CatalogLoad;
-  /** What the settings write did, when one was attempted. */
+  /** 设置写入的结果（如果尝试过写入）。 */
   readonly sync?: SyncOutcome;
-  /** The failure, when the refresh failed. */
+  /** 刷新失败时的错误。 */
   readonly error?: string;
 }
 
-/** Everything the runtime reads from its host. */
+/** 运行时从宿主读取的全部内容。 */
 export interface RuntimeDeps {
-  /** The currently authoritative configuration. */
+  /** 当前生效的配置，每次刷新都会重新读取。 */
   readonly config: () => ResolvedConfig;
-  /** The settings service, once it exists. */
-  readonly settings: () => SettingsProvider | undefined;
-  /** Named logger. */
+  /** 设置服务；插件把它声明为必需注入。 */
+  readonly settings: SettingsProvider;
+  /** 具名 logger。 */
   readonly logger: RuntimeLogger;
-  /** models.dev cache, shared across refreshes. */
+  /** models.dev 缓存，在各次刷新之间共享。 */
   readonly catalog: ModelCatalog;
 }
 
-/** Single-flight discovery and publication. */
+/** 单飞（single-flight）的发现与发布。 */
 export class ApertureRuntime {
   private readonly deps: RuntimeDeps;
   private running: Promise<RefreshOutcome> | undefined;
@@ -81,21 +77,21 @@ export class ApertureRuntime {
   private latest: RefreshOutcome | undefined;
 
   /**
-   * @param deps - host services and the configuration thunk.
+   * @param deps - 宿主服务与配置活引用（thunk）。
    */
   constructor(deps: RuntimeDeps) {
     this.deps = deps;
   }
 
-  /** The most recent completed refresh, when one has completed. */
+  /** 最近一次已完成的刷新（如果完成过）。 */
   last(): RefreshOutcome | undefined {
     return this.latest;
   }
 
   /**
-   * Refresh, or queue a refresh behind the one already running.
-   * @param trigger - what asked; reported by `/aperture`.
-   * @returns the outcome of the refresh this call participated in.
+   * 刷新；若已有刷新在运行，则把本次刷新排在其后。
+   * @param trigger - 触发来源；由 `/aperture` 报告。
+   * @returns 本次调用所参与的那次刷新的结果。
    */
   async refresh(trigger: string): Promise<RefreshOutcome> {
     if (this.running !== undefined) {
@@ -116,36 +112,31 @@ export class ApertureRuntime {
   }
 
   /**
-   * Withdraw this plugin's routes from the settings document.
-   * @returns a human-readable result for the command surface.
+   * 从设置文档中撤出本插件的路由。
+   * @returns 供命令界面展示的可读结果。
    */
   async remove(): Promise<string> {
-    const settings = this.deps.settings();
-    if (settings === undefined) {
-      return 'the settings service is not mounted; nothing to remove';
-    }
     const config = this.deps.config();
     const owned = [config.route, config.anthropicRoute];
     try {
-      const outcome = await clearRoutes(settings, owned);
+      const outcome = await clearRoutes(this.deps.settings, owned);
       return outcome.applied
-        ? `removed ${outcome.ops} route(s) from the "${PI_AI_NAMESPACE}" section: ${owned.join(', ')}`
-        : `nothing removed: ${outcome.reason ?? 'unknown reason'}`;
+        ? `已从 "${PI_AI_NAMESPACE}" 配置段移除 ${outcome.ops} 条路由：${owned.join(', ')}`
+        : `未移除任何内容：${outcome.reason ?? '原因未知'}`;
     } catch (error) {
-      return `removing the routes failed: ${message(error)}`;
+      return `移除路由失败：${message(error)}`;
     }
   }
 
-  /** One refresh, never throwing. */
+  /** 执行一次刷新，绝不抛出异常。 */
   private async run(trigger: string): Promise<RefreshOutcome> {
     const started = Date.now();
     const at = new Date();
     try {
       return await this.execute(trigger, started, at);
     } catch (error) {
-      // Nothing above may reject: every caller is a fire-and-forget `void`, and
-      // an unhandled rejection inside the host's loader is not an acceptable
-      // way to report a bad catalog.
+      // 上面的任何代码都不允许 reject：所有调用方都是即发即忘的 `void`，而在宿主的
+      // loader 里出现未处理的 rejection 并不是报告清单损坏的可接受方式。
       const outcome: RefreshOutcome = {
         trigger,
         ok: false,
@@ -155,16 +146,16 @@ export class ApertureRuntime {
         models: [],
         routes: [],
         unserved: [],
-        catalog: { entries: 0, reason: 'not reached' },
+        catalog: { entries: 0, reason: '未执行' },
         error: message(error),
       };
       this.latest = outcome;
-      this.deps.logger.warn('refresh failed: %s', outcome.error ?? '');
+      this.deps.logger.warn('刷新失败：%s', outcome.error ?? '');
       return outcome;
     }
   }
 
-  /** The body of one refresh. */
+  /** 一次刷新的主体。 */
   private async execute(trigger: string, started: number, at: Date): Promise<RefreshOutcome> {
     const config = this.deps.config();
 
@@ -178,8 +169,8 @@ export class ApertureRuntime {
         models: [],
         routes: [],
         unserved: [],
-        catalog: { entries: 0, reason: 'not attempted' },
-        error: config.rawBaseUrl.length === 0 ? 'no baseUrl is configured' : `baseUrl "${config.rawBaseUrl}" is not a usable URL`,
+        catalog: { entries: 0, reason: '未尝试' },
+        error: config.rawBaseUrl.length === 0 ? '未配置 baseUrl' : `baseUrl "${config.rawBaseUrl}" 不是可用的 URL`,
       };
       this.latest = outcome;
       return outcome;
@@ -207,9 +198,9 @@ export class ApertureRuntime {
         error: message(error),
       };
       this.latest = outcome;
-      // A failed refresh publishes nothing: the catalog already in the settings
-      // document keeps serving, which a transient network error must not undo.
-      this.deps.logger.warn('discovery failed; keeping the published catalog: %s', outcome.error ?? '');
+      // 失败的刷新不发布任何内容：设置文档中已有的清单继续提供服务，一次瞬时网络错误
+      // 不得把它撤销。
+      this.deps.logger.warn('发现失败；保留已发布的清单：%s', outcome.error ?? '');
       return outcome;
     }
 
@@ -250,39 +241,35 @@ export class ApertureRuntime {
       routes: plan.routes,
       unserved: plan.unserved,
       catalog,
-      ...(sync === undefined ? {} : { sync }),
+      sync,
     };
     this.latest = outcome;
 
     this.deps.logger.info(
-      'discovered %d model(s) from %s; published %d route(s)%s',
+      '发现 %d 个模型（来自 %s）；已发布 %d 条路由%s',
       registry.models.length,
       endpoint,
       plan.routes.length,
-      sync?.applied === true ? '' : ` (${sync?.reason ?? 'not written'})`,
+      sync.applied ? '' : ` （${sync.reason ?? '未写入'}）`,
     );
     return outcome;
   }
 
-  /** Write the plan, or explain why nothing was written. */
-  private async publish(config: ResolvedConfig, plan: ProfilePlan): Promise<SyncOutcome | undefined> {
+  /** 写入方案，或说明为什么没有写入任何内容。 */
+  private async publish(config: ResolvedConfig, plan: ProfilePlan): Promise<SyncOutcome> {
     if (!config.sync) {
-      return { applied: false, ops: 0, routes: [], reason: 'sync is disabled' };
-    }
-    const settings = this.deps.settings();
-    if (settings === undefined) {
-      return { applied: false, ops: 0, routes: [], reason: 'the settings service is not mounted' };
+      return { applied: false, ops: 0, routes: [], reason: '同步已禁用' };
     }
     try {
-      return await applySync(settings, plan.routes, plan.ownedRoutes);
+      return await applySync(this.deps.settings, plan.routes, plan.ownedRoutes);
     } catch (error) {
-      this.deps.logger.warn('publishing the discovered catalog failed: %s', message(error));
+      this.deps.logger.warn('发布发现的清单失败：%s', message(error));
       return { applied: false, ops: 0, routes: [], reason: message(error) };
     }
   }
 }
 
-/** Render an unknown throwable as a one-line reason. */
+/** 把未知的可抛出对象渲染为单行原因。 */
 export function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

@@ -1,15 +1,13 @@
 /**
- * Extraction of the facts an Aperture model entry states about itself.
+ * 提取 Aperture 模型条目对自身所述的事实。
  *
- * The gateway's listing is the authority for capacities: it knows what the
- * proxy in front of each upstream will accept, and it stays right when a model
- * is swapped upstream. So every field names as many spellings as the gateway
- * has been seen to use, and the first positive answer wins.
+ * 网关的列表是容量的权威来源：它知道每个上游之前的代理会接受什么，并且在上游
+ * 更换模型时依然正确。因此每个字段都会列出网关被观察到使用过的所有写法，第一个
+ * 成立的答案胜出。
  *
- * The spellings below are a superset of the reference VS Code extension's list
- * plus the ones this plugin actually observed on a live Aperture instance
- * (`context_window_tokens`, `max_output_tokens`, `display_name`), which the
- * reference's list predates.
+ * 下面的写法是参考 VS Code 扩展清单的超集，再加上本插件在真实 Aperture 实例上
+ * 实际观察到的几个（`context_window_tokens`、`max_output_tokens`、`display_name`），
+ * 参考的清单早于它们。
  *
  * @module dsh-aperture/metadata/extract
  */
@@ -17,25 +15,25 @@
 import type { Modality } from '../types.ts';
 import { asRecord, firstBoolean, firstPositiveInteger, firstString, stringValue } from './utils.ts';
 
-/** Capacity facts one model entry states. */
+/** 一个模型条目所述的容量事实。 */
 export interface ExtractedLimits {
-  /** Maximum combined request and response context, when the entry states one. */
+  /** 请求与响应合计的最大上下文窗口，条目给出时才有。 */
   contextWindow?: number;
-  /** Maximum output tokens, when the entry states one. */
+  /** 最大输出 token 数，条目给出时才有。 */
   maxTokens?: number;
 }
 
-/** Capability facts one model entry states. */
+/** 一个模型条目所述的能力事实。 */
 export interface ExtractedCapabilities {
-  /** Whether the entry claims reasoning-effort control. */
+  /** 条目是否声称支持推理强度控制。 */
   reasoning?: boolean;
-  /** Whether the entry claims tool calling. */
+  /** 条目是否声称支持工具调用。 */
   toolCalling?: boolean;
-  /** Request modalities the entry claims. */
+  /** 条目声称的请求模态。 */
   input?: Modality[];
 }
 
-/** The nested containers every Aperture entry may hide its facts in. */
+/** 每个 Aperture 条目可能用来藏匿其事实的嵌套容器。 */
 function containers(record: Record<string, unknown>): {
   metadata: Record<string, unknown> | undefined;
   capabilities: Record<string, unknown> | undefined;
@@ -56,11 +54,11 @@ function containers(record: Record<string, unknown>): {
 }
 
 /**
- * Read the capacities one entry states, at the top level or nested under
- * `metadata`, `limit`, or `limits`.
+ * 读取一个条目所述的容量，可位于顶层，或嵌套在 `metadata`、`limit`、`limits`
+ * 之下。
  *
- * @param value - one raw model entry.
- * @returns the stated capacities, or `undefined` when it states neither.
+ * @param value - 一条原始模型条目。
+ * @returns 所述的容量；两者都未给出时为 `undefined`。
  */
 export function extractLimits(value: unknown): ExtractedLimits | undefined {
   const record = asRecord(value);
@@ -72,10 +70,10 @@ export function extractLimits(value: unknown): ExtractedLimits | undefined {
   const metadataLimits = asRecord(metadata?.limits);
 
   const contextWindow = firstPositiveInteger([
-    // Observed on a live Aperture listing.
+    // 在真实 Aperture 列表上观察到的。
     record.context_window_tokens,
     record.max_context_tokens,
-    // The reference extension's spellings.
+    // 参考扩展的写法。
     record.maxInputTokens,
     record.max_input_tokens,
     record.input_token_limit,
@@ -124,7 +122,7 @@ export function extractLimits(value: unknown): ExtractedLimits | undefined {
   };
 }
 
-/** Read the display name an entry states (`display_name` is Aperture's spelling). */
+/** 读取条目所述的显示名（`display_name` 是 Aperture 的写法）。 */
 export function extractDisplayName(value: unknown): string | undefined {
   const record = asRecord(value);
   if (!record) {
@@ -134,7 +132,7 @@ export function extractDisplayName(value: unknown): string | undefined {
   return firstString([record.display_name, record.displayName, record.name, metadata?.display_name, metadata?.name]);
 }
 
-/** Read the endpoint paths an entry advertises. */
+/** 读取条目公布的端点路径。 */
 export function extractEndpoints(value: unknown): string[] {
   const record = asRecord(value);
   const raw = record?.supported_endpoints;
@@ -147,7 +145,7 @@ export function extractEndpoints(value: unknown): string[] {
   });
 }
 
-/** Read the upstream provider identity an entry reports. */
+/** 读取条目上报的上游 provider 身份。 */
 export function extractProvider(value: unknown): { id?: string; name?: string } | undefined {
   const record = asRecord(value);
   if (!record) {
@@ -164,15 +162,14 @@ export function extractProvider(value: unknown): { id?: string; name?: string } 
 }
 
 /**
- * Read the capability facts one entry states.
+ * 读取一个条目所述的能力事实。
  *
- * `reasoning: true` is the reference extension's signal and models.dev's; a
- * `thinking` flag and a nested `capabilities` block are the gateway's own
- * vocabulary. Vision is read from a `modalities.input` list and from the
- * `vision` / `supports_vision` spellings.
+ * `reasoning: true` 是参考扩展与 models.dev 的信号；`thinking` 标志和嵌套的
+ * `capabilities` 块则是网关自己的词汇。视觉能力从 `modalities.input` 列表以及
+ * `vision` / `supports_vision` 写法读取。
  *
- * @param value - one raw model entry.
- * @returns the stated capabilities, or `undefined` when it states none.
+ * @param value - 一条原始模型条目。
+ * @returns 所述的能力；未给出任何能力时为 `undefined`。
  */
 export function extractCapabilities(value: unknown): ExtractedCapabilities | undefined {
   const record = asRecord(value);
@@ -217,7 +214,7 @@ export function extractCapabilities(value: unknown): ExtractedCapabilities | und
   };
 }
 
-/** Read declared request modalities from every spelling the two catalogs use. */
+/** 从两个清单使用的所有写法中读取声明的请求模态。 */
 function extractInput(
   record: Record<string, unknown>,
   metadata: Record<string, unknown> | undefined,
@@ -268,13 +265,13 @@ function extractInput(
   return undefined;
 }
 
-/** Whether one entry is a usable model row at all. */
+/** 一个条目究竟是不是可用的模型行。 */
 export function extractModelId(value: unknown): string | undefined {
   const record = asRecord(value);
   return record === undefined ? undefined : stringValue(record.id);
 }
 
-/** Read the pricing summary the reference extension renders into one detail line. */
+/** 读取参考扩展渲染为一行详情文本的价格摘要。 */
 export function extractPricingDetail(value: unknown): string | undefined {
   const record = asRecord(value);
   const pricing = asRecord(record?.pricing);

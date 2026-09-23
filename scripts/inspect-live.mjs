@@ -1,10 +1,10 @@
 /**
- * Manual walkthrough harness: boot the real stack against a live gateway and
- * print what the plugin published and what the LLM service resolves.
+ * 手动走查用的脚手架：对着真实网关启动真实服务栈，打印出插件发布了什么、
+ * LLM 服务又解析出了什么。
  *
- * Not a test — `test/live.test.ts` is the assertion-carrying version. This one
- * exists so a human can look at the generated section when something moves, and
- * it loads the *built* `lib/`, which is the artifact a profile actually loads.
+ * 这不是测试——带断言的那份是 `test/live.test.ts`。它存在的意义是：东西一旦变动，
+ * 人能亲眼看一眼生成的配置段；而且它加载的是**构建产物** `lib/`，也就是 profile
+ * 实际加载的那个文件。
  *
  * ```sh
  * npm run build && DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run inspect
@@ -50,13 +50,13 @@ console.log('=== settings.yaml ===');
 console.log(text);
 console.log('=== providers ===');
 console.log(ctx.llm.listProviders());
-console.log('=== aperture models ===');
+console.log('=== aperture 的模型 ===');
 console.log((await ctx.llm.listModels('aperture')).map((model) => model.id));
-console.log('=== resolved deepseek-v4-pro ===');
+console.log('=== 解析结果 deepseek-v4-pro ===');
 console.log(JSON.stringify(await ctx.llm.resolveModelInfo('aperture', 'deepseek-v4-pro'), undefined, 2));
-console.log('=== resolved deepseek-flash ===');
+console.log('=== 解析结果 deepseek-flash ===');
 console.log(JSON.stringify(await ctx.llm.resolveModelInfo('aperture', 'deepseek-flash'), undefined, 2));
-console.log('=== resolved MiniMax-M3 ===');
+console.log('=== 解析结果 MiniMax-M3 ===');
 console.log(JSON.stringify(await ctx.llm.resolveModelInfo('aperture-anthropic', 'MiniMax-M3'), undefined, 2));
-console.log(`settings dir: ${directory}`);
+console.log(`设置目录：${directory}`);
 process.exit(0);

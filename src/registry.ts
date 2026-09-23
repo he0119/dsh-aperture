@@ -1,28 +1,23 @@
 /**
- * The normalization stage: one raw gateway entry plus catalog metadata plus
- * configuration becomes one `DiscoveredModel`.
+ * 归一化阶段：一条原始网关条目，加上清单元数据，再加上配置，变成一个
+ * `DiscoveredModel`。
  *
- * Three decisions live here and nowhere else.
+ * 三个决策只在这里做出，别处没有。
  *
- * **Which endpoint a model answers on.** Aperture reports the paths each model
- * is reachable through, and refuses the wrong one with a 404 that names the
- * right one. A Gemini model served only through the native
- * `generateContent` transport cannot be reached by `dsh-llm-pi-ai` at all;
- * publishing it on the OpenAI-compatible route would produce a model that fails
- * on every request. So the advertised endpoints decide the route, and a model
- * with no route this plugin can serve is kept for the report but publishes
- * nowhere.
+ * **模型从哪个端点应答。** Aperture 会报告每个模型可通过哪些路径访问，并用一个
+ * 404 拒绝错误的路径、同时给出正确的路径。只通过原生 `generateContent`
+ * 传输服务的 Gemini 模型，`dsh-llm-pi-ai` 根本够不到；把它发布到
+ * OpenAI 兼容路由上，只会得到一个每个请求都失败的模型。因此由通告的端点决定
+ * 路由，而没有路由可供本插件服务的模型会保留在报告里，但不发布到任何地方。
  *
- * **Who sizes a model.** Aperture wins, because the gateway knows what the
- * proxy in front of each upstream accepts; models.dev answers only what
- * Aperture did not state; the configured fallback answers last. The fallback
- * sizes `contextWindow` only — an output cap nobody stated stays absent, so the
- * adapter treats the route fallback as a capability instead of capping every
- * request at an invented number.
+ * **谁来决定模型的容量。** Aperture 优先，因为网关知道每个上游前面的代理接受
+ * 什么；models.dev 只回答 Aperture 没有说明的部分；配置的兜底值最后回答。兜底
+ * 值只设定 `contextWindow` —— 没人声明过的输出上限保持缺失，这样适配器会把路由
+ * 兜底当作一种能力，而不是把每个请求都限制在一个凭空捏造的数字上。
  *
- * **Who says a model reasons.** Aperture, then models.dev, then the plugin's
- * `reasoning` switch. A wrong "yes" costs a 400 when a user selects an effort,
- * so nothing is guessed from a model's name.
+ * **谁来决定模型是否会推理。** 依次是 Aperture、models.dev、插件的 `reasoning`
+ * 开关。错误的「是」会让用户选择推理档位时付出一个 400 的代价，因此不从模型名
+ * 猜测任何东西。
  *
  * @module dsh-aperture/registry
  */
@@ -45,27 +40,27 @@ import type {
   ModelProvenance,
 } from './types.ts';
 
-/** The endpoint every OpenAI-compatible model must advertise. */
+/** 每个 OpenAI 兼容模型都必须通告的端点。 */
 const OPENAI_ENDPOINT = '/v1/chat/completions';
 
-/** The endpoint every Anthropic Messages model must advertise. */
+/** 每个 Anthropic Messages 模型都必须通告的端点。 */
 const ANTHROPIC_ENDPOINT = '/v1/messages';
 
-/** The outcome of one normalization pass. */
+/** 一次归一化的结果。 */
 export interface RegistryResult {
-  /** Every model, including ones no route can serve (their `protocol` is absent). */
+  /** 所有模型，包括没有路由能服务的那些（它们的 `protocol` 缺失）。 */
   readonly models: readonly DiscoveredModel[];
-  /** The subset no configured route can serve. */
+  /** 没有任何已配置路由能服务的子集。 */
   readonly unserved: readonly DiscoveredModel[];
 }
 
 /**
- * Normalize, enrich, and merge one gateway listing.
+ * 归一化、补全并合并一份网关清单。
  *
- * @param entries - raw model rows in endpoint order.
- * @param options - configuration knobs.
- * @param lookup - catalog metadata lookup, when one loaded.
- * @returns every model with its provenance, plus the ones no route can serve.
+ * @param entries - 按端点顺序排列的原始模型行。
+ * @param options - 配置开关。
+ * @param lookup - 清单元数据查找器，在已加载时提供。
+ * @returns 每个模型及其来源，以及没有路由能服务的那些模型。
  */
 export function buildRegistry(
   entries: readonly unknown[],
@@ -96,8 +91,8 @@ export function buildRegistry(
     models.push(fromEndpoint(entry, id, options, lookup));
   }
 
-  // A configured model the gateway did not advertise still joins the selector;
-  // that is how a gateway which under-reports its catalog stays usable.
+  // 配置里声明、但网关没有通告的模型仍会进入选择器；
+  // 网关少报自己的清单时，正是靠这一点保持可用。
   for (const [id] of configuredById) {
     if (seen.has(id)) {
       continue;
@@ -117,7 +112,7 @@ export function buildRegistry(
   };
 }
 
-/** Normalize one row the gateway advertised. */
+/** 归一化网关通告的一行。 */
 function fromEndpoint(
   entry: unknown,
   id: string,
@@ -151,7 +146,7 @@ function fromEndpoint(
   };
 }
 
-/** Normalize one model that exists only because configuration named it. */
+/** 归一化一个只因配置点名而存在的模型。 */
 function fromConfiguration(id: string, options: BuildOptions, lookup: CatalogLookup | undefined): DiscoveredModel {
   const catalog = lookupModel(lookup, id, undefined, options.modelAliases);
   return {
@@ -171,7 +166,7 @@ function fromConfiguration(id: string, options: BuildOptions, lookup: CatalogLoo
   };
 }
 
-/** Apply one configured entry's stated fields over a discovered model. */
+/** 把一条配置条目声明的字段应用到一个已发现的模型上。 */
 function applyConfigured(model: DiscoveredModel, configured: ConfiguredModel, options: BuildOptions): DiscoveredModel {
   const protocol = protocolFromConfigured(configured) ?? model.protocol;
   const contextWindow = configured.contextWindow ?? model.contextWindow;
@@ -201,12 +196,12 @@ function applyConfigured(model: DiscoveredModel, configured: ConfiguredModel, op
   };
 }
 
-/** Include an output cap only when something actually stated one. */
+/** 仅当确实有来源声明了输出上限时才带上它。 */
 function resolveOutputCap(maxTokens: number | undefined): { maxTokens?: number } {
   return maxTokens === undefined ? {} : { maxTokens };
 }
 
-/** Query the catalog lookup defensively: a lookup must never fail a refresh. */
+/** 防御式地查询清单查找器：查找器绝不能导致刷新失败。 */
 function lookupModel(
   lookup: CatalogLookup | undefined,
   id: string,
@@ -230,13 +225,13 @@ function lookupModel(
         return found;
       }
     } catch {
-      // A catalog lookup is advisory; a broken one must not fail a refresh.
+      // 清单查找只是参考性的；坏掉的查找器不能导致刷新失败。
     }
   }
   return undefined;
 }
 
-/** Provenance of the capacity facts. */
+/** 容量类事实的来源。 */
 function limitsSource(
   apertureLimits: { contextWindow?: number; maxTokens?: number } | undefined,
   catalog: ReturnType<CatalogLookup>,
@@ -247,7 +242,7 @@ function limitsSource(
   return catalog?.contextWindow !== undefined || catalog?.maxTokens !== undefined ? 'models.dev' : 'default';
 }
 
-/** Provenance of one capability fact that Aperture and the catalog both answer. */
+/** 一项 Aperture 与清单都会回答的能力事实的来源。 */
 function factsSource(apertureFact: unknown, catalogFact: unknown): ModelProvenance['reasoning'] {
   if (apertureFact !== undefined) {
     return 'aperture';
@@ -255,7 +250,7 @@ function factsSource(apertureFact: unknown, catalogFact: unknown): ModelProvenan
   return catalogFact !== undefined ? 'models.dev' : 'default';
 }
 
-/** Map one configured `api` spelling to a servable protocol. */
+/** 把配置里的一种 `api` 写法映射到可服务的协议。 */
 function protocolFromConfigured(configured: ConfiguredModel): ApertureProtocol | undefined {
   switch (configured.api?.trim()) {
     case 'openai-completions':
@@ -268,15 +263,14 @@ function protocolFromConfigured(configured: ConfiguredModel): ApertureProtocol |
 }
 
 /**
- * Decide which route a model's advertised endpoints fit.
+ * 决定一个模型通告的端点适配哪条路由。
  *
- * A listing that advertises no endpoints at all is treated as OpenAI-compatible,
- * because a gateway that does not report its transports is far more often a
- * plain Chat Completions proxy than anything else, and a model with no route is
- * unusable either way.
+ * 完全没有通告任何端点的清单按 OpenAI 兼容处理，因为不上报自身传输方式的网关，
+ * 绝大多数情况下就是一个普通的 Chat Completions 代理，而且没有路由的模型无论
+ * 如何都不可用。
  *
- * @param endpoints - the advertised endpoint paths.
- * @returns the servable protocol, or `undefined` when none fits.
+ * @param endpoints - 通告的端点路径。
+ * @returns 可服务的协议；没有适配的协议时为 `undefined`。
  */
 export function classifyProtocol(endpoints: readonly string[]): ApertureProtocol | undefined {
   if (endpoints.length === 0) {
@@ -291,13 +285,13 @@ export function classifyProtocol(endpoints: readonly string[]): ApertureProtocol
   return undefined;
 }
 
-/** Whether one advertised endpoint is (or ends with) a known path. */
+/** 判断一个通告的端点是否就是（或以之结尾）某个已知路径。 */
 function matchesEndpoint(advertised: string, known: string): boolean {
   const path = advertised.split('?')[0]?.replace(/\/+$/u, '') ?? '';
   return path === known || path.endsWith(known);
 }
 
-/** Render one model's provenance for the `/aperture models` report. */
+/** 为 `/aperture models` 报告渲染一个模型的来源。 */
 export function describeProvenance(provenance: ModelProvenance): string {
   const parts = [
     provenance.limits === 'default' ? undefined : `limits:${provenance.limits}`,
@@ -308,12 +302,12 @@ export function describeProvenance(provenance: ModelProvenance): string {
   return parts.length === 0 ? 'defaults' : parts.join(' ');
 }
 
-/** Whether a model belongs to the DeepSeek reasoning dialect. */
+/** 判断一个模型是否属于 DeepSeek 推理方言。 */
 export function isDeepSeekFamily(model: DiscoveredModel): boolean {
   return `${model.id} ${model.name} ${model.provider ?? ''}`.toLowerCase().includes('deepseek');
 }
 
-/** Render one modality list for a report line. */
+/** 为报告中的一行渲染一个模态列表。 */
 export function formatModalities(input: readonly Modality[]): string {
   return input.length === 0 ? 'none' : input.join('+');
 }

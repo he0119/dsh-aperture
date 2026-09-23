@@ -1,23 +1,20 @@
 /**
- * dsh-aperture: discover the models an Aperture gateway serves, and publish
- * them to DeepSeek Harness as `llm-pi-ai` provider routes.
+ * dsh-aperture：发现 Aperture 网关所服务的模型，并把它们作为 `llm-pi-ai` 的
+ * provider 路由发布给 DeepSeek Harness。
  *
- * Aperture is Tailscale's centralized LLM gateway: one endpoint in front of
- * every upstream a team is entitled to, authenticated by network identity
- * rather than by key. The harness can already *talk* to such a gateway — the
- * `dsh-llm-pi-ai` adapter speaks OpenAI-compatible Chat Completions and
- * Anthropic Messages, which is all Aperture exposes — but nothing makes the
- * catalog refresh itself: the adapter's own "fetch available models" action
- * adopts one draft the user is still editing, and its documented limitation is
- * that "a route's catalog never refreshes itself".
+ * Aperture 是 Tailscale 的集中式 LLM 网关：一个端点挡在团队有权使用的所有上游
+ * 前面，靠网络身份而不是密钥来认证。harness 本来就会跟这样的网关说话——
+ * `dsh-llm-pi-ai` 适配器讲 OpenAI 兼容的 Chat Completions 与 Anthropic Messages，
+ * 而这正是 Aperture 暴露的全部——但没有任何东西让模型清单自己刷新：适配器自带的
+ * “获取可用模型”动作只接受用户当时还在编辑的一份草稿，而它写在文档里的局限是
+ * “一条路由的模型清单永远不会自己刷新”。
  *
- * This plugin is that missing half. It reads `GET {baseUrl}/v1/models`, decides
- * per model which protocol the gateway actually serves it on, sizes and
- * describes it from the gateway's own fields plus models.dev, and writes the
- * result into `llm-pi-ai`'s provider dictionary — the document the harness
- * itself calls the thing that decides which providers run.
+ * 本插件就是缺的那一半。它读取 `GET {baseUrl}/v1/models`，逐个模型判断网关实际用
+ * 哪种协议服务它，再用网关自己的字段加上 models.dev 定容量、写描述，最后把结果写进
+ * `llm-pi-ai` 的 provider 字典——harness 自己把那份文档称作“决定哪些 provider 运行”
+ * 的东西。
  *
- * It converts no wire format. That is the point.
+ * 它不转换任何协议格式。这正是重点。
  *
  * ```yaml
  * - id: aperture
@@ -30,14 +27,13 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis';
-import type { SettingsProvider } from '@deepseek-ai/dsh-settings';
 import { fetchModelsListing } from './aperture.ts';
 import { ModelCatalog } from './catalog.ts';
 import { registerApertureCommand } from './command.ts';
 import { APERTURE_NAMESPACE, Config as ConfigSchema, resolveConfig, type Config } from './config.ts';
 import { buildProfilePlan } from './profile.ts';
 import { buildRegistry, classifyProtocol } from './registry.ts';
-import { ApertureRuntime, message, type RuntimeLogger } from './runtime.ts';
+import { ApertureRuntime, type RuntimeLogger } from './runtime.ts';
 
 export { fetchModelsListing } from './aperture.ts';
 export type { ModelsListing } from './aperture.ts';
@@ -60,48 +56,56 @@ export type { ConfiguredModel, DiscoveredModel, FactSource, Modality, ModelProve
 export { buildModelsEndpoint, buildRouteBaseUrl, normalizeBaseUrl } from './url.ts';
 export { Config } from './config.ts';
 
-/** Plugin name used in loader diagnostics. */
+/** 出现在加载器诊断里的插件名。 */
 export const name = 'dsh-aperture';
 
 /**
- * No service is required to load: discovery works from the composition
- * configuration alone, and both services it *uses* — `settings` and
- * `commands` — are optional and resolved with `ctx.inject`.
+ * settings 是必需依赖，而不是可选项：把发现的模型清单发布进 `llm-pi-ai` **就是**
+ * 本插件的职责，而同一次注册又让插件自己的 `aperture` 段变得可编辑。在这里声明它，
+ * 意味着框架会把插件挂在 PENDING 直到 settings 就绪；provider 一旦被替换就卸载插件，
+ * 恢复后再重新加载——而不是留下一个已经加载、却无处发布的实例。
+ *
+ * `commands` 则刻意**不**声明：`/aperture` 这层界面只是顺手提供的便利，没有它的
+ * 部署也应该照样获得发现能力。
  */
-export const inject: string[] = [];
+export const inject = ['settings'];
 
 /**
- * Publish the gateway's catalog, now and whenever anything changes.
+ * 发布网关的模型清单：现在发布，之后有任何变化也发布。
  *
- * @param ctx - the plugin context.
- * @param config - the resolved `aperture` configuration section.
- * @throws Error when the configuration is self-inconsistent (a malformed or
- *   duplicated route key), which no later write could repair.
+ * @param ctx - 插件上下文，其中 `settings` 已就绪。
+ * @param config - 组合层的 `aperture` 段，已按 {@link ConfigSchema} 校验并带上默认值。
+ * @throws Error 当配置自身矛盾（路由键不合文法或两条路由重复），或存储的 `aperture`
+ *   段非法时抛出——框架的失败路径正是“坏配置要响亮”的实现方式。
  */
 export function apply(ctx: Context, config: Config): void {
   const logger = ctx.logger as RuntimeLogger;
   const catalog = new ModelCatalog();
-  let resolved = resolveConfig(config);
-  let settings: SettingsProvider | undefined;
+
+  // `installSection` 交出来的是**活引用**（thunk）而不是快照：解析后的配置段每次被
+  // 编辑都是就地替换，所以只有持有这个 thunk，后续的配置变更才能抵达本插件。下面
+  // 所有读取都因此走它。
+  let source: () => Config = () => config;
+  const readConfig = (): ReturnType<typeof resolveConfig> => resolveConfig(source());
 
   const runtime = new ApertureRuntime({
-    config: () => resolved,
-    settings: () => settings,
+    config: readConfig,
+    settings: ctx.settings,
     logger,
     catalog,
   });
 
-  // The refresh interval is re-armed on every configuration change rather than
-  // captured once, so a deployment can turn periodic refresh on or off in the
-  // settings document without restarting.
+  // 刷新间隔在每次配置变更时重新计算，而不是只捕获一次，这样部署可以在设置文档里
+  // 开关周期刷新，无需重启。
   let timer: ReturnType<typeof setInterval> | undefined;
   const armInterval = (): void => {
     if (timer !== undefined) {
       clearInterval(timer);
       timer = undefined;
     }
-    if (resolved.refreshIntervalMinutes > 0) {
-      timer = setInterval(() => void runtime.refresh('interval'), resolved.refreshIntervalMinutes * 60_000);
+    const { refreshIntervalMinutes } = readConfig();
+    if (refreshIntervalMinutes > 0) {
+      timer = setInterval(() => void runtime.refresh('定时'), refreshIntervalMinutes * 60_000);
       timer.unref?.();
     }
   };
@@ -118,40 +122,31 @@ export function apply(ctx: Context, config: Config): void {
     'aperture refresh interval',
   );
 
+  const initial = readConfig();
   logger.info(
     'dsh-aperture: %s',
-    resolved.instanceRoot === undefined
-      ? 'no usable baseUrl yet; discovery is dormant'
-      : `watching ${resolved.instanceRoot} for models`,
+    initial.instanceRoot === undefined
+      ? '还没有可用的 baseUrl，发现功能处于休眠'
+      : `正在监视 ${initial.instanceRoot} 的模型`,
   );
 
-  // Runs with the composition configuration. When the settings service is
-  // mounted, its own attach notification refreshes again with the user layer
-  // applied; that second pass compares against what this one published and
-  // writes nothing when they agree.
-  void runtime.refresh('load');
-
-  ctx.inject(['settings'], (settingsCtx) => {
-    settings = settingsCtx.settings;
-    try {
-      settingsCtx.settings.installSection(ctx, APERTURE_NAMESPACE, ConfigSchema, config, {
-        setSource(current) {
-          resolved = resolveConfig(current());
-          armInterval();
-        },
-        onChange() {
-          void runtime.refresh('settings');
-        },
-        validate(value) {
-          resolveConfig(value);
-        },
-      });
-    } catch (error) {
-      logger.error('dsh-aperture: the "aperture" settings section was refused: %s', message(error));
-    }
+  // 注册配置段本身也是启动发现的那个动作：`installSection` 在挂载时会先调用
+  // `setSource`、再通知一次 `onChange`，顺序如此，所以第一次刷新看到的就是叠加了
+  // 用户层的配置——只跑一遍，而不是先按组合层配置跑一遍、再补一遍去对齐。
+  ctx.settings.installSection(ctx, APERTURE_NAMESPACE, ConfigSchema, config, {
+    setSource(current) {
+      source = current;
+    },
+    onChange() {
+      armInterval();
+      void runtime.refresh('配置变更');
+    },
+    validate(value) {
+      resolveConfig(value);
+    },
   });
 
   ctx.inject(['commands'], (commandCtx) => {
-    registerApertureCommand(commandCtx, runtime, () => resolved);
+    registerApertureCommand(commandCtx, runtime, readConfig);
   });
 }

@@ -1,29 +1,29 @@
 /**
- * Defensive readers for the loosely typed JSON both Aperture and models.dev
- * return. Every one accepts `unknown` and answers `undefined` rather than
- * throwing: one malformed entry must not fail a whole catalog refresh.
+ * Aperture 与 models.dev 返回的松散类型 JSON 的防御式读取器。每一个都接受
+ * `unknown`，并以 `undefined` 作答而不是抛错：一条格式错误的条目不能让整个清单
+ * 刷新失败。
  *
  * @module dsh-aperture/metadata/utils
  */
 
-/** Read a plain JSON object, rejecting arrays and primitives. */
+/** 读取普通 JSON 对象，拒绝数组与原始值。 */
 export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
 }
 
-/** Read a non-empty trimmed string. */
+/** 读取非空且已去除首尾空白的字符串。 */
 export function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
-/** Read a strict boolean. */
+/** 读取严格布尔值。 */
 export function booleanValue(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
 
-/** Read a positive integer, accepting the `128k` / `1.5M` spellings some catalogs use. */
+/** 读取正整数，接受某些清单使用的 `128k` / `1.5M` 写法。 */
 export function positiveInteger(value: unknown): number | undefined {
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value > 0 ? value : undefined;
@@ -42,7 +42,7 @@ export function positiveInteger(value: unknown): number | undefined {
   return Number.isSafeInteger(normalized) && normalized > 0 ? normalized : undefined;
 }
 
-/** The first defined, non-empty trimmed string among the candidates. */
+/** 候选中第一个已定义且去空白后非空的字符串。 */
 export function firstString(values: readonly unknown[]): string | undefined {
   for (const value of values) {
     const normalized = stringValue(value);
@@ -53,7 +53,7 @@ export function firstString(values: readonly unknown[]): string | undefined {
   return undefined;
 }
 
-/** The first positive integer among the candidates. */
+/** 候选中第一个正整数。 */
 export function firstPositiveInteger(values: readonly unknown[]): number | undefined {
   for (const value of values) {
     const normalized = positiveInteger(value);
@@ -64,7 +64,7 @@ export function firstPositiveInteger(values: readonly unknown[]): number | undef
   return undefined;
 }
 
-/** The first strict boolean among the candidates. */
+/** 候选中第一个严格布尔值。 */
 export function firstBoolean(values: readonly unknown[]): boolean | undefined {
   for (const value of values) {
     const normalized = booleanValue(value);
@@ -75,12 +75,12 @@ export function firstBoolean(values: readonly unknown[]): boolean | undefined {
   return undefined;
 }
 
-/** Lower-cased, trimmed key for exact matching. */
+/** 用于精确匹配的、转小写并去除空白的键。 */
 export function normalizeKey(value: string | undefined): string {
   return value?.trim().toLowerCase() ?? '';
 }
 
-/** Lower-cased, punctuation-collapsed key for tolerant matching. */
+/** 用于宽容匹配的、转小写并折叠标点的键。 */
 export function slugKey(value: string | undefined): string {
   return (
     value
@@ -92,12 +92,12 @@ export function slugKey(value: string | undefined): string {
   );
 }
 
-/** Everything after the last `/`, or the whole value when there is none. */
+/** 最后一个 `/` 之后的全部内容；没有 `/` 时即整个值。 */
 export function suffixAfterSlash(value: string): string {
   return value.includes('/') ? (value.split('/').pop() ?? value) : value;
 }
 
-/** Deduplicate trimmed non-empty strings, preserving order. */
+/** 对去空白后非空的字符串去重，并保持顺序。 */
 export function uniqueStrings(values: readonly (string | undefined)[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];

@@ -1,18 +1,15 @@
 /**
- * models.dev catalog indexing and lookup.
+ * models.dev 清单的索引与查找。
  *
- * Aperture reports capacities but not always capabilities, and its listing has
- * no field at all for "does this model reason" on most providers. models.dev
- * carries `reasoning`, `tool_call`, and input modalities for the same models
- * under ids that only sometimes match byte-for-byte: the gateway renames
- * upstreams (`x-ai/grok-4.5` here, `xai/grok-4.5` there) and its aliases carry
- * no vendor prefix at all (`k3`).
+ * Aperture 会上报容量，但并不总是上报能力，而且在大多数 provider 上，其列表
+ * 根本没有「这个模型是否会推理」的字段。models.dev 为同样的模型携带 `reasoning`、
+ * `tool_call` 和输入模态，但 id 只是有时逐字节相同：网关会重命名上游（这里是
+ * `x-ai/grok-4.5`，那里是 `xai/grok-4.5`），而其别名完全不带厂商前缀（`k3`）。
  *
- * So lookup is scored rather than exact. A model id is matched by its full
- * spelling, by its segment after the last slash, and by a punctuation-collapsed
- * slug of either; a catalog entry contributes the same three keys; and a
- * provider alias that matches between the two sides outranks every key score,
- * because a name collision across vendors is the one way a lone model id lies.
+ * 因此查找是评分式的，而非精确匹配。模型 id 按完整写法、按最后一个斜杠之后的
+ * 分段、以及两者折叠标点后的 slug 来匹配；一个清单条目贡献同样的三个键；而两侧
+ * 匹配上的 provider 别名优先于任何键得分，因为跨厂商的重名正是孤立的模型 id
+ * 唯一会说谎的地方。
  *
  * @module dsh-aperture/metadata/modelsdev
  */
@@ -20,7 +17,7 @@
 import type { CatalogLookup, CatalogMetadata, Modality } from '../types.ts';
 import { asRecord, firstPositiveInteger, firstString, normalizeKey, slugKey, stringValue, suffixAfterSlash } from './utils.ts';
 
-/** One indexed catalog entry. */
+/** 一个已索引的清单条目。 */
 interface CatalogEntry {
   readonly modelId: string;
   readonly modelName?: string;
@@ -28,22 +25,22 @@ interface CatalogEntry {
   readonly metadata: CatalogMetadata;
 }
 
-/** One indexed entry with the score its key carries. */
+/** 一个已索引条目及其键所携带的得分。 */
 interface ScoredEntry {
   readonly entry: CatalogEntry;
   readonly keyScore: number;
 }
 
-/** Provider-alias match outranks every key match. */
+/** provider 别名匹配优先于任何键匹配。 */
 const PROVIDER_ALIAS_BONUS = 200;
 
-/** Indexed models.dev catalog, queried by one model's id and provider hints. */
+/** 已索引的 models.dev 清单，按单个模型的 id 与 provider 提示查询。 */
 export class ModelCatalogIndex {
   private readonly byKey = new Map<string, ScoredEntry[]>();
   private readonly entries: readonly CatalogEntry[];
 
   /**
-   * @param entries - every usable catalog entry.
+   * @param entries - 每一个可用的清单条目。
    */
   constructor(entries: readonly CatalogEntry[]) {
     this.entries = entries;
@@ -59,16 +56,16 @@ export class ModelCatalogIndex {
     }
   }
 
-  /** Number of usable entries this index holds. */
+  /** 该索引持有的可用条目数量。 */
   get size(): number {
     return this.entries.length;
   }
 
   /**
-   * Resolve the best catalog entry for one gateway model.
-   * @param modelId - the id the gateway advertises.
-   * @param providerHints - upstream provider ids and names the gateway reports.
-   * @returns the winning entry's metadata, or `undefined` when nothing matched.
+   * 为一个网关模型解析出最佳清单条目。
+   * @param modelId - 网关公布的 id。
+   * @param providerHints - 网关上报的上游 provider id 与名称。
+   * @returns 胜出条目的元数据；无任何匹配时为 `undefined`。
    */
   lookup(modelId: string, providerHints: readonly string[] = []): CatalogMetadata | undefined {
     const candidates = new Map<CatalogEntry, number>();
@@ -97,15 +94,14 @@ export class ModelCatalogIndex {
 }
 
 /**
- * Build a lookup over a parsed models.dev document.
+ * 在一份已解析的 models.dev 文档之上构建查找。
  *
- * Accepts every shape the document has shipped in: the current flat
- * `{ "<provider>/<model>": { … } }` map, an older provider-keyed map whose
- * values carry `models`, and a wrapper exposing either under `providers` or
- * `models`.
+ * 接受该文档发布过的所有形态：当前扁平的 `{ "<provider>/<model>": { … } }` 映射、
+ * 值携带 `models` 的旧式 provider 键映射，以及在 `providers` 或 `models` 之下
+ * 暴露上述任一形态的包装对象。
  *
- * @param document - parsed JSON, or anything else.
- * @returns the lookup, or `undefined` when the document holds no usable entry.
+ * @param document - 已解析的 JSON，或任何其他值。
+ * @returns 该查找；文档不含可用条目时为 `undefined`。
  */
 export function buildCatalogLookup(document: unknown): CatalogLookup | undefined {
   const index = buildCatalogIndex(document);
@@ -115,19 +111,19 @@ export function buildCatalogLookup(document: unknown): CatalogLookup | undefined
   return (model) => index.lookup(model.id, providerHintsOf(model));
 }
 
-/** Build the index alone, exposing its size for diagnostics. */
+/** 仅构建索引，并暴露其大小以用于诊断。 */
 export function buildCatalogIndex(document: unknown): ModelCatalogIndex | undefined {
   const entries = readEntries(document);
   return entries.length === 0 ? undefined : new ModelCatalogIndex(entries);
 }
 
-/** The provider hints a lookup may score against. */
+/** 一次查找可用于评分的 provider 提示。 */
 function providerHintsOf(model: { id: string; provider?: string; providerName?: string }): string[] {
   const hints = [model.provider, model.providerName, model.id.includes('/') ? model.id.split('/')[0] : undefined];
   return [...new Set(hints.filter((hint): hint is string => typeof hint === 'string' && hint.trim().length > 0))];
 }
 
-/** Read every usable entry from one catalog document. */
+/** 从一份清单文档中读取每一个可用条目。 */
 function readEntries(document: unknown): CatalogEntry[] {
   const root = asRecord(document);
   if (!root) {
@@ -143,14 +139,13 @@ function readEntries(document: unknown): CatalogEntry[] {
     return readModelMap(models);
   }
 
-  // Flat document: distinguish "provider → { models }" from "model key → model"
-  // by looking at whether the values carry a `models` container. The shipped
-  // models.dev document is the second shape.
+  // 扁平文档：通过观察各值是否携带 `models` 容器，区分「provider → { models }」
+  // 与「模型键 → 模型」。models.dev 实际发布的文档是第二种形态。
   const providerShaped = Object.values(root).some((value) => asRecord(asRecord(value)?.models) !== undefined);
   return providerShaped ? readProviderMap(root) : readModelMap(root);
 }
 
-/** Read a provider-keyed map, deriving each model's aliases from its provider. */
+/** 读取以 provider 为键的映射，并从其 provider 推导每个模型的别名。 */
 function readProviderMap(providers: Record<string, unknown>): CatalogEntry[] {
   const entries: CatalogEntry[] = [];
   for (const [providerKey, providerValue] of Object.entries(providers)) {
@@ -170,7 +165,7 @@ function readProviderMap(providers: Record<string, unknown>): CatalogEntry[] {
   return entries;
 }
 
-/** Read a map of model key → model entry, deriving provider aliases from the key. */
+/** 读取模型键 → 模型条目的映射，并从该键推导 provider 别名。 */
 function readModelMap(models: Record<string, unknown>): CatalogEntry[] {
   const entries: CatalogEntry[] = [];
   for (const [modelKey, modelValue] of Object.entries(models)) {
@@ -188,7 +183,7 @@ function readModelMap(models: Record<string, unknown>): CatalogEntry[] {
   return entries;
 }
 
-/** Read one catalog entry, or `undefined` when it states nothing usable. */
+/** 读取一个清单条目；未给出任何可用信息时为 `undefined`。 */
 function readModelEntry(modelKey: string, value: unknown, aliases: readonly string[]): CatalogEntry | undefined {
   const model = asRecord(value);
   if (!model) {
@@ -208,7 +203,7 @@ function readModelEntry(modelKey: string, value: unknown, aliases: readonly stri
   };
 }
 
-/** Read the metadata one models.dev entry contributes. */
+/** 读取一个 models.dev 条目所贡献的元数据。 */
 function readModelMetadata(model: Record<string, unknown>): CatalogMetadata | undefined {
   const limit = asRecord(model.limit);
   const topProvider = asRecord(model.top_provider);
@@ -253,7 +248,7 @@ function readModelMetadata(model: Record<string, unknown>): CatalogMetadata | un
   };
 }
 
-/** Read input modalities a catalog entry declares. */
+/** 读取清单条目声明的输入模态。 */
 function readInputModalities(
   model: Record<string, unknown>,
   modalities: Record<string, unknown> | undefined,
@@ -274,7 +269,7 @@ function readInputModalities(
   return declared.size === 0 ? undefined : [...declared];
 }
 
-/** Every index key one catalog entry contributes, with its score. */
+/** 一个清单条目贡献的每一个索引键及其得分。 */
 function entryKeys(entry: CatalogEntry): Array<{ key: string; score: number }> {
   const values = [entry.modelId, suffixAfterSlash(entry.modelId), entry.modelName];
   return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))]
@@ -285,7 +280,7 @@ function entryKeys(entry: CatalogEntry): Array<{ key: string; score: number }> {
     .filter((item) => item.key.length > 0);
 }
 
-/** Every lookup key one gateway model id is queried under, with its weight. */
+/** 一个网关模型 id 被查询时使用的每一个查找键及其权重。 */
 function lookupKeys(modelId: string): Array<{ key: string; score: number }> {
   const suffix = suffixAfterSlash(modelId);
   return [
@@ -299,7 +294,7 @@ function lookupKeys(modelId: string): Array<{ key: string; score: number }> {
     .filter((item) => item.key.length > 0);
 }
 
-/** Every alias spelling one provider id or name answers to. */
+/** 一个 provider id 或名称响应的每一个别名写法。 */
 function providerAliases(...values: readonly (string | undefined)[]): string[] {
   const aliases = new Set<string>();
   for (const value of values) {
@@ -345,7 +340,7 @@ function providerAliases(...values: readonly (string | undefined)[]): string[] {
   return [...normalized];
 }
 
-/** Score two alias sets: any intersection is a provider match. */
+/** 对两个别名集评分：任何交集都算一次 provider 匹配。 */
 function matchingAliasScore(left: readonly string[], right: readonly string[]): number {
   if (left.length === 0 || right.length === 0) {
     return 0;

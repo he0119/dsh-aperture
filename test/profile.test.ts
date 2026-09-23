@@ -7,7 +7,7 @@ import { apertureEntries, catalogDocument, options } from './helpers.ts';
 
 const ROOT = 'https://ai.long-antares.ts.net';
 
-/** The plan the recorded listing produces. */
+/** 录制清单所产生的计划。 */
 function plan(overrides: Partial<ProfileOptions> = {}, build = options()) {
   const registry = buildRegistry(apertureEntries(), build, buildCatalogLookup(catalogDocument()));
   return buildProfilePlan(registry.models, {
@@ -23,18 +23,18 @@ function plan(overrides: Partial<ProfileOptions> = {}, build = options()) {
   });
 }
 
-/** Find one route by provider key. */
+/** 按 provider 键找到一条路由。 */
 function route(result: ReturnType<typeof plan>, provider: string) {
   return result.routes.find((candidate) => candidate.provider === provider);
 }
 
-/** Find one model entry by id. */
+/** 按 id 找到一个模型条目。 */
 function entry(result: ReturnType<typeof plan>, provider: string, id: string) {
   return route(result, provider)?.profile.models?.find((model) => model.id === id);
 }
 
 describe('buildProfilePlan', () => {
-  it('publishes one route per served protocol and no empty route', () => {
+  it('每种可服务的协议发布一条路由，且不发布空路由', () => {
     const result = plan();
     assert.deepEqual(
       result.routes.map((candidate) => candidate.provider),
@@ -44,59 +44,59 @@ describe('buildProfilePlan', () => {
     assert.equal(result.unserved.length, 4);
   });
 
-  it('gives each route the baseURL its protocol expects', () => {
+  it('给每条路由它所属协议期望的 baseURL', () => {
     assert.equal(route(plan(), 'aperture')?.profile.baseURL, `${ROOT}/v1`);
     assert.equal(route(plan(), 'aperture-anthropic')?.profile.baseURL, ROOT);
   });
 
-  it('sends the placeholder header pi-ai insists on, per protocol', () => {
+  it('按协议发送 pi-ai 坚持要的占位请求头', () => {
     assert.deepEqual(route(plan(), 'aperture')?.profile.headers, { authorization: 'Bearer dsh-aperture' });
     assert.deepEqual(route(plan(), 'aperture-anthropic')?.profile.headers, { 'x-api-key': 'dsh-aperture' });
   });
 
-  it('drops the placeholder once a credential reference is configured', () => {
+  it('配置了凭据引用之后就去掉占位凭据', () => {
     const result = plan({ apiKeyEnv: 'APERTURE_API_KEY', placeholderCredential: '' });
     assert.equal(route(result, 'aperture')?.profile.apiKeyEnv, 'APERTURE_API_KEY');
     assert.equal(route(result, 'aperture')?.profile.headers, undefined);
   });
 
-  it('lets a configured header replace the placeholder', () => {
+  it('允许配置的请求头替换占位凭据', () => {
     const result = plan({ headers: { authorization: 'Bearer real-token' }, placeholderCredential: '' });
     assert.deepEqual(route(result, 'aperture')?.profile.headers, { authorization: 'Bearer real-token' });
   });
 
-  it('describes the DeepSeek thinking dialect for DeepSeek models', () => {
+  it('为 DeepSeek 模型描述 DeepSeek 的思考方言', () => {
     const model = entry(plan(), 'aperture', 'deepseek-v4-pro');
     assert.deepEqual(model?.reasoningEfforts, { off: 'disabled', high: 'high', max: 'max' });
     assert.deepEqual(model?.compat, { supportsReasoningEffort: true, thinkingFormat: 'deepseek' });
   });
 
-  it('offers the widely accepted levels for every other reasoning model', () => {
+  it('为其它推理模型提供普遍接受的档位', () => {
     const model = entry(plan(), 'aperture', 'mimo-v2.6-flash');
     assert.deepEqual(model?.reasoningEfforts, { off: null, high: 'high' });
     assert.deepEqual(model?.compat, { supportsReasoningEffort: true });
   });
 
-  it('states no reasoning for a model nothing claims reasons', () => {
+  it('没有任何来源声称会推理的模型，就不写推理', () => {
     const model = entry(plan(), 'aperture', 'deepseek-flash');
     assert.equal(model?.reasoningEfforts, undefined);
     assert.equal(model?.compat, undefined);
   });
 
-  it('leaves a discovered Anthropic model non-reasoning, because effort is not its dial', () => {
+  it('让发现的 Anthropic 模型保持不推理，因为档位不是它的旋钮', () => {
     const model = entry(plan(), 'aperture-anthropic', 'MiniMax-M3');
     assert.equal(model?.reasoningEfforts, undefined);
   });
 
-  it('honours an explicit Anthropic reasoning request', () => {
+  it('尊重显式提出的 Anthropic 推理请求', () => {
     const build = options({ models: [{ id: 'MiniMax-M3', thinking: true }] });
     const model = entry(plan({}, build), 'aperture-anthropic', 'MiniMax-M3');
     assert.deepEqual(model?.reasoningEfforts, { off: null, high: 'high' });
-    // The Anthropic protocol has no reasoning_effort switch to declare.
+    // Anthropic 协议没有 reasoning_effort 这个开关可以声明。
     assert.equal(model?.compat, undefined);
   });
 
-  it('carries the sizes and modalities it was given', () => {
+  it('带上它拿到的容量与模态', () => {
     const model = entry(plan(), 'aperture', 'deepseek-flash');
     assert.equal(model?.name, 'DeepSeek V4.1 Flash');
     assert.equal(model?.contextWindow, 1_048_576);
@@ -104,7 +104,7 @@ describe('buildProfilePlan', () => {
     assert.deepEqual(model?.input, ['text']);
   });
 
-  it('never publishes a route with an empty model list', () => {
+  it('绝不发布模型列表为空的路由', () => {
     const registry = buildRegistry(
       [{ id: 'only-anthropic', supported_endpoints: ['/v1/messages'] }],
       options(),

@@ -30,16 +30,58 @@ llm-pi-ai:
 ## 安装
 
 ```sh
-# 从本地目录（开发时）
-dsh plugin --profile web add /path/to/dsh-aperture
+# 从 git（建议锁 commit，后续推送就无法悄悄改变实际运行的代码）
+npx @deepseek-ai/dsh plugin --profile web add github:he0119/dsh-aperture#<commit>
 
-# 或从 git
-dsh plugin --profile web add git@github.com:he0119/dsh-aperture.git
+# 或从本地目录（开发时）
+npx @deepseek-ai/dsh plugin --profile web add /path/to/dsh-aperture
 ```
 
-`dsh plugin add` 会把包加进 profile，并自动把本包的 bundle patch 追加到 `dsh.profile.bundles`。**装完需要重启这次 DSH**（bundle 变化不会热加载）。
+> **git 地址必须用 pnpm 认的写法**（`github:owner/repo`、`git+https://…`、`git+ssh://…`）。
+> `git@github.com:he0119/dsh-aperture.git` 这种 scp 风格在 Windows 上会被当成**本地路径**解析——冒号被当作盘符——
+> 直接报 `Failed to resolve dependency: 文件名、目录名或卷标语法不正确。 (os error 123)`。
+>
+> 如果本机 git 的 HTTPS 不可用、报 schannel / `SEC_E_NO_CREDENTIALS`，用
+> `git config --global url."git@github.com:".insteadOf "https://github.com/"` 让它改走 SSH。
 
-> 本地目录方式装的是软链接，**不会**自动构建：先 `npm install && npm run build`，之后每次改代码也要重新 `npm run build` 才生效。git 方式会跑 `prepare` 自动构建。
+`dsh plugin add` 会把包加进 profile，并自动把本包的 bundle patch 追加到 `dsh.profile.bundles`。启动前可以先只看组合结果：
+
+```sh
+npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-aperture" 层
+```
+
+**装完需要重启这次 DSH**（bundle 变化不会热加载）。
+
+### 第一次安装要放行构建（或者用预构建产物）
+
+这是个 TypeScript 源码包，git 安装拉下来的是**源码**，靠 `prepare` 脚本在安装时编译出 `lib/`。
+pnpm ≥10 在得到显式允许前**拒绝运行 git 依赖的构建脚本**，所以**第一次 `add` 会失败**；dsh 会把 pnpm 打印的包键告诉你，
+把它写进 profile 的 `pnpm-workspace.yaml`：
+
+```yaml
+# ~/.dsh/profiles/web/pnpm-workspace.yaml
+allowBuilds:
+  dsh-aperture: true
+```
+
+（键是**映射**形式，值为 `true`；写成列表无效。）然后重跑一次 `add` 即可。
+
+请把这项授权理解为「允许这个包在你机器上、于 agent 沙箱之外执行安装脚本」。只对信任的源码授权，并且锁 commit
+（`github:he0119/dsh-aperture#<sha>`）——git 安装拉取的是会变的代码。
+
+**不想授权**的话，用预构建产物，pnpm 就完全不需要运行你的任何脚本：
+
+```sh
+pnpm pack                                   # 在本仓库里打出 dsh-aperture-0.1.0.tgz（含 lib/）
+npx @deepseek-ai/dsh plugin --profile web add ./dsh-aperture-0.1.0.tgz
+```
+
+发布到 npm 之后同样可以 `dsh plugin add dsh-aperture`。
+
+> 安装时 pnpm 可能警告 `Issues with peer dependencies found`。**这是预期的**：本包依赖的
+> `@deepseek-ai/cordis`、`@deepseek-ai/schemastery`、`@deepseek-ai/dsh-settings` 等都是 DSH 自带、
+> 由 DSH 自己解析的包（它们不进 profile 的 `node_modules`），所以 pnpm 看不到它们并不影响运行。
+
 
 然后填上你的 Aperture 地址，二选一：
 
@@ -54,14 +96,14 @@ aperture:
 重启后模型就会出现在选择器里（路由名 `Aperture`）。用 `/aperture` 确认：
 
 ```
-Aperture: https://ai.example.ts.net
-  last refresh: load · 2026-09-22T16:31:02.184Z · 412ms · ok
-  catalog: 422 entries
-  endpoint: https://ai.example.ts.net/v1/models listed 16 row(s)
-  route aperture: 11 model(s) via openai-completions → https://ai.example.ts.net/v1
-  route aperture-anthropic: 1 model(s) via anthropic-messages → https://ai.example.ts.net
-  unserved: 4 model(s) (gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, gemini-3.1-flash-image-preview)
-  settings: wrote 2 op(s) to llm-pi-ai (aperture, aperture-anthropic)
+Aperture：https://ai.example.ts.net
+  最近一次刷新：配置变更 · 2026-09-22T16:31:02.184Z · 412ms · 成功
+  清单：422 个条目
+  端点：https://ai.example.ts.net/v1/models 列出了 16 行
+  路由 aperture：11 个模型，经由 openai-completions → https://ai.example.ts.net/v1
+  路由 aperture-anthropic：1 个模型，经由 anthropic-messages → https://ai.example.ts.net
+  未服务：4 个模型（gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, gemini-3.1-flash-image-preview）
+  设置：向 llm-pi-ai 写入 2 个操作（aperture, aperture-anthropic）
 ```
 
 ## 工作原理
@@ -72,7 +114,7 @@ GET {baseUrl}/v1/models
         ├─ 每个模型：supported_endpoints ──► 分流
         │     /v1/chat/completions        ──► route            （openai-completions）
         │     /v1/messages                ──► anthropicRoute   （anthropic-messages）
-        │     只有原生 generateContent     ──► 不发布（列进 unserved）
+        │     只有原生 generateContent     ──► 不发布（列进「未服务」）
         │
         ├─ 容量：Aperture 字段 ─► models.dev ─► 默认值
         ├─ 推理：Aperture 字段 ─► models.dev ─► 关闭
@@ -163,6 +205,14 @@ aperture:
 
 映射之后这两个模型才会拿到 models.dev 的推理标记和容量。
 
+### 生命周期与依赖
+
+- `settings` 是**硬依赖**（`inject = ['settings']`）。本插件的职责就是往设置里写，没有它发布对象都不存在，所以宁可让框架把插件挂在 `PENDING`，provider 被替换时自动卸载、恢复后重新加载，而不是留着一个无处发布的实例。
+- `commands` **不声明**。没有命令服务的部署也该照常获得发现能力，所以它走 `ctx.inject(['commands'])` 可选挂载。
+- 定时刷新用 `ctx.effect` 注册，卸载自动清理；配置变更会按新值重新计算间隔。
+- **注册配置段本身就是第一次发现的触发器**：`installSection` 挂载时先 `setSource` 再通知 `onChange`，所以首次刷新看到的就是叠加了用户层的配置，不需要为了对齐两份配置再刷一遍。
+- 配置段是**活引用**（thunk）而不是快照：改 `~/.dsh/settings.yaml` 里的 `aperture:` 段，下一次刷新立刻用新值，不必重启、也不必重载插件。
+
 ## 命令
 
 | 命令 | 作用 |
@@ -216,7 +266,7 @@ aperture:
 - **带 revision 写**——与其它写入者（比如模型页）冲突时重读一次再写；
 - **路由没模型了就删掉**——避免留下指向旧目录的空路由。
 
-`/aperture` 里说 `settings: no write (already in sync)` 是正常状态。
+`/aperture` 里说 `设置：未写入（已处于同步状态）` 是正常状态。
 
 ## 开发
 
@@ -224,7 +274,7 @@ aperture:
 npm install                # 若机器级 npm 缓存不可写：npm install --cache ./.npm-cache --ignore-scripts
 npm run build              # tsc -> lib/
 npm run typecheck          # 含 test/
-npm test                   # 纯函数单测（79 个，离线）
+npm test                   # 纯函数单测（93 个，离线，不需要 node_modules）
 npm run test:live          # 端到端：真实 DSH 栈 + 真实网关
 npm run inspect            # 打印真实生成的 settings.yaml 与解析结果
 ```
@@ -237,12 +287,16 @@ DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live
 
 它会拉起真实的 `dsh-settings-file` + `dsh-llm` + `dsh-llm-pi-ai` + 本插件，跑一次真实发现，然后断言：设置文件写对了、两条路由注册了、`ctx.llm.listModels()` 能看到模型、容量与推理档位与预期一致。这是唯一能证明“写进去的东西适配器真的收”的测试。
 
+> `lib/` 是构建产物：git 安装与 `npm publish` 都由 `prepare` 脚本现场编译。
+> 而从本地目录安装（`link:`）不会跑 `prepare`，所以本地调试前先 `npm run build`。
+
 ## 已知边界
 
 - **不转换 API 格式**，这是设计目标而不是缺陷。也因此只支持 `llm-pi-ai` 讲得了的两种协议；Gemini 原生端点接不了。
 - `supported_endpoints` 是唯一的协议依据。网关如果不报，就按 OpenAI 兼容处理。
 - models.dev 是尽力而为的补全：拉不到就是拉不到，发现本身照常成功。
 - 本插件不注册任何 provider 目录（`registerConfigurableProviders`）——`llm-pi-ai` 已经认领了那件事，重复注册会抛错。
+- **改了 `route` / `anthropicRoute` 的路由名之后，旧键会留在 `llm-pi-ai.providers` 里**（插件只认自己当前拥有的两个键，无法知道历史上用过哪些名字）。它不会报错，只是不再刷新；要清理就手动删掉那一行。
 
 ## License
 

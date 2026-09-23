@@ -4,7 +4,7 @@ import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings
 import type { RoutePlan } from '../src/profile.ts';
 import { applySync, clearRoutes, deepEqualJson, planSync } from '../src/sync.ts';
 
-/** One planned route with a trivially recognizable profile. */
+/** 一条计划中的路由，其 profile 可被轻易识别。 */
 function routePlan(provider: string, marker: string): RoutePlan {
   return {
     provider,
@@ -16,11 +16,11 @@ function routePlan(provider: string, marker: string): RoutePlan {
 const OWNED = ['aperture', 'aperture-anthropic'];
 
 describe('deepEqualJson', () => {
-  it('ignores key order', () => {
+  it('忽略键的顺序', () => {
     assert.equal(deepEqualJson({ a: 1, b: [1, { c: 2 }] }, { b: [1, { c: 2 }], a: 1 }), true);
   });
 
-  it('separates different shapes', () => {
+  it('区分不同的结构', () => {
     assert.equal(deepEqualJson({ a: 1 }, { a: 1, b: 2 }), false);
     assert.equal(deepEqualJson([1, 2], [2, 1]), false);
     assert.equal(deepEqualJson(null, {}), false);
@@ -29,7 +29,7 @@ describe('deepEqualJson', () => {
 });
 
 describe('planSync', () => {
-  it('writes both routes into an empty section', () => {
+  it('把两个路由写入空的配置段', () => {
     const ops = planSync({ providers: {} }, [routePlan('aperture', 'a'), routePlan('aperture-anthropic', 'b')], OWNED);
     assert.deepEqual(
       ops.map((op) => op.op),
@@ -38,29 +38,29 @@ describe('planSync', () => {
     assert.deepEqual(ops[0]?.path, ['providers', 'aperture']);
   });
 
-  it('writes nothing when the section already matches', () => {
+  it('当配置段已经一致时不写入任何内容', () => {
     const routes = [routePlan('aperture', 'a')];
     const ops = planSync({ providers: { aperture: routes[0]?.profile } }, routes, OWNED);
     assert.deepEqual(ops, []);
   });
 
-  it('removes a route that stopped having models', () => {
+  it('移除已不再拥有模型的路由', () => {
     const ops = planSync({ providers: { aperture: { models: [] } } }, [], OWNED);
     assert.deepEqual(ops, [{ op: 'unset', path: ['providers', 'aperture'] }]);
   });
 
-  it('leaves providers it does not own untouched', () => {
+  it('不触碰它不拥有的 provider', () => {
     const ops = planSync({ providers: { workbuddy: { api: 'openai-completions' } } }, [], OWNED);
     assert.deepEqual(ops, []);
   });
 
-  it('plans nothing when the namespace value is not a provider dict', () => {
+  it('当命名空间的值不是 provider 字典时不规划任何操作', () => {
     assert.deepEqual(planSync(undefined, [routePlan('aperture', 'a')], OWNED), []);
     assert.deepEqual(planSync({ providers: 7 }, [], OWNED), []);
   });
 });
 
-/** A settings service that records writes and can refuse one revision. */
+/** 一个记录写入、并能拒绝一个带版本号的设置服务。 */
 function fakeSettings(value: unknown, options: { conflictOnce?: boolean } = {}) {
   const writes: Array<readonly SettingsPathOp[]> = [];
   let revision = 1;
@@ -86,22 +86,22 @@ function fakeSettings(value: unknown, options: { conflictOnce?: boolean } = {}) 
 }
 
 describe('applySync', () => {
-  it('explains itself when the pi-ai namespace is not registered', async () => {
+  it('在 llm-pi-ai 命名空间未注册时给出说明', async () => {
     const { service } = fakeSettings(undefined);
     const outcome = await applySync(service, [routePlan('aperture', 'a')], OWNED);
     assert.equal(outcome.applied, false);
-    assert.match(outcome.reason ?? '', /not registered/);
+    assert.match(outcome.reason ?? '', /未注册/);
   });
 
-  it('explains itself when the section is already in sync', async () => {
+  it('在配置段已处于同步状态时给出说明', async () => {
     const routes = [routePlan('aperture', 'a')];
     const { service } = fakeSettings({ providers: { aperture: routes[0]?.profile } });
     const outcome = await applySync(service, routes, OWNED);
     assert.equal(outcome.applied, false);
-    assert.equal(outcome.reason, 'already in sync');
+    assert.equal(outcome.reason, '已处于同步状态');
   });
 
-  it('writes the plan once', async () => {
+  it('只写入一次计划', async () => {
     const { service, writes } = fakeSettings({ providers: {} });
     const outcome = await applySync(service, [routePlan('aperture', 'a')], OWNED);
     assert.equal(outcome.applied, true);
@@ -109,14 +109,14 @@ describe('applySync', () => {
     assert.equal(outcome.ops, 1);
   });
 
-  it('retries once when another writer moved the section', async () => {
+  it('在另一个写入者改动了配置段时重试一次', async () => {
     const { service, writes } = fakeSettings({ providers: {} }, { conflictOnce: true });
     const outcome = await applySync(service, [routePlan('aperture', 'a')], OWNED);
     assert.equal(outcome.applied, true);
     assert.equal(writes.length, 1);
   });
 
-  it('surfaces a refusal that is not a conflict', async () => {
+  it('上报非冲突的拒绝', async () => {
     const service = {
       get: () => ({ providers: {} }),
       describe: () => [{ ns: 'llm-pi-ai', revision: 1 }],
@@ -129,7 +129,7 @@ describe('applySync', () => {
 });
 
 describe('clearRoutes', () => {
-  it('removes exactly the routes it owns', async () => {
+  it('只移除它拥有的路由', async () => {
     const { service, writes } = fakeSettings({ providers: { aperture: {}, workbuddy: {}, 'aperture-anthropic': {} } });
     const outcome = await clearRoutes(service, OWNED);
     assert.equal(outcome.applied, true);
@@ -139,10 +139,10 @@ describe('clearRoutes', () => {
     ]);
   });
 
-  it('reports nothing to do when the routes are already absent', async () => {
+  it('当路由已不存在时报告无事可做', async () => {
     const { service } = fakeSettings({ providers: { workbuddy: {} } });
     const outcome = await clearRoutes(service, OWNED);
     assert.equal(outcome.applied, false);
-    assert.equal(outcome.reason, 'no routes to remove');
+    assert.equal(outcome.reason, '没有需要移除的路由');
   });
 });

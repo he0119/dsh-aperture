@@ -1,129 +1,125 @@
 /**
- * Shared vocabulary of the Aperture discovery pipeline.
+ * Aperture 发现流水线的共享词汇表。
  *
- * The pipeline is a pure function chain — endpoint response in, provider
- * profiles out — so every stage names its own types here rather than reaching
- * for the Cordis or settings seams: only `src/index.ts` and `src/sync.ts` touch
- * a service.
+ * 该流水线是一条纯函数链 —— 端点响应进，provider profile 出 —— 因此每个阶段都
+ * 在这里命名自己的类型，而不去碰 Cordis 或设置的接缝：只有 `src/index.ts` 和
+ * `src/sync.ts` 会接触服务。
  *
  * @module dsh-aperture/types
  */
 
-/** One request modality a discovered model may declare. */
+/** 一个已发现模型可以声明的一种请求模态。 */
 export type Modality = 'text' | 'image';
 
 /**
- * Wire protocols this plugin publishes. Both are served by the installed
- * `dsh-llm-pi-ai` adapter, which is why discovery never converts a payload:
- * it only decides which of the gateway's endpoints each model answers on.
+ * 本插件发布的协议格式。两者都由已安装的 `dsh-llm-pi-ai` 适配器服务，这就是发现
+ * 过程从不转换载荷的原因：它只决定每个模型在网关的哪些端点上应答。
  */
 export type ApertureProtocol = 'openai-completions' | 'anthropic-messages';
 
-/** Where one normalized fact came from, for diagnostics in the `/aperture` report. */
+/** 一项已归一化的事实的来源，用于 `/aperture` 报告中的诊断。 */
 export type FactSource = 'aperture' | 'models.dev' | 'config' | 'default';
 
-/** Provenance of every value a discovered model carries. */
+/** 已发现模型携带的每个值的来源。 */
 export interface ModelProvenance {
-  /** Source of `contextWindow` and `maxTokens`. */
+  /** `contextWindow` 与 `maxTokens` 的来源。 */
   readonly limits: FactSource;
-  /** Source of `reasoning`. */
+  /** `reasoning` 的来源。 */
   readonly reasoning: FactSource;
-  /** Source of `input`. */
+  /** `input` 的来源。 */
   readonly input: FactSource;
-  /** Source of `name`. */
+  /** `name` 的来源。 */
   readonly name: FactSource;
 }
 
-/** One model after normalization, enrichment, and configuration merge. */
+/** 经过归一化、补全与配置合并后的一个模型。 */
 export interface DiscoveredModel {
-  /** Model id Aperture accepts. */
+  /** Aperture 接受的模型 id。 */
   readonly id: string;
-  /** Display name for selectors. */
+  /** 供选择器使用的显示名。 */
   readonly name: string;
   /**
-   * Protocol the model is reachable on, derived from the gateway's
-   * `supported_endpoints`. Absent when the gateway offers no endpoint this
-   * plugin can serve.
+   * 模型可访问所用的协议，由网关的 `supported_endpoints` 推导得出。网关没有提供
+   * 本插件可服务的端点时缺失。
    */
   readonly protocol?: ApertureProtocol;
-  /** Every endpoint the gateway advertises for this model, for diagnostics. */
+  /** 网关为该模型通告的每一个端点，用于诊断。 */
   readonly endpoints: readonly string[];
-  /** Maximum combined request and response context in tokens. */
+  /** 请求与响应合计的最大上下文长度，以 token 计。 */
   readonly contextWindow?: number;
-  /** Maximum output tokens. */
+  /** 最大输出 token 数。 */
   readonly maxTokens?: number;
-  /** Request modalities declared for this model. */
+  /** 为该模型声明的请求模态。 */
   readonly input: readonly Modality[];
-  /** Whether the model accepts reasoning-effort control. */
+  /** 该模型是否接受推理档位控制。 */
   readonly reasoning: boolean;
-  /** Upstream provider id the gateway reports, when it reports one. */
+  /** 网关上报的上游 provider id，在上报时提供。 */
   readonly provider?: string;
-  /** Where each fact came from. */
+  /** 每项事实的来源。 */
   readonly provenance: ModelProvenance;
 }
 
 /**
- * One entry of the plugin's `models` configuration list.
+ * 插件 `models` 配置列表中的一条条目。
  *
- * An entry whose id the endpoint also advertises overrides only the fields it
- * states; an entry naming an unknown id is added as an extra model, which is
- * how a gateway that under-reports stays usable.
+ * id 也被端点通告的条目只覆盖它声明的字段；命名未知 id 的条目会作为额外模型加入，
+ * 网关少报时正是靠这一点保持可用。
  */
 export interface ConfiguredModel {
-  /** Model id; matches an endpoint-advertised id, or adds a new one. */
+  /** 模型 id；与端点通告的 id 匹配，或新增一个。 */
   readonly id: string;
-  /** Display name. */
+  /** 显示名。 */
   readonly name?: string;
-  /** Protocol override; also the only way to serve a model Aperture advertises for an unserved endpoint. */
+  /** 协议覆盖；也是服务 Aperture 只在未服务端点上通告的模型的唯一方式。 */
   readonly api?: string;
-  /** Context capacity in tokens. */
+  /** 上下文容量，以 token 计。 */
   readonly contextWindow?: number;
-  /** Output capacity in tokens. */
+  /** 输出容量，以 token 计。 */
   readonly maxTokens?: number;
-  /** Request modalities. */
+  /** 请求模态。 */
   readonly input?: readonly Modality[];
-  /** Force reasoning capability on (`true`) or off (`false`). */
+  /** 强制打开（`true`）或关闭（`false`）推理能力。 */
   readonly thinking?: boolean;
-  /** Explicit selectable reasoning levels: key = level, value = wire spelling. */
+  /** 显式可选的推理档位：key = 档位，value = 协议格式中的写法。 */
   readonly reasoningEfforts?: Readonly<Record<string, string | null>>;
 }
 
-/** Everything the pipeline needs to turn one gateway into provider profiles. */
+/** 流水线把一个网关变成 provider profile 所需的全部内容。 */
 export interface BuildOptions {
-  /** Configured overrides and extras. */
+  /** 配置的覆盖项与额外项。 */
   readonly models: readonly ConfiguredModel[];
-  /** Non-empty restricts the catalog to these ids. */
+  /** 非空时把清单限制为这些 id。 */
   readonly enabledModelIds: readonly string[];
   /**
-   * Gateway model id → catalog model id, when the two disagree.
+   * 网关模型 id → 清单模型 id，在两者不一致时使用。
    *
-   * Gateways rename: this one serves DeepSeek's flash model as `deepseek-flash`
-   * and Kimi's as `k3`, and no scoring rule can bridge that without guessing.
+   * 网关会改名：这个网关把 DeepSeek 的 flash 模型服务为 `deepseek-flash`，把 Kimi
+   * 的服务为 `k3`，任何评分规则都无法在不猜测的情况下弥合这一差异。
    */
   readonly modelAliases: Readonly<Record<string, string>>;
-  /** Fallback context capacity for a model nothing sizes. */
+  /** 没有任何来源设定容量的模型的兜底上下文容量。 */
   readonly defaultContextWindow: number;
-  /** Whether models.dev input modalities (images) are adopted. */
+  /** 是否采纳 models.dev 的输入模态（图像）。 */
   readonly images: 'ignore' | 'metadata';
-  /** `auto` maps reasoning capability; `off` declares every model non-reasoning. */
+  /** `auto` 映射推理能力；`off` 把每个模型都声明为非推理。 */
   readonly reasoning: 'auto' | 'off';
 }
 
-/** Metadata one catalog lookup may contribute to a model. */
+/** 一次清单查找可以为模型贡献的元数据。 */
 export interface CatalogMetadata {
-  /** Context capacity in tokens. */
+  /** 上下文容量，以 token 计。 */
   readonly contextWindow?: number;
-  /** Output capacity in tokens. */
+  /** 输出容量，以 token 计。 */
   readonly maxTokens?: number;
-  /** Whether the model accepts reasoning-effort control. */
+  /** 该模型是否接受推理档位控制。 */
   readonly reasoning?: boolean;
-  /** Request modalities. */
+  /** 请求模态。 */
   readonly input?: readonly Modality[];
-  /** Human-readable name. */
+  /** 人类可读的名称。 */
   readonly name?: string;
 }
 
-/** Look up catalog metadata for one endpoint-advertised model. */
+/** 为一个端点通告的模型查找清单元数据。 */
 export type CatalogLookup = (model: {
   readonly id: string;
   readonly provider?: string;

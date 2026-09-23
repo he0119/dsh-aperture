@@ -1,26 +1,21 @@
 /**
- * The write stage: publish the plan into the `llm-pi-ai` settings section.
+ * 写入阶段：把方案发布到 `llm-pi-ai` 配置段。
  *
- * The section belongs to another plugin — `@deepseek-ai/dsh-llm-pi-ai` — and
- * the settings seam has no ownership check, so writing it is permitted. It is
- * also the sanctioned mechanism rather than a workaround: the harness composes
- * the pi-ai adapter dormant and states that "which providers run is the user's
- * settings document". Discovery that produced anything else would have to
- * reimplement a wire protocol, and this plugin exists precisely because it does
- * not have to.
+ * 该配置段属于另一个插件——`@deepseek-ai/dsh-llm-pi-ai`——而设置接缝不做归属检查，
+ * 因此写入它是被允许的。它同时也是被认可的机制，而不是变通做法：宿主把 pi-ai 适配器
+ * 组合为休眠状态，并声明「哪些 provider 运行由用户的设置文档决定」。发现阶段若产出了
+ * 别的东西，就必须重新实现一套协议格式，而本插件之所以存在，正是因为不必如此。
  *
- * Three properties make the write safe to repeat.
+ * 三条性质使这一写入可以安全重复。
  *
- * It is a no-op when nothing changed, compared against the **resolved** section
- * rather than the raw one, so a deployment's own composition layer does not
- * look like drift.
+ * 没有任何变化时它是空操作，且比较对象是**已解析的**配置段而非原始配置段，因此部署
+ * 自身的组合层不会被视作漂移。
  *
- * It writes only the route keys the plugin owns, with path-addressed ops, so
- * every other provider in the section survives untouched.
+ * 它只写入本插件拥有的路由键，且使用路径寻址的 op，因此配置段中其他每个 provider 都
+ * 原样保留。
  *
- * It never runs from a failed discovery: an unreachable gateway keeps the
- * catalog that is already serving, because a refresh that deletes working
- * models on a transient network error is worse than one that does nothing.
+ * 它绝不会在发现失败后运行：不可达的网关会保留已经在服务的清单，因为在瞬时网络错误
+ * 下删除可用模型的刷新，比什么都不做的刷新更糟。
  *
  * @module dsh-aperture/sync
  */
@@ -29,27 +24,26 @@ import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings
 import { PI_AI_NAMESPACE } from './namespaces.ts';
 import type { RoutePlan } from './profile.ts';
 
-/** The result of one publication attempt. */
+/** 一次发布尝试的结果。 */
 export interface SyncOutcome {
-  /** Whether a write was issued. */
+  /** 是否发出了写入。 */
   readonly applied: boolean;
-  /** Number of path ops the write carried. */
+  /** 该写入携带的路径 op 数量。 */
   readonly ops: number;
-  /** Route keys the plan published. */
+  /** 方案发布的路由键。 */
   readonly routes: readonly string[];
-  /** Why nothing was written, when nothing was. */
+  /** 未写入任何内容时，说明原因。 */
   readonly reason?: string;
 }
 
 /**
- * Compute the path ops that bring one section in line with a plan.
+ * 计算使某个配置段与方案一致的路径 op。
  *
- * @param current - the resolved `llm-pi-ai` value, or `undefined` when the
- *   namespace is not registered.
- * @param routes - the routes the plan wants to exist.
- * @param ownedRoutes - every route key this plugin owns, so a route that
- *   stopped having models is removed rather than left serving a stale catalog.
- * @returns the ops to apply; empty when the section already matches.
+ * @param current - 已解析的 `llm-pi-ai` 值；命名空间未注册时为 `undefined`。
+ * @param routes - 方案希望存在的路由。
+ * @param ownedRoutes - 本插件拥有的每个路由键，因此不再有模型的路由会被移除，而不是
+ *   继续服务一份陈旧的清单。
+ * @returns 要应用的 op；配置段已经匹配时为空数组。
  */
 export function planSync(
   current: unknown,
@@ -57,8 +51,8 @@ export function planSync(
   ownedRoutes: readonly string[],
 ): SettingsPathOp[] {
   const providers = readProviders(current);
-  // A section that cannot hold a provider dict is not one this plugin can plan
-  // against: writing into it would create a shape the adapter refuses anyway.
+  // 无法容纳 provider 字典的配置段不是本插件可以据以规划的对象：写入其中只会造出
+  // 适配器无论如何都会拒绝的形状。
   if (providers === undefined) {
     return [];
   }
@@ -84,12 +78,12 @@ export function planSync(
 }
 
 /**
- * Publish one plan into the `llm-pi-ai` section.
+ * 把一个方案发布到 `llm-pi-ai` 配置段。
  *
- * @param settings - the settings service.
- * @param routes - the routes to publish.
- * @param ownedRoutes - every route key this plugin owns.
- * @returns what happened, including the reason when nothing was written.
+ * @param settings - 设置服务。
+ * @param routes - 要发布的路由。
+ * @param ownedRoutes - 本插件拥有的每个路由键。
+ * @returns 发生了什么；未写入任何内容时包含原因。
  */
 export async function applySync(
   settings: SettingsProvider,
@@ -102,32 +96,31 @@ export async function applySync(
       applied: false,
       ops: 0,
       routes: [],
-      reason: `the "${PI_AI_NAMESPACE}" settings namespace is not registered; is @deepseek-ai/dsh-llm-pi-ai mounted?`,
+      reason: `设置命名空间 "${PI_AI_NAMESPACE}" 未注册；@deepseek-ai/dsh-llm-pi-ai 是否已挂载？`,
     };
   }
 
   const providers = readProviders(current);
   if (providers === undefined) {
-    return { applied: false, ops: 0, routes: [], reason: `the "${PI_AI_NAMESPACE}" section is not a provider dict` };
+    return { applied: false, ops: 0, routes: [], reason: `"${PI_AI_NAMESPACE}" 配置段不是 provider 字典` };
   }
 
   const ops = planSync(current, routes, ownedRoutes);
   if (ops.length === 0) {
-    return { applied: false, ops: 0, routes: routes.map((route) => route.provider), reason: 'already in sync' };
+    return { applied: false, ops: 0, routes: routes.map((route) => route.provider), reason: '已处于同步状态' };
   }
 
   try {
     await settings.mutate(PI_AI_NAMESPACE, ops, currentRevision(settings));
   } catch (error) {
-    // A concurrent writer (the Models page, another process) moved the section
-    // between the read and the write. One retry with a fresh revision is enough:
-    // the ops are path-addressed, so re-planning cannot lose their edits.
+    // 并发写入者（Models 页面、另一个进程）在读取与写入之间改动了该配置段。用新的
+    // 版本号重试一次就足够了：op 是路径寻址的，因此重新规划不会丢失它们的编辑。
     if (!isConflict(error)) {
       throw error;
     }
     const retryOps = planSync(settings.get(PI_AI_NAMESPACE), routes, ownedRoutes);
     if (retryOps.length === 0) {
-      return { applied: false, ops: 0, routes: routes.map((route) => route.provider), reason: 'already in sync' };
+      return { applied: false, ops: 0, routes: routes.map((route) => route.provider), reason: '已处于同步状态' };
     }
     await settings.mutate(PI_AI_NAMESPACE, retryOps, currentRevision(settings));
   }
@@ -136,10 +129,10 @@ export async function applySync(
 }
 
 /**
- * Withdraw every route this plugin owns from the section.
- * @param settings - the settings service.
- * @param ownedRoutes - the route keys to remove.
- * @returns what happened.
+ * 从配置段中撤出本插件拥有的每条路由。
+ * @param settings - 设置服务。
+ * @param ownedRoutes - 要移除的路由键。
+ * @returns 发生了什么。
  */
 export async function clearRoutes(settings: SettingsProvider, ownedRoutes: readonly string[]): Promise<SyncOutcome> {
   const current = settings.get(PI_AI_NAMESPACE);
@@ -148,12 +141,12 @@ export async function clearRoutes(settings: SettingsProvider, ownedRoutes: reado
       applied: false,
       ops: 0,
       routes: [],
-      reason: `the "${PI_AI_NAMESPACE}" settings namespace is not registered`,
+      reason: `设置命名空间 "${PI_AI_NAMESPACE}" 未注册`,
     };
   }
   const providers = readProviders(current);
   if (providers === undefined) {
-    return { applied: false, ops: 0, routes: [], reason: `the "${PI_AI_NAMESPACE}" section is not a provider dict` };
+    return { applied: false, ops: 0, routes: [], reason: `"${PI_AI_NAMESPACE}" 配置段不是 provider 字典` };
   }
   const ops: SettingsPathOp[] = [];
   for (const provider of ownedRoutes) {
@@ -162,20 +155,20 @@ export async function clearRoutes(settings: SettingsProvider, ownedRoutes: reado
     }
   }
   if (ops.length === 0) {
-    return { applied: false, ops: 0, routes: [], reason: 'no routes to remove' };
+    return { applied: false, ops: 0, routes: [], reason: '没有需要移除的路由' };
   }
   await settings.mutate(PI_AI_NAMESPACE, ops, currentRevision(settings));
   return { applied: true, ops: ops.length, routes: [] };
 }
 
-/** Read the provider dict out of a resolved section value. */
+/** 从已解析的配置段值中读出 provider 字典。 */
 function readProviders(current: unknown): Record<string, unknown> | undefined {
   if (current === null || typeof current !== 'object') {
     return undefined;
   }
   const providers = (current as { providers?: unknown }).providers;
-  // An absent key is an empty dict: the adapter's schema defaults it, so a
-  // section that has never carried a provider is exactly the expected state.
+  // 该键缺失即为空字典：适配器的 schema 会为其补上默认值，因此从未承载过 provider 的
+  // 配置段正是预期状态。
   if (providers === undefined) {
     return {};
   }
@@ -184,7 +177,7 @@ function readProviders(current: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-/** The current revision of the pi-ai section, when the provider exposes one. */
+/** pi-ai 配置段的当前版本号；provider 未暴露时为空。 */
 function currentRevision(settings: SettingsProvider): number | undefined {
   try {
     return settings.describe().find((descriptor) => descriptor.ns === PI_AI_NAMESPACE)?.revision;
@@ -193,22 +186,20 @@ function currentRevision(settings: SettingsProvider): number | undefined {
   }
 }
 
-/** Whether one throwable is the settings seam's stale-revision conflict. */
+/** 判断某个可抛出对象是否为设置接缝的陈旧版本号冲突。 */
 function isConflict(error: unknown): boolean {
   return error instanceof Error && (error as { code?: unknown }).code === 'SETTINGS_CONFLICT';
 }
 
 /**
- * Structural JSON equality.
+ * 结构化 JSON 相等性。
  *
- * Written out rather than imported because the values compared here are
- * exactly JSON: a profile this plugin generated and the profile the settings
- * seam resolved back out of the document. Key order is not part of that
- * identity, so it is normalized away.
+ * 之所以写出实现而不是导入，是因为这里比较的值恰好都是 JSON：本插件生成的 profile，
+ * 以及设置接缝从文档中解析回来的 profile。键顺序不属于这种同一性，因此被归一化掉。
  *
- * @param left - one JSON value.
- * @param right - the other.
- * @returns whether the two are structurally equal.
+ * @param left - 一个 JSON 值。
+ * @param right - 另一个。
+ * @returns 两者是否结构相等。
  */
 export function deepEqualJson(left: unknown, right: unknown): boolean {
   if (left === right) {

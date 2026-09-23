@@ -3,6 +3,9 @@ lib/
 probe/
 *.tsbuildinfo
 
-# Local npm cache used when the machine-level cache is not writable.
+# 本地缓存与构建产物。
 .npm-cache/
 .typecheck/
+.probe-home/
+.pnpm-store/
+*.tgz
