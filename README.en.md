@@ -67,9 +67,10 @@ npx @deepseek-ai/dsh --profile web --dump-config   # should show a "# == dsh-ape
 The models appear in the selector under the route `Aperture`. To see what the last refresh did, look at the **Aperture** tab under **Settings → Plugins**: the status block lays every fact out on its own row, and the models are listed per route underneath.
 
 ```
-▾ Aperture  overridden  ●                                  [Reset override]
+▾ Aperture  ●
   Aperture  aperture.baseUrl
-  Instance address [https://ai.example.ts.net             ]
+  Instance address  Overridden  Reset to default
+  [https://ai.example.ts.net             ]
   ☑ Sync into llm-pi-ai   writes the provider dictionary
                                                            [Cancel] [Save]
 
@@ -94,14 +95,14 @@ aperture  openai-completions  11 models  ●                 [▾ Collapse]
     │ Modalities    ☑ text ☑ image   in effect text+image · from config
     │ Reasoning     [follow discovery ▾]  in effect on · from models.dev
     │ Protocol      [follow discovery ▾]  in effect openai-completions
-    │ An empty display name, capacity or modality drops that override…  [Reset override] [Cancel] [Save]
+    │ An empty display name, capacity or modality drops that override…  [Reset to default] [Cancel] [Save]
   gemini-2.5-flash  Gemini 2.5 Flash                      [▸ Edit]
     128,000 context window · text · no reasoning
 
 Unserved  4 models  ●                                      [▸ Edit]
 ```
 
-Two sections are each a card: **Instance** (address and sync toggle) and **Last refresh** (one fact per row; the report lives in the same card). Both card heads are themselves collapse toggles — an arrow plus the name, shaped after the group header on the official plugin-list page, expanded by default, and clicking one folds the card body away. The actions (`[Reset override]`, `[Refresh now]`) stay **outside** the toggle, so they still work while folded, and so does the banner a press produces. **Models and routes** is a page-level section: the title sits directly above the cards, the same skeleton as the official Models page, with no outer card — one card per route, its head carrying `provider · api` and the model count, and its body the "→ address" line plus that route's model list. A model row expands once more, and its parameter face lands inside that row (a rule across the same grey face, not a second grey panel). The pill buttons on the right of a card head are that card's own actions, and the `●` says that card's own state: whether an address is set (Instance), whether that round succeeded (Last refresh), whether this round wrote the route into `llm-pi-ai` (route cards; red when it did not), and whether any route is available at all (the Unserved card).
+Two sections are each a card: **Instance** (address and sync toggle) and **Last refresh** (one fact per row; the report lives in the same card). Both card heads are themselves collapse toggles — an arrow plus the name, shaped after the group header on the official plugin-list page, expanded by default, and clicking one folds the card body away. The card-head actions (`[Refresh now]`, `[Withdraw published routes]`) and the banner a press produces stay **outside** the toggle, so they still work while folded. A field you wrote into your settings file yourself carries an "Overridden" badge with a "Reset to default" button right beside its label — the same two words and the same position as the official plugin-config page (the `badges` of its `ValueField`), so "Overridden" never floats on a card head with nothing to attach to. **Models and routes** is a page-level section: the title sits directly above the cards, the same skeleton as the official Models page, with no outer card — one card per route, its head carrying `provider · api` and the model count, and its body the "→ address" line plus that route's model list. A model row expands once more, and its parameter face lands inside that row (a rule across the same grey face, not a second grey panel). The pill buttons on the right of a card head are that card's own actions, and the `●` says that card's own state: whether an address is set (Instance), whether that round succeeded (Last refresh), whether this round wrote the route into `llm-pi-ai` (route cards; red when it did not), and whether any route is available at all (the Unserved card).
 
 Collapsed, the first level is just the route card head and the second just one row of facts (id, display name, capacities); "Edit" expands the level inside it, where every source sits next to the field it describes ("in effect 1,048,576 · from aperture"). Each row gets its own Save and Cancel: Save writes that row only, Cancel throws that row's edits away.
 
@@ -113,9 +114,9 @@ The interface is the **Aperture** tab under **Settings → Plugins**: it shows y
 
 | Where | Effect |
 | --- | --- |
-| Tab · 实例卡 | the instance address and sync toggle; the head's dot says whether an address is set, and "Reset override" puts `baseUrl` back to the composition layer |
-| Tab · 实例地址 | edits `baseUrl` (written through the settings seam, with an "overridden" badge and reset-to-composition) |
-| Tab · 同步开关 | edits `sync`: off discovers without writing `llm-pi-ai` |
+| Tab · 实例卡 | the instance address and sync toggle; the head's dot says whether an address is set |
+| Tab · 实例地址 | edits `baseUrl` (written through the settings seam; when it says "Overridden", the "Reset to default" beside it falls back to the composition layer and defaults) |
+| Tab · 同步开关 | edits `sync`: off discovers without writing `llm-pi-ai`; carries the same "Overridden / Reset to default" pair |
 | Tab · 保存 | bottom right of the editor (Cancel sits to its left): writes the address and toggle drafts into the settings document |
 | Tab · 最近一次刷新 | what the last refresh did, what triggered it, and the catalog, endpoint and settings-write results; the head's dot says whether that round succeeded |
 | Tab · 立即刷新 | a card-head action on the refresh card: discover and republish now, then show that round's report |
@@ -123,7 +124,7 @@ The interface is the **Aperture** tab under **Settings → Plugins**: it shows y
 | Tab · 模型与路由 | one page-level section: an expandable card per route (its head carrying `provider · api`, the model count and a dot saying whether this round wrote it into `llm-pi-ai`), whose body holds the address and the model list; models no route can serve get their own Unserved card |
 | Tab · 编辑 | the pill button in a card head: expands the next level inside that card. A route card expands the model list; a model row expands its own parameter panel — display name, catalog alias, capacities, modalities, reasoning, protocol, each source next to the field it describes |
 | Tab · 保存 / 取消 | write that row only, or throw that row's edits away |
-| Tab · 撤销覆盖 | clear only the fields the report says really were overridden, falling back to discovery and the catalog right away |
+| Tab · 恢复默认 | sits next to whatever is overridden: clear only the fields the report says really were overridden, falling back to discovery and the catalog right away |
 
 In-place edits are configuration: capacities and modalities land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. The protocol field is the only way out for an unserved model: filling it in publishes a model that only answers on its native endpoint under the matching route.
 

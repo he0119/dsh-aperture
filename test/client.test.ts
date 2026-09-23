@@ -497,7 +497,7 @@ describe('浏览器半边', () => {
       }
     }
     // 缺省与否由参数自己说了算：`save` 的两个参数没提到就是「不碰」，`edit` 的补丁必须给出
-    // ——`null` 是「撤销覆盖」，缺省不能顺便也当成撤销。
+    // ——`null` 是「恢复默认」，缺省不能顺便也当成恢复。
     for (const descriptor of descriptors) {
       const optional = descriptor.method === 'save';
       for (const parameter of descriptor.parameters) {
@@ -507,11 +507,12 @@ describe('浏览器半边', () => {
     const save = descriptors.find((descriptor) => descriptor.method === 'save');
     assert.ok(save);
     assert.deepEqual(Array.from(save.parameters, (parameter) => parameter.name), ['baseUrl', 'sync']);
-    // `null` 是「撤销覆盖」的哨兵值，必须过得了参数校验。
+    // `null` 是「恢复默认」的哨兵值，两个参数都必须过得了参数校验。
     assert.equal(save.parameters[0]?.codec.schema?.parse(null), null);
     assert.equal(save.parameters[0]?.codec.schema?.parse(undefined), undefined);
     assert.throws(() => save.parameters[0]?.codec.schema?.parse(7), /期望 string/u);
     assert.equal(save.parameters[1]?.codec.schema?.parse(true), true);
+    assert.equal(save.parameters[1]?.codec.schema?.parse(null), null);
     assert.throws(() => save.parameters[1]?.codec.schema?.parse('yes'), /期望 boolean/u);
   });
 
@@ -767,7 +768,7 @@ describe('浏览器半边', () => {
     assert.equal(actions.props['data-align'], 'end');
     assert.deepEqual(
       findAll(actions, (node) => node.type === 'button').map((node) => text(node)),
-      ['撤销覆盖', '取消', '保存'],
+      ['恢复默认', '取消', '保存'],
     );
 
     // 「未服务」那张卡：展开后头上写着为什么没有路由，行里是它通告的端点。
@@ -949,15 +950,32 @@ describe('浏览器半边', () => {
     assert.ok(harness.panelCalls.filter((call) => call === 'configuration').length >= 2, '保存后应重读配置');
   });
 
-  it('撤销覆盖时明确传 null', async () => {
-    const { mini, harness, element } = driveClient();
+  it('「恢复默认」明确传 null：地址与同步开关各撤各的', async () => {
+    const { mini, harness, element } = driveClient({ configuration: { syncOverridden: true } });
     mini.mount(element);
     await mini.flush();
 
-    assert.match(text(mini.tree()), /已覆盖/u);
-    click(findButton(mini.tree(), '撤销覆盖'));
+    // 「已覆盖」跟着它描述的那个字段走：地址字段一个、同步开关一个，卡头上不再挂（卡头上那句
+    // 没有主语的「已覆盖」正是它看着意义不明的原因）。
+    const head = findAll(mini.tree(), (node) => node.props.className === 'dap-card-head')[0]!;
+    assert.equal(findAll(head, (node) => node.props.className === 'dap-tag').length, 0);
+    const badges = findAll(mini.tree(), (node) => node.props.className === 'dap-field-badges');
+    assert.equal(badges.length, 2);
+    assert.equal(
+      findAll(badges[0]!, (node) => node.props.className === 'dap-tag')[0]?.props.title,
+      '这一项写在你的设置文件里；存在就算覆盖，值与默认相同也算。',
+      '标签自己说清「覆盖」是什么意思',
+    );
+    const resets = findAll(mini.tree(), (node) => node.props.className === 'dap-reset');
+    assert.deepEqual(resets.map((node) => text(node)), ['恢复默认', '恢复默认']);
+
+    click(resets[0]!);
     await mini.flush();
-    assert.deepEqual(harness.saveCalls, [[null, undefined]]);
+    assert.deepEqual(harness.saveCalls, [[null, undefined]], '地址那颗只撤地址');
+
+    click(findAll(mini.tree(), (node) => node.props.className === 'dap-reset')[1]!);
+    await mini.flush();
+    assert.deepEqual(harness.saveCalls[1], [undefined, null], '开关那颗只撤开关');
   });
 
   it('同步开关与两个动作按钮各自打到对应端点', async () => {

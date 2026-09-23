@@ -147,16 +147,17 @@ window.__ModuleLoader__.load({
       return value;
     }
 
-    /** 一个参数编解码器。
+    /** 一个**可省略**的参数编解码器。
      *
-     * `acceptsUndefined` 与「可省略」是一回事：`save` 的调用方常常只想改其中一个字段，
-     * 没提到的那个必须原样传过去。
+     * `acceptsUndefined` 与「可省略」是一回事：`save` 的调用方常常只想改其中一个字段，没提到的
+     * 那个必须原样传过去。类型说明与 {@link param} 共用一套文法，因为这里要同时容下两种「空」：
+     * 省略是「不碰」，`null` 是「恢复默认」——两者都过得了校验，而且意思完全不同。
      *
      * @param {string} typeSymbol - 类型符号。
-     * @param {'string' | 'boolean'} type - 允许的类型；`string` 另外允许 `null`（撤销覆盖）。
+     * @param {string|object} kind - 类型说明。
      * @returns {object} 参数编解码器。
      */
-    function optionalParam(typeSymbol, type) {
+    function optionalParam(typeSymbol, kind) {
       return Object.freeze({
         mode: 'strict',
         typeSymbol,
@@ -164,9 +165,7 @@ window.__ModuleLoader__.load({
         schema: {
           parse(value) {
             if (value === undefined) return undefined;
-            if (type === 'string' && value === null) return null;
-            if (typeof value !== type) throw new TypeError(`${typeSymbol}：期望 ${type}，收到 ${typeof value}`);
-            return value;
+            return parseKind(typeSymbol, kind, value);
           },
         },
       });
@@ -336,8 +335,8 @@ window.__ModuleLoader__.load({
         descriptor('withdraw', [], ACTION),
         descriptor('configuration', [], CONFIGURATION),
         descriptor('save', [
-          ['baseUrl', optionalParam(`${PACKAGE}/types#baseUrl`, 'string')],
-          ['sync', optionalParam(`${PACKAGE}/types#sync`, 'boolean')],
+          ['baseUrl', optionalParam(`${PACKAGE}/types#baseUrl`, 'string|null')],
+          ['sync', optionalParam(`${PACKAGE}/types#sync`, 'boolean|null')],
         ], ACTION),
         descriptor('edit', [
           ['id', param(`${PACKAGE}/types#modelId`, 'string')],
@@ -475,9 +474,16 @@ window.__ModuleLoader__.load({
 [${STYLE_MARK}] .dap-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
 [${STYLE_MARK}] .dap-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 [${STYLE_MARK}] .dap-field > label { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
+/* 「已覆盖」那对记号跟着它描述的那个字段：官方 ValueField 的 head/badges 就是这个位置。
+   搁在卡头上时它是一句没有主语的「已覆盖」，离要撤销的那一项越远越像在说别的东西。 */
+[${STYLE_MARK}] .dap-field-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+[${STYLE_MARK}] .dap-field-badges { display: inline-flex; align-items: center; gap: 8px; }
+/* 「恢复默认」是官方那个纯文字按钮：12px、label-secondary、没有边框也没有底色。 */
+[${STYLE_MARK}] .dap-reset { padding: 0; border: 0; background: none; font: inherit; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary, inherit); cursor: pointer; }
+[${STYLE_MARK}] .dap-reset:disabled { cursor: default; color: var(--dsw-alias-label-dimmed, rgba(127,127,127,.6)); }
 /* 编辑区里的字段是官方 fieldLabel（12px/500 的 label-secondary），模型那一格沿用官方
    modelFieldLabel 的 12px label-tertiary；整行的格子（地址、密钥那种值）横跨整个栅格。 */
-[${STYLE_MARK}] .dap-field[data-emphasis="true"] > label { display: inline-flex; align-items: center; gap: 10px; font-weight: 500; color: var(--dsw-alias-label-secondary, inherit); }
+[${STYLE_MARK}] .dap-field[data-emphasis="true"] > label, [${STYLE_MARK}] .dap-field[data-emphasis="true"] .dap-field-head > label { display: inline-flex; align-items: center; gap: 10px; font-weight: 500; color: var(--dsw-alias-label-secondary, inherit); }
 [${STYLE_MARK}] .dap-field[data-wide="true"] { grid-column: 1 / -1; }
 [${STYLE_MARK}] .dap-field-note { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
 [${STYLE_MARK}] .dap-error { margin: 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-state-error-primary, #d9534f); }
@@ -508,7 +514,10 @@ window.__ModuleLoader__.load({
       syncOn: '写入 provider 字典',
       syncOff: '只探测，不写入',
       overridden: '已覆盖',
+      overriddenHint: '这一项写在你的设置文件里；存在就算覆盖，值与默认相同也算。',
       syncOffTag: '不同步',
+      reset: '恢复默认',
+      resetHint: '从设置文件里删掉这一项，回到组合层与默认值。',
       dotConfigured: '实例地址已配置',
       dotMissing: '没有实例地址',
       dotRefreshOk: '最近一次刷新成功',
@@ -517,7 +526,6 @@ window.__ModuleLoader__.load({
       dotUnpublished: '这一轮没有写入 llm-pi-ai：{reason}',
       dotUnservedModels: '这些模型没有路由可用',
       reasonUnknown: '报告里没有写原因',
-      reset: '撤销覆盖',
       save: '保存',
       saving: '保存中…',
       cancel: '取消',
@@ -605,8 +613,11 @@ window.__ModuleLoader__.load({
       syncLabel: 'Sync into llm-pi-ai',
       syncOn: 'writes the provider dictionary',
       syncOff: 'probe only, write nothing',
-      overridden: 'overridden',
+      overridden: 'Overridden',
+      overriddenHint: 'This field is set in your settings file; presence alone marks it overridden, even when the value matches the default.',
       syncOffTag: 'no sync',
+      reset: 'Reset to default',
+      resetHint: 'Remove this key from your settings file and fall back to the composition layer and defaults.',
       dotConfigured: 'instance address configured',
       dotMissing: 'no instance address',
       dotRefreshOk: 'last refresh succeeded',
@@ -615,7 +626,6 @@ window.__ModuleLoader__.load({
       dotUnpublished: 'not written into llm-pi-ai this round: {reason}',
       dotUnservedModels: 'no route can serve these models',
       reasonUnknown: 'the report records no reason',
-      reset: 'Reset',
       save: 'Save',
       saving: 'Saving…',
       cancel: 'Cancel',
@@ -1113,9 +1123,10 @@ window.__ModuleLoader__.load({
        * @param {string} [note] - 生效值一类的补充说明。
        * @param {object} [flags] - `wide`（横跨整行）与 `emphasis`（官方 fieldLabel 的
        *   12px/500 label-secondary，模型那些格子用的是更轻的 modelFieldLabel）。
+       * @param {object} [badges] - 跟在标签右边的那对记号（见 {@link overrideBadges}）。
        * @returns {object} 一个栅格单元。
        */
-      const field = (key, label, control, note, flags = {}) => h(
+      const field = (key, label, control, note, flags = {}, badges) => h(
         'div',
         {
           className: 'dap-field',
@@ -1123,10 +1134,36 @@ window.__ModuleLoader__.load({
           'data-wide': flags.wide === true ? 'true' : undefined,
           'data-emphasis': flags.emphasis === true ? 'true' : undefined,
         },
-        h('label', { htmlFor: key }, label),
+        badges === undefined
+          ? h('label', { htmlFor: key }, label)
+          : h(
+            'div',
+            { className: 'dap-field-head' },
+            h('label', { htmlFor: key }, label),
+            badges,
+          ),
         control,
         note === undefined ? null : h('span', { className: 'dap-field-note' }, note),
       );
+
+      /**
+       * 「已覆盖」那对记号：一枚标签加一个「恢复默认」，紧挨着它描述的那个字段的标签——官方
+       * `ValueField` 的 `badges` 就在这个位置。搁在卡头上时它是一句没有主语的「已覆盖」，而它离
+       * 要撤销的那一项越远，越像在说别的东西。
+       *
+       * @param {Function} onReset - 按下「恢复默认」之后做什么。
+       * @returns {object} 标签与按钮。
+       */
+      const overrideBadges = (onReset) => h('span', { className: 'dap-field-badges' }, [
+        h('span', { className: 'dap-tag', title: t('overriddenHint') }, t('overridden')),
+        h('button', {
+          type: 'button',
+          className: 'dap-reset',
+          title: t('resetHint'),
+          disabled,
+          onClick: onReset,
+        }, t('reset')),
+      ]);
 
       /** 一个 `<select>` 的选项。 */
       const option = (value, label) => h('option', { value, key: value === '' ? 'auto' : value }, label);
@@ -1326,7 +1363,11 @@ window.__ModuleLoader__.load({
               { className: 'dap-identity' },
               h('code', { className: 'dap-model-id' }, model.id),
               model.name === model.id ? null : h('span', { className: 'dap-name' }, model.name),
-              overridden ? h('span', { className: 'dap-tag' }, t('overridden')) : null,
+              // 这一行的标签说的是「这一行整体有覆盖」，因此它撤不掉单个字段：点开这一行，
+              // 每个字段的生效值旁边写着它从哪儿来，底下那颗「恢复默认」才是清掉整行的那颗。
+              overridden
+                ? h('span', { className: 'dap-tag', title: t('overriddenHint') }, t('overridden'))
+                : null,
               Object.keys(patch).length > 0 ? h('span', { className: 'dap-tag' }, t('pendingTag')) : null,
             ),
             h(
@@ -1508,20 +1549,12 @@ window.__ModuleLoader__.load({
           cardHead(
             [
               h('span', { className: 'dap-name' }, t('tab')),
-              configuration.baseUrlOverridden
-                ? h('span', { className: 'dap-tag' }, t('overridden'))
-                : null,
               draft.sync ? null : h('span', { className: 'dap-tag' }, t('syncOffTag')),
               dot(dormant ? 'bad' : 'ok', dormant ? t('dotMissing') : t('dotConfigured')),
             ],
-            configuration.baseUrlOverridden
-              ? [h('button', {
-                type: 'button',
-                className: 'dap-button',
-                disabled,
-                onClick: () => run('reset', () => panel.save(null, undefined), () => setConfigRevision((value) => value + 1)),
-              }, t('reset'))]
-              : undefined,
+            // 卡头上不再挂「已覆盖」与「恢复默认」：它们各自跟着自己描述的那个字段走（见下面
+            // 两处 overrideBadges），卡头只留身份。
+            undefined,
             { key: 'instance', open: sectionOpen('instance') },
           ),
           // 折起来时整块不渲染（官方也是 `open ? body : null`）：DOM 里不留一个藏着的输入框。
@@ -1553,6 +1586,9 @@ window.__ModuleLoader__.load({
                 }),
                 undefined,
                 { wide: true, emphasis: true },
+                configuration.baseUrlOverridden
+                  ? overrideBadges(() => run('reset', () => panel.save(null, undefined), () => setConfigRevision((value) => value + 1)))
+                  : undefined,
               ),
             ),
             h(
@@ -1572,7 +1608,7 @@ window.__ModuleLoader__.load({
               ),
               h('span', { className: 'dap-tag' }, draft.sync ? t('syncOn') : t('syncOff')),
               configuration.syncOverridden
-                ? h('span', { className: 'dap-tag' }, t('overridden'))
+                ? overrideBadges(() => run('reset', () => panel.save(undefined, null), () => setConfigRevision((value) => value + 1)))
                 : null,
             ),
             configuration.writable ? null : h('p', { className: 'dap-banner', 'data-ok': 'false' }, t('readOnly')),

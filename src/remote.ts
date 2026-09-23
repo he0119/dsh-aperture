@@ -118,11 +118,11 @@ export class AperturePanelService extends TypertRemoteService {
   /**
    * 写入配置。
    *
-   * @param baseUrl - 新地址；`null` 撤销覆盖，`undefined` 不碰。
-   * @param sync - 新开关；`undefined` 不碰。
+   * @param baseUrl - 新地址；`null` 恢复默认，`undefined` 不碰。
+   * @param sync - 新开关；`null` 恢复默认，`undefined` 不碰。
    * @returns 成败与一句人话。
    */
-  save(baseUrl: string | null | undefined, sync: boolean | undefined): Promise<PanelAction> {
+  save(baseUrl: string | null | undefined, sync: boolean | null | undefined): Promise<PanelAction> {
     return this.ops.save(baseUrl, sync);
   }
 

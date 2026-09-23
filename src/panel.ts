@@ -96,10 +96,10 @@ export interface PanelOps {
   /**
    * 写入配置。
    *
-   * @param baseUrl - 新地址；`null` 表示撤销覆盖（从用户层移除），`undefined` 表示不碰。
-   * @param sync - 新开关；`undefined` 表示不碰。
+   * @param baseUrl - 新地址；`null` 表示恢复默认（从用户层移除），`undefined` 表示不碰。
+   * @param sync - 新开关；`null` 表示恢复默认，`undefined` 表示不碰。
    */
-  save(baseUrl: string | null | undefined, sync: boolean | undefined): Promise<PanelAction>;
+  save(baseUrl: string | null | undefined, sync: boolean | null | undefined): Promise<PanelAction>;
   /**
    * 写入一个模型的参数。
    *
@@ -269,10 +269,11 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
       const ops: SettingsPathOp[] = [];
       if (baseUrl === null) ops.push({ op: 'unset', path: ['baseUrl'] });
       else if (baseUrl !== undefined) ops.push({ op: 'set', path: ['baseUrl'], value: baseUrl.trim() });
-      if (sync !== undefined) ops.push({ op: 'set', path: ['sync'], value: sync });
+      if (sync === null) ops.push({ op: 'unset', path: ['sync'] });
+      else if (sync !== undefined) ops.push({ op: 'set', path: ['sync'], value: sync });
       if (ops.length === 0) return { ok: true, summary: '没有要保存的改动。' };
 
-      // 撤销覆盖是唯一一种「只移除、不写入」的保存，值得单独说一句。
+      // 恢复默认是唯一一种「只移除、不写入」的保存，值得单独说一句。
       const withdrawOnly = ops.every((op) => op.op === 'unset');
       try {
         // 带着刚读到的版本号写入：期间有别人改过就拒绝，而不是覆盖他的改动。
@@ -280,7 +281,7 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
         return {
           ok: true,
           summary: withdrawOnly
-            ? '已撤销覆盖，回落到组合层与默认值。'
+            ? '已恢复默认，回落到组合层与默认值。'
             : '已写入设置；插件会按新配置重新发现。',
         };
       } catch (error) {

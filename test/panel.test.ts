@@ -293,12 +293,20 @@ describe('panel.save', () => {
     assert.deepEqual(writes[0]?.ops, [{ op: 'set', path: ['baseUrl'], value: 'https://new.example.ts.net' }]);
   });
 
-  it('null 表示撤销覆盖：只移除字段，不动别的', async () => {
+  it('null 表示恢复默认：只移除字段，不动别的', async () => {
     const { ops, writes } = panel({ aperture: { value: {}, user: { baseUrl: 'https://user.example.ts.net' } } });
     const action = await ops.save(null, undefined);
     assert.equal(action.ok, true);
-    assert.match(action.summary, /撤销覆盖/u);
+    assert.match(action.summary, /恢复默认/u);
     assert.deepEqual(writes[0]?.ops, [{ op: 'unset', path: ['baseUrl'] }]);
+  });
+
+  it('同步开关也能恢复默认，而且不会顺手把地址一起撤掉', async () => {
+    const { ops, writes } = panel({ aperture: { value: { sync: false }, user: { sync: false } } });
+    const action = await ops.save(undefined, null);
+    assert.equal(action.ok, true);
+    assert.match(action.summary, /恢复默认/u);
+    assert.deepEqual(writes[0]?.ops, [{ op: 'unset', path: ['sync'] }]);
   });
 
   it('两个参数都没给时不写设置，也不算失败', async () => {
