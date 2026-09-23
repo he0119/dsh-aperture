@@ -20,8 +20,9 @@ jobs:
         # engines 声明为 ^22.19.0 || >=24.0.0，两端都测。
         node: ['22', '24']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # v5 起这两个动作跑在 Node 24 上；v4 在 runner 上只会被警告降级执行。
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           cache: npm
