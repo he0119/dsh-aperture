@@ -97,7 +97,7 @@ interface ModelView {
   input: readonly string[];
   reasoning: boolean;
   provenance: { limits: string; reasoning: string; input: string; name: string };
-  override?: ModelPatch;
+  overrideKeys?: readonly string[];
   alias?: string;
 }
 
@@ -149,7 +149,7 @@ function report(overrides: Partial<Report> = {}): Report {
         input: ['text', 'image'],
         reasoning: true,
         provenance: { limits: 'aperture', reasoning: 'models.dev', input: 'config', name: 'models.dev' },
-        override: { thinking: true },
+        overrideKeys: ['thinking'],
         alias: 'deepseek/deepseek-v4-flash',
       },
       {
@@ -1178,32 +1178,61 @@ describe('浏览器半边', () => {
     assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-contextWindow').props.value, '1048576');
   });
 
-  it('「撤销覆盖」只清掉报告里写着确实覆盖过的那几项，而且只动这一行', async () => {
+  it('「恢复默认」只清掉用户层里确实写过的那些键，而且只动这一行', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
 
-    // 这一行被覆盖的是 thinking；别名也被清了一遍——面板里的别名输入框显示的是生效别名，
-    // 清掉表示「不要再覆盖」，宿主看到用户层没有这个键就什么都不写。
+    // 这一行用户层里写过 thinking。别名是清单给的、不是用户写的，因此不去碰它：报告里的
+    // `overrideKeys` 说的是用户层写过哪些键，界面不再拿生效值去猜。
     await openModel(mini, 'deepseek-flash');
     click(findById(mini.tree(), 'dap-model-deepseek-flash-revert'));
     await mini.flush();
 
-    assert.deepEqual(plain(harness.editCalls), [[
-      'deepseek-flash',
-      { thinking: null, alias: '' },
-    ]]);
+    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { thinking: null }]]);
     assert.match(text(mini.tree()), /已重新发现并发布/u);
     // 写的是别的行？不可能：端点一次只收一个 id。
     assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-toggle').length, 1);
   });
 
-  it('报告的覆盖里出现界面不认识的键时，整条撤销', async () => {
+  it('别名也写在用户层里时，跟着一起撤（别名用空串表示「不要再覆盖」）', async () => {
+    const base = report().models[0]!;
+    const { harness, mini, element } = driveClient({
+      report: report({ models: [{ ...base, overrideKeys: ['thinking', 'alias'] }, report().models[1]!] }),
+    });
+    mini.mount(element);
+    await mini.flush();
+
+    await openModel(mini, 'deepseek-flash');
+    click(findById(mini.tree(), 'dap-model-deepseek-flash-revert'));
+    await mini.flush();
+
+    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { thinking: null, alias: '' }]]);
+  });
+
+  it('标签的 title 点名覆盖了哪几项：界面不编辑的键也说得出来', async () => {
+    const base = report().models[0]!;
+    const { mini, element } = driveClient({
+      report: report({
+        models: [{ ...base, overrideKeys: ['contextWindow', 'reasoningEfforts'] }, report().models[1]!],
+      }),
+    });
+    mini.mount(element);
+    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
+
+    // 实例卡上那两枚字段标签也带 title，因此这里看的是全部标签里有没有这一句。
+    const titles = findAll(mini.tree(), (node) => node.props.className === 'dap-tag')
+      .map((node) => node.props.title);
+    assert.ok(titles.includes('这一行在设置文件里写了：上下文、推理档位'), titles.join(' / '));
+  });
+
+  it('报告里出现界面不认识的覆盖键时，整条撤销——不然那颗「已覆盖」按不下去', async () => {
     const base = report().models[0]!;
     const { harness, mini, element } = driveClient({
       report: report({
         models: [
-          { ...base, override: { somethingNew: true } as never, alias: undefined },
+          { ...base, overrideKeys: ['reasoningEfforts'], alias: undefined },
           report().models[1]!,
         ],
       }),

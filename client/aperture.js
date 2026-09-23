@@ -205,15 +205,13 @@ window.__ModuleLoader__.load({
       writable: 'boolean',
     });
 
-    /** 一个模型的覆盖（`aperture.models` 里那一条）。 */
-    const OVERRIDE = codec(`${PACKAGE}/types#modelOverride`, {
-      name: 'string?',
-      api: 'string?',
-      contextWindow: 'number?',
-      maxTokens: 'number?',
-      input: 'string[]?',
-      thinking: 'boolean?',
-    });
+    /**
+     * 界面能编辑的覆盖键。
+     *
+     * 列表以外的键（例如 `reasoningEfforts`）一旦出现在用户层里，这一行就只能整条撤：只清认得
+     * 的那几项，它在报告里仍然是「已覆盖」，那颗标签会按不下去。
+     */
+    const EDITABLE_KEYS = Object.freeze(['name', 'api', 'contextWindow', 'maxTokens', 'input', 'thinking', 'alias']);
 
     /** 一条事实的来源；未知来源原样显示。 */
     const PROVENANCE = codec(`${PACKAGE}/types#provenance`, {
@@ -235,7 +233,7 @@ window.__ModuleLoader__.load({
       input: 'string[]',
       reasoning: 'boolean',
       provenance: PROVENANCE,
-      override: opt(OVERRIDE),
+      overrideKeys: 'string[]?',
       alias: 'string?',
     });
 
@@ -515,6 +513,9 @@ window.__ModuleLoader__.load({
       syncOff: '只探测，不写入',
       overridden: '已覆盖',
       overriddenHint: '这一项写在你的设置文件里；存在就算覆盖，值与默认相同也算。',
+      overriddenKeys: '这一行在设置文件里写了：{keys}',
+      keyReasoningEfforts: '推理档位',
+      listSeparator: '、',
       syncOffTag: '不同步',
       reset: '恢复默认',
       resetHint: '从设置文件里删掉这一项，回到组合层与默认值。',
@@ -615,6 +616,9 @@ window.__ModuleLoader__.load({
       syncOff: 'probe only, write nothing',
       overridden: 'Overridden',
       overriddenHint: 'This field is set in your settings file; presence alone marks it overridden, even when the value matches the default.',
+      overriddenKeys: 'written into your settings file for this row: {keys}',
+      keyReasoningEfforts: 'reasoning efforts',
+      listSeparator: ', ',
       syncOffTag: 'no sync',
       reset: 'Reset to default',
       resetHint: 'Remove this key from your settings file and fall back to the composition layer and defaults.',
@@ -837,13 +841,51 @@ window.__ModuleLoader__.load({
         maxTokens: model.maxTokens === undefined ? '' : String(model.maxTokens),
         text: model.input.includes('text'),
         image: model.input.includes('image'),
-        reasoning: model.override !== undefined && model.override.thinking !== undefined
-          ? (model.override.thinking ? 'on' : 'off')
-          : 'auto',
-        api: (model.override !== undefined && model.override.api) || '',
+        // 「跟随发现」= 用户层里没写过这个键。写过了，生效值就是用户写的那个值。
+        reasoning: declared(model, 'thinking') ? (model.reasoning ? 'on' : 'off') : 'auto',
+        api: declared(model, 'api') ? (model.protocol ?? '') : '',
       });
 
-      /** 一个模型的当前草稿；没改过就是生效值本身。 */
+      /**
+       * 用户层里写没写过这个键——这就是「覆盖」的判据。
+       *
+       * 报告里的 `overrideKeys` 直接来自用户层，因此不必拿生效值和默认值比：比出来的答案既会漏
+       * （写了与默认相同的值），也会多（schema 补出来的空值）。
+       *
+       * @param {object} model - 报告里的一个模型。
+       * @param {string} key - 字段名。
+       * @returns {boolean} 写过没有。
+       */
+      const declared = (model, key) => (model.overrideKeys ?? []).includes(key);
+
+      /** 覆盖键在界面上的名字；界面不编辑的键（`reasoningEfforts`）另给一个词条。 */
+      const OVERRIDE_NAMES = {
+        name: 'editName',
+        api: 'editApi',
+        contextWindow: 'editContextWindow',
+        maxTokens: 'editMaxTokens',
+        input: 'editInput',
+        thinking: 'editReasoning',
+        alias: 'editAlias',
+        reasoningEfforts: 'keyReasoningEfforts',
+      };
+
+      /**
+       * 把覆盖键翻成给人看的一句话。
+       *
+       * 只挂一句「已覆盖」，用户就得自己猜是哪一项；界面不编辑的键更是猜不出来。认不出的键照原样
+       * 写出键名——那多半是宿主新加的字段，写出来至少能在设置文件里搜到。
+       *
+       * @param {object} model - 报告里的一个模型。
+       * @returns {string} 逗号分隔的字段名。
+       */
+      const overrideKeyNames = (model) => (model.overrideKeys ?? [])
+        .map((key) => (OVERRIDE_NAMES[key] === undefined ? key : t(OVERRIDE_NAMES[key])))
+        .join(t('listSeparator'));
+
+      /**
+       * 一个模型的当前草稿；没改过就是生效值本身。
+       */
       const draftOf = (model) => drafts[model.id] ?? initialOf(model);
 
       /** 改一个字段；用函数式更新，同一个 tick 里连着改几个字段也不会互相覆盖。 */
@@ -941,19 +983,14 @@ window.__ModuleLoader__.load({
        * @param {object} model - 报告里的一个模型。
        */
       const clearOverrides = (model) => {
-        const overrides = model.override ?? {};
-        const patch = {};
-        if (overrides.name !== undefined) patch.name = null;
-        if (overrides.api !== undefined) patch.api = null;
-        if (overrides.contextWindow !== undefined) patch.contextWindow = null;
-        if (overrides.maxTokens !== undefined) patch.maxTokens = null;
-        if (overrides.input !== undefined) patch.input = null;
-        if (overrides.thinking !== undefined) patch.thinking = null;
-        // 别名在 `modelAliases` 里，是另一张表；显示的别名可能来自清单，因此这里只是
-        // 「不要再覆盖」，宿主看到用户层没有这个键就什么都不写。
-        if (model.alias !== undefined) patch.alias = '';
-
-        const payload = Object.keys(patch).length === 0 ? null : patch;
+        const keys = model.overrideKeys ?? [];
+        const known = keys.filter((key) => EDITABLE_KEYS.includes(key));
+        const unknown = keys.filter((key) => !EDITABLE_KEYS.includes(key));
+        // 别名用空串表示「不要再覆盖」；其余字段 `null` 就是「删掉这一项」。
+        const patch = Object.fromEntries(known.map((key) => [key, key === 'alias' ? '' : null]));
+        // 有界面不认识的键（例如 `reasoningEfforts`）时只能整条撤：只清认得的那几项，这一行在
+        // 报告里仍然是「已覆盖」，那颗标签会按不下去。一条键都没有时同理，没什么可逐个清的。
+        const payload = unknown.length > 0 || known.length === 0 ? null : patch;
         run('revert', () => panel.edit(model.id, payload), () => {
           dropDraft(model.id);
           close(model.id);
@@ -1217,7 +1254,7 @@ window.__ModuleLoader__.load({
        */
       const advanced = (model) => {
         const current = draftOf(model);
-        const overridden = model.override !== undefined && Object.keys(model.override).length > 0;
+        const overridden = (model.overrideKeys ?? []).length > 0;
         const { patch } = patchOf(current, initialOf(model));
         const count = (value) => (value === undefined ? '—' : formatCount(value));
         const modalities = model.input.length === 0
@@ -1349,7 +1386,7 @@ window.__ModuleLoader__.load({
        */
       const modelRow = (model) => {
         const { patch } = patchOf(draftOf(model), initialOf(model));
-        const overridden = model.override !== undefined && Object.keys(model.override).length > 0;
+        const overridden = (model.overrideKeys ?? []).length > 0;
         const open = opened[model.id] === true;
 
         return h(
@@ -1365,8 +1402,13 @@ window.__ModuleLoader__.load({
               model.name === model.id ? null : h('span', { className: 'dap-name' }, model.name),
               // 这一行的标签说的是「这一行整体有覆盖」，因此它撤不掉单个字段：点开这一行，
               // 每个字段的生效值旁边写着它从哪儿来，底下那颗「恢复默认」才是清掉整行的那颗。
+              // title 里点名是哪几项：界面不编辑的键（`reasoningEfforts`）光看字段看不出来。
               overridden
-                ? h('span', { className: 'dap-tag', title: t('overriddenHint') }, t('overridden'))
+                ? h(
+                  'span',
+                  { className: 'dap-tag', title: t('overriddenKeys', { keys: overrideKeyNames(model) }) },
+                  t('overridden'),
+                )
                 : null,
               Object.keys(patch).length > 0 ? h('span', { className: 'dap-tag' }, t('pendingTag')) : null,
             ),
@@ -1467,7 +1509,7 @@ window.__ModuleLoader__.load({
        */
       const modelList = (current) => {
         const overridden = current.models.filter(
-          (model) => model.override !== undefined && Object.keys(model.override).length > 0,
+          (model) => (model.overrideKeys ?? []).length > 0,
         );
 
         const head = [

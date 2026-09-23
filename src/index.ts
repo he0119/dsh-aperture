@@ -54,7 +54,7 @@ export type { Config as ApertureConfig, ResolvedConfig } from './config.ts';
 export { createPanelOps } from './panel.ts';
 export type { PanelAction, PanelConfiguration, PanelDeps, PanelModelPatch, PanelOps } from './panel.ts';
 export { buildReport } from './report.ts';
-export type { PanelModel, PanelModelOverride, PanelRefresh, PanelReport, PanelRoute } from './report.ts';
+export type { DeclaredOverrides, PanelModel, PanelRefresh, PanelReport, PanelRoute } from './report.ts';
 export { DEFAULT_PLACEHOLDER_CREDENTIAL, buildProfilePlan } from './profile.ts';
 export type { ProfilePlan, ProfileOptions, RoutePlan } from './profile.ts';
 export { buildRegistry, classifyProtocol, isDeepSeekFamily } from './registry.ts';

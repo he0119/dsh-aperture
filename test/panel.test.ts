@@ -193,27 +193,48 @@ describe('panel.status', () => {
     });
   });
 
-  it('把用户写下的覆盖与清单别名一并报出来，界面才能预填表单', () => {
+  it('「已覆盖」只看用户层写了哪些键：schema 补出来的空值不算，写过的别名算', () => {
+    // 生效值里带着 schema 补出来的 `input: []`（没写的数组字段会被补成空数组）。它是「没写」，
+    // 不是覆盖——把它当覆盖，界面上那颗「已覆盖」就会永远挂着：撤的时候发的是 `input: null`，
+    // 而用户层里根本没有这个键。
+    const materialized = { id: 'deepseek-flash', input: [], reasoningEfforts: {} };
     const { ops } = panel({
       first: outcome(),
       config: () => resolveConfig({
         baseUrl: 'https://ai.example.ts.net',
         route: 'aperture',
         anthropicRoute: 'aperture-anthropic',
-        models: [{
-          id: 'deepseek-flash',
-          name: 'Flash',
-          contextWindow: 8192,
-          thinking: false,
-          reasoningEfforts: { low: 'low' },
-        }],
+        models: [materialized],
         modelAliases: { 'deepseek-flash': 'deepseek/deepseek-v4-flash' },
       }),
+      aperture: {
+        value: { models: [materialized], modelAliases: { 'deepseek-flash': 'deepseek/deepseek-v4-flash' } },
+        user: {
+          models: [{ id: 'deepseek-flash', reasoningEfforts: {} }],
+          modelAliases: { 'deepseek-flash': 'deepseek/deepseek-v4-flash' },
+        },
+      },
     });
     const [first] = ops.status().models;
-    // 界面不编辑的 `reasoningEfforts` 不必进报告：写入是按字段合并的，它留在设置文档里。
-    assert.deepEqual(first?.override, { name: 'Flash', contextWindow: 8192, thinking: false });
+    // `reasoningEfforts` 界面不编辑，但它确实写在用户层里；别名在另一张表，对界面是同一件事。
+    assert.deepEqual(first?.overrideKeys, ['reasoningEfforts', 'alias']);
     assert.equal(first?.alias, 'deepseek/deepseek-v4-flash');
+  });
+
+  it('用户层写下的字段就是覆盖，值与默认相同也算', () => {
+    const { ops } = panel({
+      first: outcome(),
+      aperture: {
+        value: {},
+        user: { models: [{ id: 'deepseek-flash', name: 'Flash', contextWindow: 8192, thinking: false }] },
+      },
+    });
+    assert.deepEqual(ops.status().models[0]?.overrideKeys, ['name', 'contextWindow', 'thinking']);
+  });
+
+  it('用户层什么都没写过时，一行标签都不挂', () => {
+    const { ops } = panel({ first: outcome() });
+    assert.equal(ops.status().models[0]?.overrideKeys, undefined);
   });
 
   it('没有任何路由能服务的模型排在最后，并带上它通告的端点', () => {
@@ -353,6 +374,21 @@ describe('panel.edit', () => {
         // `reasoningEfforts` 界面根本不编辑，因此它必须原样活着。
         { id: 'deepseek-flash', reasoningEfforts: { low: 'low' }, contextWindow: 8192, thinking: false },
       ],
+    }]);
+  });
+
+  it('写回时剔掉 schema 补出来的空值，不把「没写」变成用户的覆盖', async () => {
+    const { ops, writes } = panel({
+      aperture: {
+        value: { models: [{ id: 'deepseek-flash', input: [], reasoningEfforts: {} }] },
+        user: { models: [{ id: 'deepseek-flash', reasoningEfforts: {} }] },
+      },
+    });
+    await ops.edit('deepseek-flash', { contextWindow: 8192 });
+    assert.deepEqual(writes[0]?.ops, [{
+      op: 'set',
+      path: ['models'],
+      value: [{ id: 'deepseek-flash', contextWindow: 8192 }],
     }]);
   });
 

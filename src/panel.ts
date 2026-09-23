@@ -22,7 +22,7 @@
 import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings';
 import type { ResolvedConfig } from './config.ts';
 import { APERTURE_NAMESPACE, PI_AI_NAMESPACE } from './namespaces.ts';
-import { buildReport, type PanelReport } from './report.ts';
+import { buildReport, type DeclaredOverrides, type PanelReport } from './report.ts';
 import { message, type ApertureRuntime } from './runtime.ts';
 import { clearRoutes } from './sync.ts';
 import type { Modality } from './types.ts';
@@ -128,6 +128,44 @@ function asRecord(input: unknown): Record<string, unknown> {
     : {};
 }
 
+/** 一个值是不是「没写」：空串、空数组、空字典都算。 */
+function isEmpty(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'string') return value.trim().length === 0;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'object') return Object.keys(value).length === 0;
+  return false;
+}
+
+/**
+ * 剔掉一条覆盖里的空值，只留 `id` 与真正写下的内容。
+ *
+ * 生效值里混着 schema 补出来的默认值：没写的数组字段会变成 `[]`。把它原样写回用户层，就成了
+ * 用户从没写过的覆盖，界面上那颗「已覆盖」会一直挂着，而按「恢复默认」又撤不掉它。
+ *
+ * @param entry - 生效值里的一条。
+ * @returns 可以写进用户层的那几条键。
+ */
+function prune(entry: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(entry).filter(([key, value]) => key === 'id' || !isEmpty(value)));
+}
+
+/**
+ * 用户层里写下的覆盖。
+ *
+ * 「有没有覆盖」只能从用户层读：生效值里分不出用户写下的值与 schema 补出来的默认值。
+ *
+ * @param settings - 设置服务。
+ * @returns `aperture.models` 的原样条目，以及写过别名的模型 id。
+ */
+function declaredOverrides(settings: SettingsProvider): DeclaredOverrides {
+  const user = readSection(settings).user;
+  return {
+    models: (Array.isArray(user.models) ? user.models : []).map(asRecord),
+    aliasIds: Object.keys(asRecord(user.modelAliases)),
+  };
+}
+
 /**
  * 读 `aperture` 段。
  *
@@ -221,7 +259,7 @@ function overridden(user: Record<string, unknown>, field: string): boolean {
  */
 export function createPanelOps(deps: PanelDeps): PanelOps {
   // 报告每次都按当前配置现组装：覆盖与别名本身是配置，改完必须立刻能在列表里看到。
-  const report = (): PanelReport => buildReport(deps.runtime.last(), deps.config());
+  const report = (): PanelReport => buildReport(deps.runtime.last(), deps.config(), declaredOverrides(deps.settings));
 
   return {
     status: report,
@@ -299,8 +337,9 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
 
       const section = readSection(deps.settings);
       // `models` 是数组，而路径操作只能整段替换它，因此每次都算出完整的新数组再写回去。
-      // 基础取自生效值：组合层若也写过 models，它在界面上本来就是看得见的那些条目。
-      const before = (Array.isArray(section.value.models) ? section.value.models : []).map(asRecord);
+      // 基础取自生效值（组合层若也写过 models，它在界面上本来就是看得见的那些条目），但空值要
+      // 剔掉：schema 补出来的 `[]` 不该被写进用户层（见 `prune`）。
+      const before = (Array.isArray(section.value.models) ? section.value.models : []).map((entry) => prune(asRecord(entry)));
       const aliases = asRecord(section.value.modelAliases);
       // 撤销别名只在**用户层确实有**这个键时才写：界面显示的是生效别名，它可能来自组合层或
       // 清单，而删一个不存在的键要么白写、要么被设置服务当成坏路径拒绝，两种都不该发生。
