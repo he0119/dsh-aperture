@@ -36,7 +36,6 @@ import type {
   CatalogLookup,
   ConfiguredModel,
   DiscoveredModel,
-  Modality,
   ModelProvenance,
 } from './types.ts';
 
@@ -291,23 +290,7 @@ function matchesEndpoint(advertised: string, known: string): boolean {
   return path === known || path.endsWith(known);
 }
 
-/** 为 `/aperture models` 报告渲染一个模型的来源。 */
-export function describeProvenance(provenance: ModelProvenance): string {
-  const parts = [
-    provenance.limits === 'default' ? undefined : `limits:${provenance.limits}`,
-    provenance.name === 'default' ? undefined : `name:${provenance.name}`,
-    provenance.reasoning === 'default' ? undefined : `reasoning:${provenance.reasoning}`,
-    provenance.input === 'default' ? undefined : `input:${provenance.input}`,
-  ].filter((part): part is string => part !== undefined);
-  return parts.length === 0 ? 'defaults' : parts.join(' ');
-}
-
 /** 判断一个模型是否属于 DeepSeek 推理方言。 */
 export function isDeepSeekFamily(model: DiscoveredModel): boolean {
   return `${model.id} ${model.name} ${model.provider ?? ''}`.toLowerCase().includes('deepseek');
-}
-
-/** 为报告中的一行渲染一个模态列表。 */
-export function formatModalities(input: readonly Modality[]): string {
-  return input.length === 0 ? 'none' : input.join('+');
 }

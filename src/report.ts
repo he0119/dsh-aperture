@@ -1,113 +1,227 @@
 /**
- * `/aperture` 命令的人类可读渲染。
+ * 报告：设置标签页的状态段与模型清单。
  *
- * 在不读 `settings.yaml` 的前提下，命令输出是部署方唯一能看到发现过程决定了什么的
- * 地方：哪个端点应答了、哪些模型进了哪条路由、哪个模型没有任何路由能服务，以及每条
- * 事实来自哪里。因此报告会把这些全部讲出来，并使用与失败信息相同的形态——每条事实
- * 一行，不用表格对齐。
+ * 这里是**结构化数据**，不是拼好的句子。标签页是双语的，把中文句子拼在宿主半边就等于让英文
+ * 界面显示中文；而「哪个模型属于哪条路由」「这条事实是谁给的」本来就是数据，句子只是它的一种
+ * 渲染。宿主因此只把发现过程决定了什么摆齐——哪个端点应答了、哪些模型进了哪条路由、哪个模型
+ * 没有任何端点能服务、每条事实来自哪里，以及哪些字段是用户写下的覆盖——措辞与排版都交给界面。
  *
  * @module dsh-aperture/report
  */
 
 import type { ResolvedConfig } from './config.ts';
-import { formatModalities, describeProvenance } from './registry.ts';
 import type { RefreshOutcome } from './runtime.ts';
-import type { DiscoveredModel } from './types.ts';
+import type { ConfiguredModel, DiscoveredModel, FactSource, Modality } from './types.ts';
 
-/** token 计数的千位分隔符。 */
-const COUNT = new Intl.NumberFormat('en-US');
-
-/** 最近一次刷新的单行状态，以及它发布的路由。 */
-export function formatStatus(outcome: RefreshOutcome | undefined, config: ResolvedConfig): string {
-  const where = config.instanceRoot ?? (config.rawBaseUrl.length === 0 ? '(未配置 baseUrl)' : config.rawBaseUrl);
-  const lines: string[] = [`Aperture：${where}`];
-
-  if (outcome === undefined) {
-    lines.push('  尚未完成任何刷新');
-    return lines.join('\n');
-  }
-
-  lines.push(
-    `  最近一次刷新：${outcome.trigger} · ${outcome.at.toISOString()} · ${outcome.durationMs}ms · ${outcome.ok ? '成功' : '失败'}`,
-  );
-  if (outcome.error !== undefined) {
-    lines.push(`  错误：${outcome.error}`);
-  }
-  lines.push(
-    outcome.catalog.lookup === undefined
-      ? `  清单：不可用（${outcome.catalog.reason ?? '原因未知'}）`
-      : `  清单：${outcome.catalog.entries} 个条目`,
-  );
-  if (outcome.endpoint !== undefined) {
-    lines.push(`  端点：${outcome.endpoint} 列出了 ${outcome.listed} 行`);
-  }
-
-  if (outcome.routes.length === 0) {
-    lines.push('  路由：无');
-  } else {
-    for (const route of outcome.routes) {
-      lines.push(
-        `  路由 ${route.provider}：${route.models.length} 个模型，经由 ${route.profile.api} → ${route.profile.baseURL}`,
-      );
-    }
-  }
-
-  if (outcome.unserved.length > 0) {
-    lines.push(
-      `  未服务：${outcome.unserved.length} 个模型（${outcome.unserved.map((model) => model.id).join(', ')}）`,
-    );
-  }
-
-  const sync = outcome.sync;
-  if (sync !== undefined) {
-    lines.push(
-      sync.applied
-        ? `  设置：向 llm-pi-ai 写入 ${sync.ops} 个操作（${sync.routes.join(', ') || '仅移除'}）`
-        : `  设置：未写入（${sync.reason ?? '原因未知'}）`,
-    );
-  }
-  return lines.join('\n');
+/** 报告里的一个模型的覆盖（`aperture.models` 里对应那一条）。 */
+export interface PanelModelOverride {
+  readonly name?: string;
+  readonly api?: string;
+  readonly contextWindow?: number;
+  readonly maxTokens?: number;
+  readonly input?: readonly Modality[];
+  readonly thinking?: boolean;
 }
 
-/** 按路由分组的逐模型清单，带来源信息。 */
-export function formatModels(outcome: RefreshOutcome | undefined): string {
-  if (outcome === undefined) {
-    return '尚未完成任何刷新；请运行 /aperture refresh';
-  }
-  if (outcome.models.length === 0) {
-    return outcome.error === undefined ? '未发现任何模型' : `未发现任何内容：${outcome.error}`;
-  }
+/** 报告里的一个模型。 */
+export interface PanelModel {
+  /** Aperture 接受的模型 id。 */
+  readonly id: string;
+  /** 显示名（可能来自清单或覆盖）。 */
+  readonly name: string;
+  /** 承载它的路由键；没有任何路由能服务时缺失。 */
+  readonly route?: string;
+  /** 网关通告的协议；未通告时缺失。 */
+  readonly protocol?: string;
+  /** 网关为该模型通告的每一个端点，用于诊断。 */
+  readonly endpoints: readonly string[];
+  /** 生效的上下文容量，以 token 计。 */
+  readonly contextWindow?: number;
+  /** 生效的最大输出，以 token 计。 */
+  readonly maxTokens?: number;
+  /** 生效的请求模态。 */
+  readonly input: readonly Modality[];
+  /** 生效的推理能力。 */
+  readonly reasoning: boolean;
+  /** 每项事实的来源；界面按语言渲染它。 */
+  readonly provenance: {
+    readonly limits: FactSource;
+    readonly reasoning: FactSource;
+    readonly input: FactSource;
+    readonly name: FactSource;
+  };
+  /** 用户为这个模型写下的覆盖；用来预填编辑表单。 */
+  readonly override?: PanelModelOverride;
+  /** 用户写下的清单别名（`aperture.modelAliases` 里对应那一项）。 */
+  readonly alias?: string;
+}
 
-  const lines: string[] = [];
+/** 报告里的一条已发布路由。 */
+export interface PanelRoute {
+  /** provider 路由键。 */
+  readonly provider: string;
+  /** 服务它的协议；本插件自己拼的方案里一定有，类型上仍是可选（`PiAiProviderProfile`）。 */
+  readonly api?: string;
+  /** 路由的 baseURL，同上。 */
+  readonly baseURL?: string;
+  /** 该路由承载的模型数。 */
+  readonly models: number;
+}
+
+/** 最近一次刷新做了什么。 */
+export interface PanelRefresh {
+  /** 触发来源。 */
+  readonly trigger: string;
+  /** ISO 时间戳；界面按本地时区渲染。 */
+  readonly at: string;
+  /** 耗时。 */
+  readonly durationMs: number;
+  /** 发现与发布是否都成功。 */
+  readonly ok: boolean;
+  /** 失败原因。 */
+  readonly error?: string;
+  /** 清单提供了什么。 */
+  readonly catalog: {
+    /** 清单是否可用。 */
+    readonly available: boolean;
+    /** 条目数。 */
+    readonly entries: number;
+    /** 清单不可用时的原因。 */
+    readonly reason?: string;
+  };
+  /** 应答的端点与它列出的行数。 */
+  readonly endpoint?: {
+    readonly url: string;
+    readonly listed: number;
+  };
+  /** 设置写入的结果。 */
+  readonly sync?: {
+    readonly applied: boolean;
+    readonly ops: number;
+    readonly routes: readonly string[];
+    readonly reason?: string;
+  };
+}
+
+/** 标签页要显示的整份报告。 */
+export interface PanelReport {
+  /** 实例地址（已归一化）；没有配置时为空串，措辞交给界面。 */
+  readonly place: string;
+  /** 最近一次刷新；还一次都没跑过时为缺失。 */
+  readonly refresh?: PanelRefresh;
+  /** 已发布的路由。 */
+  readonly routes: readonly PanelRoute[];
+  /** 逐模型清单：先是各条路由承载的模型，最后是没有任何路由的模型。 */
+  readonly models: readonly PanelModel[];
+}
+
+/**
+ * 组装报告。
+ *
+ * @param outcome - 最近一次刷新；一次都没完成过时传 `undefined`。
+ * @param config - 当前生效配置：用户写下的覆盖与别名只在这里读得到。
+ * @returns 报告。
+ */
+export function buildReport(outcome: RefreshOutcome | undefined, config: ResolvedConfig): PanelReport {
+  const overrides = new Map(config.models.map((entry) => [entry.id, entry]));
+  const routes: PanelRoute[] = (outcome?.routes ?? []).map((route) => ({
+    provider: route.provider,
+    ...(route.profile.api === undefined ? {} : { api: route.profile.api }),
+    ...(route.profile.baseURL === undefined ? {} : { baseURL: route.profile.baseURL }),
+    models: route.models.length,
+  }));
+
+  const models: PanelModel[] = [];
   const routed = new Set<string>();
-  for (const route of outcome.routes) {
-    lines.push(`${route.provider} (${route.profile.api})`);
-    for (const model of route.models) {
-      routed.add(model.id);
-      lines.push(`  ${formatModel(model)}`);
-    }
+  const describe = (model: DiscoveredModel, route?: string): PanelModel => {
+    routed.add(model.id);
+    const override = overrides.get(model.id);
+    const alias = config.modelAliases[model.id];
+    return {
+      id: model.id,
+      name: model.name,
+      ...(route === undefined ? {} : { route }),
+      ...(model.protocol === undefined ? {} : { protocol: model.protocol }),
+      endpoints: model.endpoints,
+      ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+      ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
+      input: model.input,
+      reasoning: model.reasoning,
+      provenance: model.provenance,
+      ...(override === undefined ? {} : { override: trim(override) }),
+      ...(alias === undefined ? {} : { alias }),
+    };
+  };
+
+  for (const route of outcome?.routes ?? []) {
+    for (const model of route.models) models.push(describe(model, route.provider));
+  }
+  // 没有任何路由能服务的模型跟在后面：它们没有协议可用，或者被配置挡掉了。
+  for (const model of outcome?.models ?? []) {
+    if (!routed.has(model.id)) models.push(describe(model));
   }
 
-  const unserved = outcome.models.filter((model) => !routed.has(model.id));
-  if (unserved.length > 0) {
-    lines.push('未服务（没有本插件可发布的端点）');
-    for (const model of unserved) {
-      const endpoints = model.endpoints.length === 0 ? '未通告任何端点' : model.endpoints.join(', ');
-      lines.push(`  ${model.id} — ${endpoints}`);
-    }
-  }
-  return lines.join('\n');
+  return {
+    place: config.instanceRoot ?? config.rawBaseUrl,
+    ...(outcome === undefined ? {} : { refresh: refresh(outcome) }),
+    routes,
+    models,
+  };
 }
 
-/** 单行模型信息：名称、尺寸、模态、推理、来源。 */
-function formatModel(model: DiscoveredModel): string {
-  const facts = [
-    `${COUNT.format(model.contextWindow ?? 0)} 上下文窗口`,
-    model.maxTokens === undefined ? undefined : `${COUNT.format(model.maxTokens)} 输出`,
-    formatModalities(model.input),
-    model.reasoning ? '推理' : '无推理',
-    describeProvenance(model.provenance),
-  ].filter((fact): fact is string => fact !== undefined);
-  const label = model.name === model.id ? '' : ` (${model.name})`;
-  return `${model.id}${label} — ${facts.join(' · ')}`;
+/**
+ * 把一条覆盖收成报告要显示的那几个字段。
+ *
+ * `reasoningEfforts` 这类界面不编辑的字段不报出去：写入是按字段合并的，界面没提到的字段原样
+ * 留在设置文档里，因此不必（也不该）把它搬进报告再搬回去。
+ *
+ * @param entry - `aperture.models` 里的一条。
+ * @returns 只含界面会显示与编辑的字段的覆盖。
+ */
+function trim(entry: ConfiguredModel): PanelModelOverride {
+  return {
+    ...(entry.name === undefined ? {} : { name: entry.name }),
+    ...(entry.api === undefined ? {} : { api: entry.api }),
+    ...(entry.contextWindow === undefined ? {} : { contextWindow: entry.contextWindow }),
+    ...(entry.maxTokens === undefined ? {} : { maxTokens: entry.maxTokens }),
+    ...(entry.input === undefined ? {} : { input: entry.input }),
+    ...(entry.thinking === undefined ? {} : { thinking: entry.thinking }),
+  };
+}
+
+/**
+ * 把一次刷新收成报告要显示的字段。
+ *
+ * @param outcome - 已完成的刷新。
+ * @returns 状态段的数据。
+ */
+function refresh(outcome: RefreshOutcome): PanelRefresh {
+  const catalog = outcome.catalog;
+  const sync = outcome.sync;
+  return {
+    trigger: outcome.trigger,
+    at: outcome.at.toISOString(),
+    durationMs: outcome.durationMs,
+    ok: outcome.ok,
+    ...(outcome.error === undefined ? {} : { error: outcome.error }),
+    catalog: {
+      // `lookup` 在清单不可用时缺失；报告只报可用性，不报这个函数本身。
+      available: catalog.lookup !== undefined,
+      entries: catalog.entries,
+      ...(catalog.reason === undefined ? {} : { reason: catalog.reason }),
+    },
+    ...(outcome.endpoint === undefined
+      ? {}
+      : { endpoint: { url: outcome.endpoint, listed: outcome.listed } }),
+    ...(sync === undefined
+      ? {}
+      : {
+        sync: {
+          applied: sync.applied,
+          ops: sync.ops,
+          routes: sync.routes,
+          ...(sync.reason === undefined ? {} : { reason: sync.reason }),
+        },
+      }),
+  };
 }

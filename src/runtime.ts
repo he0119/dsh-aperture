@@ -1,13 +1,13 @@
 /**
  * 发现运行时：同一时刻只跑一次刷新，只记住一个结果。
  *
- * 刷新来自四个方向——插件加载、设置变更、刷新间隔，以及 `/aperture` 命令——其中两个
+ * 刷新来自四个方向——插件加载、设置变更、刷新间隔，以及设置界面的标签页——其中两个
  * 很容易重叠，因为本插件自己写入并提交的设置变更会唤醒触发这次写入的同一个 watcher。
  * 因此刷新是单飞（single-flight）的：在刷新过程中到达的请求会把自己记为下一次运行，
  * 而不是启动第二次，循环会用最新配置再跑一遍。
  *
- * 记住的结果就是 `/aperture` 所报告的内容。它刻意不是清单（catalog）的缓存：清单存放
- * 在设置文档里，而真正服务请求的正是这份文档。
+ * 记住的结果就是设置文档里那一份的影子：标签页报告的就是它，而真正服务请求的，是
+ * 文档里已经生效的那一份。
  *
  * @module dsh-aperture/runtime
  */
@@ -15,10 +15,10 @@
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings';
 import { fetchModelsListing } from './aperture.ts';
 import { ModelCatalog, type CatalogLoad } from './catalog.ts';
-import { PI_AI_NAMESPACE, type ResolvedConfig } from './config.ts';
+import { type ResolvedConfig } from './config.ts';
 import { buildProfilePlan, type ProfilePlan, type RoutePlan } from './profile.ts';
 import { buildRegistry } from './registry.ts';
-import { applySync, clearRoutes, type SyncOutcome } from './sync.ts';
+import { applySync, type SyncOutcome } from './sync.ts';
 import type { DiscoveredModel } from './types.ts';
 
 /** 运行时用来输出诊断信息的最小日志接口。 */
@@ -90,7 +90,7 @@ export class ApertureRuntime {
 
   /**
    * 刷新；若已有刷新在运行，则把本次刷新排在其后。
-   * @param trigger - 触发来源；由 `/aperture` 报告。
+   * @param trigger - 触发来源；出现在标签页的状态段里。
    * @returns 本次调用所参与的那次刷新的结果。
    */
   async refresh(trigger: string): Promise<RefreshOutcome> {
@@ -108,23 +108,6 @@ export class ApertureRuntime {
       if (queued !== undefined) {
         void this.refresh(queued);
       }
-    }
-  }
-
-  /**
-   * 从设置文档中撤出本插件的路由。
-   * @returns 供命令界面展示的可读结果。
-   */
-  async remove(): Promise<string> {
-    const config = this.deps.config();
-    const owned = [config.route, config.anthropicRoute];
-    try {
-      const outcome = await clearRoutes(this.deps.settings, owned);
-      return outcome.applied
-        ? `已从 "${PI_AI_NAMESPACE}" 配置段移除 ${outcome.ops} 条路由：${owned.join(', ')}`
-        : `未移除任何内容：${outcome.reason ?? '原因未知'}`;
-    } catch (error) {
-      return `移除路由失败：${message(error)}`;
     }
   }
 

@@ -7,6 +7,8 @@ npm version patch          # 或 minor / major：改 package.json 与 lockfile�
 git push --follow-tags     # 标签推到 GitHub 后，Publish 工作流接手
 ```
 
+包里的两半边来源不同：`lib/`（宿主半边）不入库，由 `prepare`（`tsc -p tsconfig.json`）在安装与发布时现场编译；`client/aperture.js`（浏览器半边）是手写的经典脚本，原样随包分发、不经过构建——原因见 [internals.md](internals.md) 的「浏览器半边没有构建步骤」。
+
 - `.github/workflows/ci.yml`：PR、推 main 时跑 `test` / `typecheck` / `build`（Node 24；`engines` 下限也是 24）。
 - `.github/workflows/publish.yml`：推 `v*` 标签时先复用一遍上面的检查，通过后才发布；也可以在
   Actions 页面手动 `workflow_dispatch`，并用输入框指定版本号（留空则用 `package.json` 里的）。
