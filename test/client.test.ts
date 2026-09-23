@@ -411,6 +411,51 @@ function plain(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value));
 }
 
+/**
+ * 从注入的样式表里取一条规则的内容。
+ *
+ * 选择器按字面量匹配，且支持选择器列表（`A, B { … }`）：只要某一段就等于
+ * `[data-dsh-aperture] <selector>` 就算命中。注释先剥掉，否则规则前的那段中文注释会被当成
+ * 选择器的一部分。
+ *
+ * @param css - 样式表全文。
+ * @param selector - `[data-dsh-aperture]` 之后的那个选择器。
+ * @returns 花括号里的声明；没有这条规则时是空串。
+ */
+function cssRule(css: string, selector: string): string {
+  const wanted = `[data-dsh-aperture] ${selector}`;
+  const bare = css.replace(/\/\*[\s\S]*?\*\//gu, '');
+  for (const chunk of bare.split('}')) {
+    const brace = chunk.indexOf('{');
+    if (brace === -1) continue;
+    if (chunk.slice(0, brace).split(',').some((part) => part.trim() === wanted)) {
+      return chunk.slice(brace + 1);
+    }
+  }
+  return '';
+}
+
+/**
+ * 展开一个模型：先点开它所在的那张路由卡，再点开这一行。
+ *
+ * 两级展开在测试里也走同一条路——模型行在收起的路由卡里根本不存在，直接点它会点空。
+ *
+ * @param mini - 迷你渲染器。
+ * @param id - 模型 id。
+ * @param route - 它的路由键；缺省按假报告里的 `route` 推，没有就是「未服务」那张卡。
+ * @returns 渲染落定后的 Promise。
+ */
+async function openModel(mini: MiniReact, id: string, route?: string): Promise<void> {
+  const key = route ?? report().models.find((model) => model.id === id)?.route ?? 'unserved';
+  const toggle = (target: string) => findAll(mini.tree(), (node) => node.props.id === target);
+  if (toggle(`dap-model-${id}-toggle`).length === 0) {
+    click(toggle(`dap-route-${key}-toggle`)[0]!);
+    await mini.flush();
+  }
+  click(toggle(`dap-model-${id}-toggle`)[0]!);
+  await mini.flush();
+}
+
 describe('浏览器半边', () => {
   it('以包名握手，只注入平台提供的三个服务', () => {
     const harness = loadClient();
@@ -576,6 +621,291 @@ describe('浏览器半边', () => {
     assert.match(rule, /color:\s*var\(--dsw-alias-label-primary-foreground/u);
     // 禁用态换主题自己的 dimmed 填充，而不是把整颗按钮调透明。
     assert.match(css, /\.dap-button\[data-primary="true"\]:disabled \{[^}]*opacity: 1/u);
+    // 其余按钮与官方一致：整颗 `opacity: .4`。
+    assert.match(css, /\.dap-button:not\(\[data-primary="true"\]\):disabled \{[^}]*opacity: \.4/u);
+  });
+
+  it('卡片与卡头照官方「模型」页的形状', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    const css = harness.styles[0]?.css ?? '';
+    const tree = mini.tree();
+
+    // 卡片是官方 rowCard：`.5px` 的 l4 边框、16px 圆角、`12px 14px` 内边距，底是透明的。
+    // 段卡与路由卡在页面上是同一层，共用同一条规则。
+    const card = cssRule(css, '.dap-section');
+    assert.match(card, /border:\s*\.5px solid var\(--dsw-alias-border-l4/u);
+    assert.match(card, /border-radius:\s*16px/u);
+    assert.match(card, /padding:\s*12px 14px/u);
+    assert.doesNotMatch(card, /background/u, '卡片底下不铺色，底来自页面');
+    assert.equal(card, cssRule(css, '.dap-route'), '路由卡与段卡同一条规则');
+    // 模型行是路由编辑区里面的一层：官方 modelEntry 的细框，比卡片明显小一号。
+    const entry = cssRule(css, '.dap-model');
+    assert.match(entry, /border-radius:\s*10px/u);
+    assert.match(entry, /padding:\s*10px 12px/u);
+    assert.doesNotMatch(entry, /background/u, '它本来就落在编辑区那块浅色面上');
+
+    // 卡头：身份在左、动作右对齐；卡头上的动作是官方的行内尺寸（28px / 14px 圆角 / 12px 字）。
+    assert.match(cssRule(css, '.dap-card-head'), /align-items:\s*center/u);
+    assert.match(cssRule(css, '.dap-card-head'), /gap:\s*10px/u);
+    assert.match(cssRule(css, '.dap-identity'), /gap:\s*6px/u);
+    assert.match(cssRule(css, '.dap-row-actions'), /margin-left:\s*auto/u);
+    assert.match(cssRule(css, '.dap-row-actions .dap-button'), /height:\s*28px/u);
+    assert.match(cssRule(css, '.dap-row-actions .dap-button'), /border-radius:\s*14px/u);
+
+    // 实例与刷新各一张段卡；模型段是页面级的一节，下面是一张路由卡与一张「未服务」卡。
+    const sections = findAll(tree, (node) => node.props.className === 'dap-section');
+    assert.equal(sections.length, 2, '实例、最近一次刷新');
+    const heads = findAll(tree, (node) => node.props.className === 'dap-card-head');
+    assert.equal(heads.length, 4, '两张段卡 + 一张路由卡 + 一张未服务卡');
+    assert.equal(text(findAll(heads[0]!, (node) => node.props.className === 'dap-name')[0]), 'Aperture');
+    assert.equal(text(findAll(heads[2]!, (node) => node.props.className === 'dap-name')[0]), 'aperture');
+    assert.equal(text(findAll(heads[3]!, (node) => node.props.className === 'dap-name')[0]), '未服务');
+
+    const title = findAll(tree, (node) => node.props.className === 'dap-title');
+    assert.deepEqual(title.map((node) => text(node)), ['Aperture 模型发现', '模型与路由']);
+    // 计数标签：实例卡的两枚（覆盖 + 写入方向）、整节一个、两张卡各一个。
+    assert.deepEqual(
+      findAll(tree, (node) => node.props.className === 'dap-tag').map((node) => text(node)),
+      ['已覆盖', '写入 provider 字典', '2 个模型', '1 个模型', '1 个模型'],
+    );
+  });
+
+  it('身份里的状态点用官方那对 token 上色，并把同一句话写进 title', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    const css = harness.styles[0]?.css ?? '';
+
+    const dot = cssRule(css, '.dap-dot');
+    assert.match(dot, /width:\s*8px/u);
+    assert.match(dot, /height:\s*8px/u);
+    assert.match(dot, /border-radius:\s*50%/u);
+    assert.match(cssRule(css, '.dap-dot[data-state="ok"]'), /--dsw-alias-state-success-primary/u);
+    assert.match(cssRule(css, '.dap-dot[data-state="bad"]'), /--dsw-alias-state-error-primary/u);
+
+    const dots = findAll(mini.tree(), (node) => node.props.className === 'dap-dot');
+    assert.deepEqual(
+      dots.map((node) => node.props['data-state']),
+      ['ok', 'ok', 'ok', 'bad'],
+      '地址填了、刷新成功、路由写进了 llm-pi-ai、未服务那张卡没有路由',
+    );
+    assert.deepEqual(dots.map((node) => node.props.title), [
+      '实例地址已配置',
+      '最近一次刷新成功',
+      '这一轮已写入 llm-pi-ai',
+      '这些模型没有路由可用',
+    ]);
+    for (const node of dots) {
+      assert.equal(node.props.role, 'img');
+      assert.equal(node.props['aria-label'], node.props.title, '颜色不是唯一的说法');
+    }
+  });
+
+  it('地址留空、刷新失败时状态点都变红', async () => {
+    const refresh = report().refresh!;
+    const { mini, element } = driveClient({
+      configuration: { baseUrl: '' },
+      report: report({ refresh: { ...refresh, ok: false, error: '网关不可达' } }),
+    });
+    mini.mount(element);
+    await mini.flush();
+
+    const dots = findAll(mini.tree(), (node) => node.props.className === 'dap-dot');
+    assert.deepEqual(dots.map((node) => node.props['data-state']), ['bad', 'bad', 'ok', 'bad']);
+    assert.deepEqual(dots.map((node) => node.props.title).slice(0, 2), ['没有实例地址', '最近一次刷新失败']);
+    assert.match(text(mini.tree()), /发现处于休眠/u);
+  });
+
+  it('两级展开：路由卡里装模型清单，模型行自己再展开参数面', async () => {
+    const { mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    const cards = findAll(mini.tree(), (node) => node.props.className === 'dap-route');
+    assert.deepEqual(
+      cards.map((node) => text(findAll(node, (n) => n.props.className === 'dap-name')[0])),
+      ['aperture', '未服务'],
+      '一条路由一张卡，最后是没有路由可用的那些',
+    );
+    assert.equal(
+      findAll(mini.tree(), (node) => node.props.className === 'dap-model').length,
+      0,
+      '模型行在收起的路由卡里，页面上还不存在',
+    );
+    assert.deepEqual(
+      findAll(cards[0]!, (node) => node.type === 'button').map((node) => text(node)),
+      ['编辑'],
+      '路由卡头右边只有这一颗按钮',
+    );
+
+    // 第一层：路由卡里那块浅色面，头上是这条路由的地址，里面是它承载的模型清单。
+    click(findById(mini.tree(), 'dap-route-aperture-toggle'));
+    await mini.flush();
+    const openedRoute = findAll(mini.tree(), (node) => node.props.className === 'dap-route')[0]!;
+    const editors = findAll(openedRoute, (node) => node.props.className === 'dap-editor');
+    assert.equal(editors.length, 1, '浅色面落在**这张路由卡**里面');
+    assert.equal(
+      text(findAll(editors[0]!, (node) => node.props.className === 'dap-editor-route')[0]),
+      '→ https://ai.example.ts.net/v1',
+    );
+    const rows = findAll(openedRoute, (node) => node.props.className === 'dap-model');
+    assert.equal(rows.length, 1, '这条路由只承载一个模型');
+    // 模型行是 id 在前、名字在后（官方 modelCatalog 那一行同序），而且不再自己带状态点。
+    assert.equal(text(findAll(rows[0]!, (n) => n.props.className === 'dap-model-id')[0]), 'deepseek-flash');
+    assert.equal(text(findAll(rows[0]!, (n) => n.props.className === 'dap-name')[0]), 'DeepSeek Flash');
+    assert.equal(findAll(rows[0]!, (n) => n.props.className === 'dap-dot').length, 0);
+    assert.equal(findAll(rows[0]!, (n) => n.props.className === 'dap-advanced').length, 0, '这一行还没点开');
+
+    // 第二层：参数面落在**这一行里面**，而且不套第二层灰底（同一块浅色面上切一条线）。
+    await openModel(mini, 'deepseek-flash');
+    const row = findAll(mini.tree(), (node) => node.props.className === 'dap-model')[0]!;
+    assert.equal(findAll(row, (node) => node.props.className === 'dap-advanced').length, 1);
+    assert.equal(findAll(row, (node) => node.props.className === 'dap-editor').length, 0);
+    const actions = findAll(row, (node) => node.props.className === 'dap-actions')[0]!;
+    assert.equal(actions.props['data-align'], 'end');
+    assert.deepEqual(
+      findAll(actions, (node) => node.type === 'button').map((node) => text(node)),
+      ['撤销覆盖', '取消', '保存'],
+    );
+
+    // 「未服务」那张卡：展开后头上写着为什么没有路由，行里是它通告的端点。
+    click(findById(mini.tree(), 'dap-route-unserved-toggle'));
+    await mini.flush();
+    const unservedCard = findAll(mini.tree(), (node) => node.props.className === 'dap-route')[1]!;
+    assert.match(
+      text(findAll(unservedCard, (node) => node.props.className === 'dap-editor')[0]!),
+      /没有本插件可发布的端点/u,
+    );
+    assert.match(
+      text(findAll(unservedCard, (node) => node.props.className === 'dap-model-meta')[0]!),
+      /通告的端点/u,
+    );
+  });
+
+  it('路由卡上的点说这一轮写没写进 llm-pi-ai，没有同步结果时就不画点', async () => {
+    const refresh = report().refresh!;
+
+    const off = driveClient({
+      report: report({
+        refresh: { ...refresh, sync: { applied: false, ops: 0, routes: [], reason: '同步已禁用' } },
+      }),
+    });
+    off.mini.mount(off.element);
+    await off.mini.flush();
+    const dots = findAll(off.mini.tree(), (node) => node.props.className === 'dap-dot');
+    assert.deepEqual(dots.map((node) => node.props['data-state']), ['ok', 'ok', 'bad', 'bad']);
+    assert.equal(
+      dots[2]!.props.title,
+      '这一轮没有写入 llm-pi-ai：同步已禁用',
+      '没写进去时把原因一起说出来，而不是让人去别处找',
+    );
+
+    const unknown = driveClient({ report: report({ refresh: { ...refresh, sync: undefined } }) });
+    unknown.mini.mount(unknown.element);
+    await unknown.mini.flush();
+    assert.deepEqual(
+      findAll(unknown.mini.tree(), (node) => node.props.className === 'dap-dot')
+        .map((node) => node.props['data-state']),
+      ['ok', 'ok', 'bad'],
+      '报告里没有同步结果就没有状态可说：路由卡不画点，未服务那张照旧',
+    );
+  });
+
+  it('实例卡把字段摆进官方那块浅色编辑区，动作右对齐且「取消」在「保存」左边', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    const tree = mini.tree();
+    const css = harness.styles[0]?.css ?? '';
+
+    const editors = findAll(tree, (node) => node.props.className === 'dap-editor');
+    assert.equal(editors.length, 1, '收起时只有实例卡那块编辑区：模型行要按「编辑」才展开');
+    const editor = editors[0]!;
+    assert.equal(findById(editor, 'dap-base-url').props.value, 'https://ai.example.ts.net');
+
+    // 地址占满整行，标签走官方 fieldLabel（12px/500 的 label-secondary）。
+    const cell = findAll(editor, (node) => node.props.className === 'dap-field')[0]!;
+    assert.equal(cell.props['data-wide'], 'true');
+    assert.equal(cell.props['data-emphasis'], 'true');
+    assert.match(cssRule(css, '.dap-field[data-emphasis="true"] > label'), /font-weight:\s*500/u);
+    assert.match(cssRule(css, '.dap-field[data-wide="true"]'), /grid-column:\s*1 \/ -1/u);
+
+    const actions = findAll(editor, (node) => node.props.className === 'dap-actions')[0]!;
+    assert.equal(actions.props['data-align'], 'end', '动作右对齐');
+    assert.deepEqual(
+      findAll(actions, (node) => node.type === 'button').map((node) => text(node)),
+      ['取消', '保存'],
+    );
+  });
+
+  it('刷新与撤下路由是「最近一次刷新」卡头上的动作，报告没回来时也还在', async () => {
+    const { mini, element } = driveClient({ fails: 'status' });
+    mini.mount(element);
+    await mini.flush();
+    const tree = mini.tree();
+
+    const heads = findAll(tree, (node) => node.props.className === 'dap-card-head');
+    assert.equal(heads.length, 2, '报告没回来时只有实例与刷新两张卡');
+    const actions = findAll(heads[1]!, (node) => node.props.className === 'dap-row-actions')[0]!;
+    assert.deepEqual(
+      findAll(actions, (node) => node.type === 'button').map((node) => text(node)),
+      ['立即刷新', '撤掉已发布的路由'],
+    );
+    assert.match(text(tree), /尚未完成任何刷新/u);
+    assert.equal(
+      findAll(heads[1]!, (node) => node.props.className === 'dap-dot').length,
+      0,
+      '还没刷新过就没有状态可说，不画点',
+    );
+  });
+
+  it('实例与刷新两张卡的头能折起来：默认展开，折起来就不渲染卡体', async () => {
+    const { mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    const instance = findById(mini.tree(), 'dap-card-instance-toggle');
+    assert.equal(instance.props['aria-expanded'], 'true', '默认展开');
+    assert.equal(instance.props['aria-controls'], 'dap-body-instance');
+    assert.equal(findById(mini.tree(), 'dap-card-status-toggle').props['aria-expanded'], 'true');
+    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-base-url').length, 1);
+
+    click(instance);
+    await mini.flush();
+    assert.equal(findById(mini.tree(), 'dap-card-instance-toggle').props['aria-expanded'], 'false');
+    assert.equal(
+      findAll(mini.tree(), (node) => node.props.id === 'dap-body-instance').length,
+      0,
+      '折起来就整块不渲染，DOM 里不留一个藏着的输入框',
+    );
+    assert.equal(
+      findById(mini.tree(), 'dap-card-status-toggle').props['aria-expanded'],
+      'true',
+      '两张卡各折各的',
+    );
+
+    click(findById(mini.tree(), 'dap-card-instance-toggle'));
+    await mini.flush();
+    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-base-url').length, 1, '再点一下回来');
+
+    // 折起来的是卡体，卡头还在：动作与状态点都留在原地。
+    click(findById(mini.tree(), 'dap-card-status-toggle'));
+    await mini.flush();
+    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-body-status').length, 0);
+    assert.equal(text(findById(mini.tree(), 'dap-card-status-toggle')), '最近一次刷新');
+
+    // 折叠是本地状态，重渲染不会把它弹回来；而按了卡头上的动作，反馈必须看得见——它留在
+    // 折叠体外面，否则「折着按了立即刷新」就成了一个没有任何回音的按钮。
+    click(findButton(mini.tree(), '立即刷新'));
+    await mini.flush();
+    assert.equal(
+      findAll(mini.tree(), (node) => node.props.id === 'dap-body-status').length,
+      0,
+      '刷新一轮之后它还是折着的',
+    );
+    assert.match(text(mini.tree()), /已重新发现并发布/u);
   });
 
   it('标签页挂载后先显示加载态，再渲染出配置与报告', async () => {
@@ -588,7 +918,8 @@ describe('浏览器半边', () => {
     const tree = mini.tree();
     assert.equal(findById(tree, 'dap-base-url').props.value, 'https://ai.example.ts.net');
     assert.equal(findById(tree, 'dap-sync').props.checked, true);
-    assert.match(text(tree), /deepseek-flash/u);
+    assert.match(text(tree), /aperture/u, '路由卡头就是报告里的路由');
+    assert.match(text(tree), /openai-completions/u);
     assert.equal(findButton(tree, '保存').props.disabled, true, '没有草稿差异时保存应禁用');
     // 一次交互只该渲染很少几次；多到几十次就说明 effect 在自激。
     assert.ok(mini.renders <= 6, `渲染次数 ${mini.renders} 太多：effect 依赖里多半放了注入面`);
@@ -673,28 +1004,41 @@ describe('浏览器半边', () => {
     assert.match(body, /列出了 16 行/u);
     assert.match(body, /写入 2 个操作（aperture, aperture-anthropic）/u);
 
-    // 模型清单：先按路由分组，未服务的排在后面。
-    assert.match(body, /aperture · openai-completions/u);
-    assert.match(body, /→ https:\/\/ai\.example\.ts\.net\/v1 · 1 个模型/u);
-    assert.match(body, /deepseek-flash/u);
-    assert.match(body, /DeepSeek Flash/u);
-    assert.match(body, /1\D?048\D?576 上下文窗口/u);
-    assert.match(body, /384\D?000 输出/u);
-    assert.match(body, /文本\+图像/u);
-    assert.match(body, /推理/u);
-    assert.match(body, /清单别名 deepseek\/deepseek-v4-flash/u);
-    assert.match(body, /未服务：没有本插件可发布的端点/u);
-    assert.match(body, /gemini-2\.5-flash/u);
-    assert.match(body, /通告的端点：\/v1beta\/models\/gemini-2\.5-flash:generateContent/u);
-    // 来源不堆在行尾：收起时没有这一行，展开后每条来源跟着它描述的那个字段。
-    assert.doesNotMatch(body, /每项事实来自/u);
-    // 覆盖过的模型带标签，段头说明一共有几个被覆盖（官方模型卡片也是这句）。
-    assert.match(body, /已覆盖/u);
+    // 模型段：收起时只有页面级标题、那句「已覆盖几个」与两张卡头（路由 + 未服务）。
+    assert.match(body, /模型与路由/u);
     assert.match(body, /已覆盖 1 个模型，其余沿用发现值与清单/u);
-    // 收起时就是一条事实：输入框与来源都在面板里，点「编辑」才出现。
+    assert.match(body, /aperture/u);
+    assert.match(body, /openai-completions/u);
+    assert.match(body, /未服务/u);
+    // 模型行在路由卡里，第一层展开之前页面上没有它。
     assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-name').length, 0);
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
+
+    // 第一层：路由卡展开后是浅色面——地址一行，然后是这条路由承载的模型行。
+    click(findById(mini.tree(), 'dap-route-aperture-toggle'));
     await mini.flush();
+    const listed = text(mini.tree());
+    assert.match(listed, /→ https:\/\/ai\.example\.ts\.net\/v1/u);
+    assert.match(listed, /deepseek-flash/u);
+    assert.match(listed, /DeepSeek Flash/u);
+    assert.match(listed, /1\D?048\D?576 上下文窗口/u);
+    assert.match(listed, /384\D?000 输出/u);
+    assert.match(listed, /文本\+图像/u);
+    assert.match(listed, /推理/u);
+    assert.match(listed, /清单别名 deepseek\/deepseek-v4-flash/u);
+    assert.match(listed, /已覆盖/u, '覆盖过的模型带标签');
+
+    // 「未服务」那张卡里是它通告的端点。
+    click(findById(mini.tree(), 'dap-route-unserved-toggle'));
+    await mini.flush();
+    const unserved = text(mini.tree());
+    assert.match(unserved, /未服务：没有本插件可发布的端点/u);
+    assert.match(unserved, /gemini-2\.5-flash/u);
+    assert.match(unserved, /通告的端点：\/v1beta\/models\/gemini-2\.5-flash:generateContent/u);
+    // 来源不堆在行尾：第一层展开时还没有这一行，第二层展开后每条来源跟着它描述的那个字段。
+    assert.doesNotMatch(unserved, /每项事实来自/u);
+    assert.doesNotMatch(unserved, /生效 1[,\s]?048[,\s]?576/u);
+
+    await openModel(mini, 'deepseek-flash');
     assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-name').props.value, 'DeepSeek Flash');
     assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-alias').props.value, 'deepseek/deepseek-v4-flash');
     const opened = text(mini.tree());
@@ -703,8 +1047,7 @@ describe('浏览器半边', () => {
     assert.match(opened, /生效 开 · 来自 models\.dev/u);
     assert.match(opened, /来自 models\.dev/u, '显示名那格只说来源，值在输入框里');
     // 再点一次收起，面板连输入框一起消失。
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
     assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-name').length, 0);
     assert.doesNotMatch(text(mini.tree()), /来自 aperture/u);
   });
@@ -722,8 +1065,7 @@ describe('浏览器半边', () => {
     mini.mount(element);
     await mini.flush();
 
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
     const tree = mini.tree();
     assert.equal(findById(tree, 'dap-model-deepseek-flash-name').props.value, 'DeepSeek Flash', '预填生效值');
     assert.equal(findById(tree, 'dap-model-deepseek-flash-contextWindow').props.value, '1048576');
@@ -756,9 +1098,8 @@ describe('浏览器半边', () => {
     await mini.flush();
 
     // 两行同时展开、都改了东西，这时按哪一行就只写哪一行。
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    click(findById(mini.tree(), 'dap-model-gemini-2.5-flash-toggle'));
-    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
+    await openModel(mini, 'gemini-2.5-flash');
     change(findById(mini.tree(), 'dap-model-deepseek-flash-contextWindow'), '32768');
     change(findById(mini.tree(), 'dap-model-gemini-2.5-flash-api'), 'anthropic-messages');
     await mini.flush();
@@ -783,8 +1124,7 @@ describe('浏览器半边', () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
 
     change(findById(mini.tree(), 'dap-model-deepseek-flash-name'), '');
     change(findById(mini.tree(), 'dap-model-deepseek-flash-contextWindow'), '');
@@ -804,8 +1144,7 @@ describe('浏览器半边', () => {
     mini.mount(element);
     await mini.flush();
 
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
     change(findById(mini.tree(), 'dap-model-deepseek-flash-contextWindow'), '1');
     await mini.flush();
     assert.match(text(mini.tree()), /待保存/u);
@@ -817,8 +1156,7 @@ describe('浏览器半边', () => {
     assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-name').length, 0);
 
     // 再展开一次：输入框回到生效值，改动确实被丢掉了。
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
     assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-contextWindow').props.value, '1048576');
   });
 
@@ -829,8 +1167,7 @@ describe('浏览器半边', () => {
 
     // 这一行被覆盖的是 thinking；别名也被清了一遍——面板里的别名输入框显示的是生效别名，
     // 清掉表示「不要再覆盖」，宿主看到用户层没有这个键就什么都不写。
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
     click(findById(mini.tree(), 'dap-model-deepseek-flash-revert'));
     await mini.flush();
 
@@ -856,8 +1193,7 @@ describe('浏览器半边', () => {
     mini.mount(element);
     await mini.flush();
 
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
     click(findById(mini.tree(), 'dap-model-deepseek-flash-revert'));
     await mini.flush();
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', null]]);
@@ -867,8 +1203,7 @@ describe('浏览器半边', () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
+    await openModel(mini, 'deepseek-flash');
 
     change(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens'), '0');
     await mini.flush();
@@ -884,8 +1219,7 @@ describe('浏览器半边', () => {
     mini.mount(element);
     await mini.flush();
 
-    click(findById(mini.tree(), 'dap-model-gemini-2.5-flash-toggle'));
-    await mini.flush();
+    await openModel(mini, 'gemini-2.5-flash');
     const tree = mini.tree();
     assert.equal(findById(tree, 'dap-model-gemini-2.5-flash-api').props.value, '', '没有覆盖时「跟随发现」');
     assert.match(text(tree), /填上协议可以让它在对应路由上发布/u);

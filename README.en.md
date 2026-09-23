@@ -67,37 +67,45 @@ npx @deepseek-ai/dsh --profile web --dump-config   # should show a "# == dsh-ape
 The models appear in the selector under the route `Aperture`. To see what the last refresh did, look at the **Aperture** tab under **Settings → Plugins**: the status block lays every fact out on its own row, and the models are listed per route underneath.
 
 ```
-Last refresh
+▾ Aperture  overridden  ●                                  [Reset override]
+  Aperture  aperture.baseUrl
+  Instance address [https://ai.example.ts.net             ]
+  ☑ Sync into llm-pi-ai   writes the provider dictionary
+                                                           [Cancel] [Save]
+
+▾ Last refresh  ●                         [Refresh now] [Withdraw published routes]
   Trigger  配置变更          Time    2026-09-23 12:32:36
   Took     286ms             Result  succeeded
   Catalog  422 entries       Endpoint  https://ai.example.ts.net/v1/models listed 16 rows
   Settings wrote 2 operations to llm-pi-ai (aperture, aperture-anthropic)
+  Aperture: https://ai.example.ts.net
 
-Models and routes           1 models overridden, the rest inherit discovery and the catalog
-  aperture · openai-completions
-  → https://ai.example.ts.net/v1 · 11 models
-    deepseek-v4-flash  DeepSeek V4 Flash  overridden           [▾ Collapse]
-      1,048,576 context window · 384,000 output · text+image · reasoning
-      │ deepseek-v4-flash · aperture · openai-completions
-      │ Display name  [DeepSeek V4 Flash           ]  from models.dev
-      │ Catalog alias [deepseek/deepseek-v4-flash]
-      │ Context       [1048576]  in effect 1,048,576 · from aperture
-      │ Max output    [384000]   in effect 384,000 · from aperture
-      │ Modalities    ☑ text ☑ image   in effect text+image · from config
-      │ Reasoning     [follow discovery ▾]  in effect on · from models.dev
-      │ Protocol      [follow discovery ▾]  in effect openai-completions
-      │ An empty display name, capacity or modality drops that override…  [Reset override] [Cancel] [Save]
-    gemini-2.5-flash                                          [▸ Edit]
-      128,000 context window · text · no reasoning
-  Unserved: no endpoint this plugin can publish
-  4 models
-    gemini-2.5-flash-lite                                     [▸ Edit]
-      Advertised endpoints: /v1beta/models/gemini-2.5-flash-lite:generateContent
+Models and routes  15 models
+1 models overridden, the rest inherit discovery and the catalog
+
+aperture  openai-completions  11 models  ●                 [▾ Collapse]
+  → https://ai.example.ts.net/v1
+  deepseek-v4-flash  DeepSeek V4 Flash  overridden        [▾ Collapse]
+    1,048,576 context window · 384,000 output · text+image · reasoning
+    │ Display name  [DeepSeek V4 Flash           ]  from models.dev
+    │ Catalog alias [deepseek/deepseek-v4-flash]
+    │ Context       [1048576]  in effect 1,048,576 · from aperture
+    │ Max output    [384000]   in effect 384,000 · from aperture
+    │ Modalities    ☑ text ☑ image   in effect text+image · from config
+    │ Reasoning     [follow discovery ▾]  in effect on · from models.dev
+    │ Protocol      [follow discovery ▾]  in effect openai-completions
+    │ An empty display name, capacity or modality drops that override…  [Reset override] [Cancel] [Save]
+  gemini-2.5-flash  Gemini 2.5 Flash                      [▸ Edit]
+    128,000 context window · text · no reasoning
+
+Unserved  4 models  ●                                      [▸ Edit]
 ```
 
-Collapsed, each row is just the facts (model id and the values in effect); "Edit" expands the panel, where every source sits next to the field it describes ("in effect 1,048,576 · from aperture"). Each row gets its own Save and Cancel: Save writes that row only, Cancel throws that row's edits away.
+Two sections are each a card: **Instance** (address and sync toggle) and **Last refresh** (one fact per row; the report lives in the same card). Both card heads are themselves collapse toggles — an arrow plus the name, shaped after the group header on the official plugin-list page, expanded by default, and clicking one folds the card body away. The actions (`[Reset override]`, `[Refresh now]`) stay **outside** the toggle, so they still work while folded, and so does the banner a press produces. **Models and routes** is a page-level section: the title sits directly above the cards, the same skeleton as the official Models page, with no outer card — one card per route, its head carrying `provider · api` and the model count, and its body the "→ address" line plus that route's model list. A model row expands once more, and its parameter face lands inside that row (a rule across the same grey face, not a second grey panel). The pill buttons on the right of a card head are that card's own actions, and the `●` says that card's own state: whether an address is set (Instance), whether that round succeeded (Last refresh), whether this round wrote the route into `llm-pi-ai` (route cards; red when it did not), and whether any route is available at all (the Unserved card).
 
-(The tab itself is bilingual; the labels above are its English wording.) Next to it are the buttons that edit the address, refresh now, and withdraw the routes.
+Collapsed, the first level is just the route card head and the second just one row of facts (id, display name, capacities); "Edit" expands the level inside it, where every source sits next to the field it describes ("in effect 1,048,576 · from aperture"). Each row gets its own Save and Cancel: Save writes that row only, Cancel throws that row's edits away.
+
+(The tab itself is bilingual; the labels above are its English wording.)
 
 ## Usage
 
@@ -105,14 +113,15 @@ The interface is the **Aperture** tab under **Settings → Plugins**: it shows y
 
 | Where | Effect |
 | --- | --- |
-| Tab · 状态 | what the last refresh did, what triggered it, and the catalog, endpoint and settings-write results |
+| Tab · 实例卡 | the instance address and sync toggle; the head's dot says whether an address is set, and "Reset override" puts `baseUrl` back to the composition layer |
 | Tab · 实例地址 | edits `baseUrl` (written through the settings seam, with an "overridden" badge and reset-to-composition) |
 | Tab · 同步开关 | edits `sync`: off discovers without writing `llm-pi-ai` |
-| Tab · 保存 | writes the address and toggle drafts into the settings document |
-| Tab · 立即刷新 | discover and republish now, then show that round's report |
-| Tab · 撤掉已发布的路由 | withdraw this plugin's two routes from the `llm-pi-ai` section |
-| Tab · 模型与路由 | which route every model belongs to, and the values in effect |
-| Tab · 编辑 | expands one model's parameters: display name, catalog alias, capacities, modalities, reasoning, protocol, each source next to the field it describes |
+| Tab · 保存 | bottom right of the editor (Cancel sits to its left): writes the address and toggle drafts into the settings document |
+| Tab · 最近一次刷新 | what the last refresh did, what triggered it, and the catalog, endpoint and settings-write results; the head's dot says whether that round succeeded |
+| Tab · 立即刷新 | a card-head action on the refresh card: discover and republish now, then show that round's report |
+| Tab · 撤掉已发布的路由 | a card-head action on the refresh card: withdraw this plugin's two routes from the `llm-pi-ai` section |
+| Tab · 模型与路由 | one page-level section: an expandable card per route (its head carrying `provider · api`, the model count and a dot saying whether this round wrote it into `llm-pi-ai`), whose body holds the address and the model list; models no route can serve get their own Unserved card |
+| Tab · 编辑 | the pill button in a card head: expands the next level inside that card. A route card expands the model list; a model row expands its own parameter panel — display name, catalog alias, capacities, modalities, reasoning, protocol, each source next to the field it describes |
 | Tab · 保存 / 取消 | write that row only, or throw that row's edits away |
 | Tab · 撤销覆盖 | clear only the fields the report says really were overridden, falling back to discovery and the catalog right away |
 

@@ -368,10 +368,12 @@ window.__ModuleLoader__.load({
      * dsh web 的主题 token（`--dsw-alias-*`，各带回落值），深浅色自动跟随。
      *
      * 尺寸与形状照抄官方设置页的「模型」卡片（`@deepseek-ai/dsh-client-ui-settings-models`）：
-     * 输入框 32px / 8px 圆角 / `.5px` 边框，卡片与编辑区 12px 圆角、14px 16px 内边距，参数
-     * 用 `minmax(160px, 1fr)` 的栅格加 12px 小标签，行内动作按钮 28px，正文按钮 36px 胶囊。
-     * 那份 CSS 是构建产物里的字面量，可以逐条对照，因此界面不必赌一个没有类型声明的组件
-     * API 也能与官方标签页长得一样。
+     * 卡片是 16px 圆角、`.5px` 的 l4 边框、`12px 14px` 内边距，卡头左身份右动作（`10px` 间距
+     * 加 `margin-left: auto`），身份里的状态点是 8px 的 state token 圆点；编辑区是 12px 圆角的
+     * 浅色面（`bg-module-platform`，`14px 16px` 内边距），参数排成 `minmax(160px, 1fr)` 的栅格，
+     * 字段标签 12px/500 的 label-secondary，行内动作按钮 28px / 14px 圆角，正文按钮 36px 胶囊，
+     * 编辑区底部的「取消 / 保存」右对齐。那份 CSS 是构建产物里的字面量，可以逐条对照，因此界面
+     * 不必赌一个没有类型声明的组件 API 也能与官方标签页长得一样。
      *
      * @returns {Function} 卸载时移除样式表的 disposer。
      */
@@ -383,10 +385,32 @@ window.__ModuleLoader__.load({
 [${STYLE_MARK}] { display: flex; flex-direction: column; gap: 12px; max-width: 720px; min-width: 0; color: var(--dsw-alias-label-primary, inherit); }
 [${STYLE_MARK}] .dap-title { font-size: 16px; font-weight: 500; line-height: 24px; }
 [${STYLE_MARK}] .dap-subtitle { margin: 0; font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
-[${STYLE_MARK}] .dap-section { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border: .5px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3)); border-radius: 12px; background: var(--dsw-alias-bg-layer-2, transparent); }
-[${STYLE_MARK}] .dap-head { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
+/* 卡片就是官方「模型」页的一张 rowCard：16px 圆角、.5px 的 l4 边框、12px 14px 内边距、
+   12px 的列间距，底下**不铺色**——官方那张卡也是透明的，底来自页面本身。段卡（实例、刷新）
+   与路由卡在页面上是同一层，共用这条规则；模型行是路由编辑区**里面**的一层，用官方
+   modelEntry 的细框（10px 圆角、10px 12px 内边距），一眼看得出谁在谁里面。 */
+[${STYLE_MARK}] .dap-section, [${STYLE_MARK}] .dap-route { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; border: .5px solid var(--dsw-alias-border-l4, rgba(127,127,127,.3)); border-radius: 16px; }
+/* 卡头：左边是身份（名字 + 标签 + 状态点），右边是这一张卡自己的动作——官方 rowHead。 */
+[${STYLE_MARK}] .dap-card-head { display: flex; align-items: center; gap: 10px; }
+[${STYLE_MARK}] .dap-identity { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+/* 段卡的卡头本身是个折叠开关：箭头 + 身份，形状照官方那个分组头（groupToggle 里放箭头与
+   标题，右边的控件留在按钮外面）。动作留在按钮**外面**——按钮里不能再嵌按钮。 */
+[${STYLE_MARK}] .dap-card-toggle { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+[${STYLE_MARK}] .dap-card-toggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4d6bfe); outline-offset: 2px; border-radius: 6px; }
+[${STYLE_MARK}] .dap-card-toggle .dap-chevron { color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
+/* 折起来的那一半：刷新卡的事实与地址，实例卡的编辑区。 */
+[${STYLE_MARK}] .dap-body { display: flex; flex-direction: column; gap: 12px; }
+[${STYLE_MARK}] .dap-name { font-size: 14px; font-weight: 500; line-height: 22px; }
+[${STYLE_MARK}] .dap-row-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+[${STYLE_MARK}] .dap-row-actions .dap-button { height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12px; line-height: 18px; }
+/* 状态点：官方拿它说「这个提供方的凭据配好了没有」——8px 的圆、state token 上色。这里
+   沿用同一个记号，语义换成「地址填了没有」（实例卡）、「最近一次刷新成不成功」（刷新卡）
+   与「有没有路由把它服务出去」（模型卡）。颜色不是唯一的说法：title 与 aria-label 里写着
+   同一句话。 */
+[${STYLE_MARK}] .dap-dot { box-sizing: border-box; display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; }
+[${STYLE_MARK}] .dap-dot[data-state="ok"] { background: var(--dsw-alias-state-success-primary, #2e9e5b); }
+[${STYLE_MARK}] .dap-dot[data-state="bad"] { background: var(--dsw-alias-state-error-primary, #d9534f); }
 [${STYLE_MARK}] .dap-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-[${STYLE_MARK}] .dap-label { font-size: 12px; font-weight: 500; line-height: 18px; color: var(--dsw-alias-label-secondary, inherit); }
 [${STYLE_MARK}] .dap-hint { margin: 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
 
 /* 输入控件照抄官方：32px 高、8px 圆角、.5px 的 l4 边框、bg-layer-1 底、聚焦只换边框色。
@@ -417,6 +441,8 @@ window.__ModuleLoader__.load({
 [${STYLE_MARK}] .dap-button[data-primary="true"]:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover, var(--dsw-alias-brand-primary, rgba(127,127,127,.5))); }
 [${STYLE_MARK}] .dap-button[data-primary="true"]:disabled { opacity: 1; background: var(--dsw-alias-button-primary-dimmed, rgba(127,127,127,.18)); color: var(--dsw-alias-label-secondary, rgba(127,127,127,.9)); }
 [${STYLE_MARK}] .dap-button:disabled { cursor: default; }
+/* 官方每一颗按钮的禁用态都是整颗 opacity: .4；主按钮那一处例外与理由写在上面。 */
+[${STYLE_MARK}] .dap-button:not([data-primary="true"]):disabled { opacity: .4; }
 
 [${STYLE_MARK}] .dap-banner { margin: 0; font-size: 12px; line-height: 18px; white-space: pre-wrap; }
 [${STYLE_MARK}] .dap-banner[data-ok="false"] { color: var(--dsw-alias-state-error-primary, #d9534f); }
@@ -428,30 +454,31 @@ window.__ModuleLoader__.load({
 [${STYLE_MARK}] .dap-fact > dt { flex: 0 0 84px; font-size: 12px; line-height: 22px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
 [${STYLE_MARK}] .dap-fact > dd { margin: 0; min-width: 0; font-size: 14px; line-height: 22px; word-break: break-word; }
 
-[${STYLE_MARK}] .dap-group { display: flex; flex-direction: column; gap: 8px; }
-[${STYLE_MARK}] .dap-group-head { display: flex; flex-direction: column; gap: 2px; }
-[${STYLE_MARK}] .dap-group-title { font-size: 12px; font-weight: 500; line-height: 18px; color: var(--dsw-alias-label-secondary, inherit); }
-[${STYLE_MARK}] .dap-group-meta { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
 [${STYLE_MARK}] .dap-models { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 [${STYLE_MARK}] .dap-model { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: .5px solid var(--dsw-alias-border-l4, rgba(127,127,127,.3)); border-radius: 10px; }
 [${STYLE_MARK}] .dap-model-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-[${STYLE_MARK}] .dap-model-identity { display: inline-flex; gap: 6px; align-items: center; min-width: 0; }
+/* 卡头是「id + 显示名」——官方 modelCatalog 那一行也是 id 在前、名字在后。 */
 [${STYLE_MARK}] .dap-model-id { font-family: var(--ds-font-family-code, monospace); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
-[${STYLE_MARK}] .dap-model-name { font-size: 14px; font-weight: 500; line-height: 22px; }
-[${STYLE_MARK}] .dap-model-actions { display: inline-flex; gap: 4px; align-items: center; margin-left: auto; }
-[${STYLE_MARK}] .dap-model-actions .dap-button { height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12px; line-height: 18px; }
 [${STYLE_MARK}] .dap-model-facts { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary, inherit); }
 [${STYLE_MARK}] .dap-model-meta { margin: 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
+/* 模型行自己展开的参数面不再另铺一层灰：它已经在编辑区那块浅色面里了，官方 modelAdvanced
+   也是在同底色上切一条 l2 细线——再套一层灰，边界根本看不见。 */
+[${STYLE_MARK}] .dap-advanced { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; border-top: .5px solid var(--dsw-alias-border-l2, rgba(127,127,127,.18)); }
 
-/* 编辑区与官方一样是卡片里的一块浅色面：12px 圆角、14px 16px 内边距，参数排成
-   minmax(160px, 1fr) 的栅格，标签 12px 在上，动作右对齐。 */
+/* 编辑区与官方一样是卡片里的一块浅色面：12px 圆角、14px 16px 内边距。路由卡展开后，这块面
+   里装的正是官方那张 provider 卡的两层：先是「→ 地址」那一行（对应官方编辑区头上的名字与
+   provider id），再是模型清单（官方 modelCatalog）。 */
 [${STYLE_MARK}] .dap-editor { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px; border-radius: 12px; background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-layer-1, transparent)); }
 [${STYLE_MARK}] .dap-editor-head { display: flex; gap: 8px; align-items: baseline; }
 [${STYLE_MARK}] .dap-editor-title { font-size: 14px; font-weight: 500; line-height: 22px; }
 [${STYLE_MARK}] .dap-editor-route { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
 [${STYLE_MARK}] .dap-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
-[${STYLE_MARK}] .dap-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+[${STYLE_MARK}] .dap-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 [${STYLE_MARK}] .dap-field > label { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
+/* 编辑区里的字段是官方 fieldLabel（12px/500 的 label-secondary），模型那一格沿用官方
+   modelFieldLabel 的 12px label-tertiary；整行的格子（地址、密钥那种值）横跨整个栅格。 */
+[${STYLE_MARK}] .dap-field[data-emphasis="true"] > label { display: inline-flex; align-items: center; gap: 10px; font-weight: 500; color: var(--dsw-alias-label-secondary, inherit); }
+[${STYLE_MARK}] .dap-field[data-wide="true"] { grid-column: 1 / -1; }
 [${STYLE_MARK}] .dap-field-note { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
 [${STYLE_MARK}] .dap-error { margin: 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-state-error-primary, #d9534f); }
 [${STYLE_MARK}] .dap-chevron { display: inline-flex; transition: transform 120ms ease; }
@@ -481,6 +508,15 @@ window.__ModuleLoader__.load({
       syncOn: '写入 provider 字典',
       syncOff: '只探测，不写入',
       overridden: '已覆盖',
+      syncOffTag: '不同步',
+      dotConfigured: '实例地址已配置',
+      dotMissing: '没有实例地址',
+      dotRefreshOk: '最近一次刷新成功',
+      dotRefreshFailed: '最近一次刷新失败',
+      dotPublished: '这一轮已写入 llm-pi-ai',
+      dotUnpublished: '这一轮没有写入 llm-pi-ai：{reason}',
+      dotUnservedModels: '这些模型没有路由可用',
+      reasonUnknown: '报告里没有写原因',
       reset: '撤销覆盖',
       save: '保存',
       saving: '保存中…',
@@ -514,14 +550,15 @@ window.__ModuleLoader__.load({
       modelsCount: '{count} 个模型',
       modelsMetaOverride: '已覆盖 {count} 个模型，其余沿用发现值与清单',
       modelsMetaInherit: '全部沿用发现值与清单',
+      routeNoBaseURL: '→ 这条路由没有写地址',
       noModels: '未发现任何模型。',
       modelsError: '未发现任何内容：{error}',
       unservedHeading: '未服务：没有本插件可发布的端点',
+      unservedCard: '未服务',
       unservedHint: '填上协议可以让它在对应路由上发布。',
       unservedEndpoints: '通告的端点：{list}',
       noEndpoints: '未通告任何端点',
       pendingTag: '待保存',
-      unservedTag: '未服务',
       advancedHide: '收起',
 
       factContextWindow: '{count} 上下文窗口',
@@ -569,6 +606,15 @@ window.__ModuleLoader__.load({
       syncOn: 'writes the provider dictionary',
       syncOff: 'probe only, write nothing',
       overridden: 'overridden',
+      syncOffTag: 'no sync',
+      dotConfigured: 'instance address configured',
+      dotMissing: 'no instance address',
+      dotRefreshOk: 'last refresh succeeded',
+      dotRefreshFailed: 'last refresh failed',
+      dotPublished: 'written into llm-pi-ai this round',
+      dotUnpublished: 'not written into llm-pi-ai this round: {reason}',
+      dotUnservedModels: 'no route can serve these models',
+      reasonUnknown: 'the report records no reason',
       reset: 'Reset',
       save: 'Save',
       saving: 'Saving…',
@@ -602,14 +648,15 @@ window.__ModuleLoader__.load({
       modelsCount: '{count} models',
       modelsMetaOverride: '{count} models overridden, the rest inherit discovery and the catalog',
       modelsMetaInherit: 'everything inherits discovery and the catalog',
+      routeNoBaseURL: '→ this route writes no address',
       noModels: 'No models discovered.',
       modelsError: 'Nothing discovered: {error}',
       unservedHeading: 'Unserved: no endpoint this plugin can publish',
+      unservedCard: 'Unserved',
       unservedHint: 'Filling in a protocol publishes it on the matching route.',
       unservedEndpoints: 'Advertised endpoints: {list}',
       noEndpoints: 'no endpoints advertised',
       pendingTag: 'unsaved',
-      unservedTag: 'unserved',
       advancedHide: 'Collapse',
 
       factContextWindow: '{count} context window',
@@ -710,6 +757,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState('');
       const [drafts, setDrafts] = React.useState({});
       const [opened, setOpened] = React.useState({});
+      const [collapsed, setCollapsed] = React.useState({});
       const [configRevision, setConfigRevision] = React.useState(0);
       const [reportRevision, setReportRevision] = React.useState(0);
 
@@ -995,17 +1043,86 @@ window.__ModuleLoader__.load({
       );
 
       /**
+       * 身份里的状态点。
+       *
+       * 官方拿这个 8px 的圆点说「这个提供方的凭据配好了没有」；这里沿用同一个记号，两种状态
+       * 分别说「地址填了没有」（实例卡）与「最近一次刷新成不成功」（刷新卡）。颜色不是唯一的
+       * 说法：`title` 与 `aria-label` 里写着同一句话，悬停与读屏都拿得到。
+       *
+       * @param {'ok'|'bad'} state - 圆点的状态。
+       * @param {string} label - 与圆点同义的文案。
+       * @returns {object} 一个圆点元素。
+       */
+      const dot = (state, label) => h('span', {
+        className: 'dap-dot',
+        'data-state': state,
+        role: 'img',
+        title: label,
+        'aria-label': label,
+      });
+
+      /**
+       * 两张段卡（实例、最近一次刷新）默认展开，折叠状态按卡记——官方那边也是 `?? true`：只有
+       * 用户明确折过才收起，重渲染（每次刷新都会重渲染）不会把它弹回来。
+       *
+       * @param {string} key - 卡片键。
+       * @returns {boolean} 这张卡现在是不是展开的。
+       */
+      const sectionOpen = (key) => collapsed[key] !== true;
+
+      /**
+       * 卡片头：左边是身份（名字 + 标签 + 状态点），右边是这一张卡自己的动作——官方 `rowHead`。
+       *
+       * 给了 `collapse` 时，身份那一段整体变成一个折叠按钮：箭头 + 身份。官方分组头就是这个形状
+       * （`groupToggle` 里放箭头与标题），动作必须留在按钮**外面**，因为按钮里不能再嵌按钮。
+       *
+       * @param {object[]} identity - 身份那几个元素。
+       * @param {object[]} [actions] - 右对齐的动作按钮；没有动作时整块不出现。
+       * @param {{key: string, open: boolean}} [collapse] - 折叠开关；不给就是一张折不动的卡。
+       * @returns {object} 卡片头。
+       */
+      const cardHead = (identity, actions, collapse) => h(
+        'div',
+        { className: 'dap-card-head' },
+        collapse === undefined
+          ? h('span', { className: 'dap-identity' }, identity)
+          : h(
+            'button',
+            {
+              type: 'button',
+              id: `dap-card-${collapse.key}-toggle`,
+              className: 'dap-card-toggle',
+              'aria-expanded': collapse.open ? 'true' : 'false',
+              'aria-controls': `dap-body-${collapse.key}`,
+              onClick: () => setCollapsed((current) => ({
+                ...current,
+                [collapse.key]: current[collapse.key] !== true,
+              })),
+            },
+            h('span', { className: 'dap-identity' }, [chevron(collapse.open), ...identity]),
+          ),
+        actions === undefined ? null : h('span', { className: 'dap-row-actions' }, actions),
+      );
+
+      /**
        * 一个参数格子：标签在上、控件在下（官方的 `modelAdvanced` 栅格就是这样）。
        *
        * @param {string} key - React key 与控件 id。
        * @param {string} label - 12px 的小标签。
        * @param {object} control - 控件元素。
        * @param {string} [note] - 生效值一类的补充说明。
+       * @param {object} [flags] - `wide`（横跨整行）与 `emphasis`（官方 fieldLabel 的
+       *   12px/500 label-secondary，模型那些格子用的是更轻的 modelFieldLabel）。
        * @returns {object} 一个栅格单元。
        */
-      const field = (key, label, control, note) => h(
+      const field = (key, label, control, note, flags = {}) => h(
         'div',
-        { className: 'dap-field', key },
+        {
+          className: 'dap-field',
+          key,
+          'data-wide': flags.wide === true ? 'true' : undefined,
+          'data-emphasis': flags.emphasis === true ? 'true' : undefined,
+        },
         h('label', { htmlFor: key }, label),
         control,
         note === undefined ? null : h('span', { className: 'dap-field-note' }, note),
@@ -1052,15 +1169,16 @@ window.__ModuleLoader__.load({
       };
 
       /**
-       * 一个模型的编辑面板：展开后才出现的全部字段，以及这一行的三个动作。
+       * 一个模型的参数面：展开后才出现的全部字段，以及这一行的三个动作。
        *
-       * 与官方那张卡片同一套形状——12px 圆角的面、`minmax(160px, 1fr)` 的参数栅格、
-       * 12px 的小标签，右对齐的动作行（危险动作在左、主按钮在右）。
+       * 它落在**路由卡那块浅色编辑区里面**，所以自己不铺底——只切一条 l2 细线跟上方的模型行
+       * 分开（官方 `modelAdvanced` 就是这么处理的）。里面仍是官方那套：`minmax(160px, 1fr)` 的
+       * 参数栅格、12px 的小标签、右对齐的动作行（危险动作在左、主按钮在右）。
        *
        * @param {object} model - 报告里的一个模型。
-       * @returns {object} 编辑面板。
+       * @returns {object} 参数面。
        */
-      const editor = (model) => {
+      const advanced = (model) => {
         const current = draftOf(model);
         const overridden = model.override !== undefined && Object.keys(model.override).length > 0;
         const { patch } = patchOf(current, initialOf(model));
@@ -1083,16 +1201,7 @@ window.__ModuleLoader__.load({
 
         return h(
           'div',
-          { className: 'dap-editor' },
-          h(
-            'div',
-            { className: 'dap-editor-head' },
-            h('code', { className: 'dap-editor-title dap-model-id' }, model.id),
-            h('span', { className: 'dap-editor-route' }, [
-              model.route === undefined ? t('unservedTag') : model.route,
-              model.protocol === undefined ? undefined : ` · ${model.protocol}`,
-            ].filter((part) => part !== undefined).join('')),
-          ),
+          { className: 'dap-advanced' },
           h(
             'div',
             { className: 'dap-fields' },
@@ -1194,7 +1303,13 @@ window.__ModuleLoader__.load({
         );
       };
 
-      /** 一个模型一行：收起时只有 id、标签与生效的事实，点「编辑」才展开面板。 */
+      /**
+       * 一个模型一行（路由编辑区里的一层）：收起时只有 id、标签与生效的事实，点「编辑」才在
+       * 这一行自己下面展开参数。
+       *
+       * 这一行不再自己带状态点：它有没有被服务，外面那张路由卡（或「未服务」那张卡）的卡头
+       * 已经说过了——嵌套本身就把这件事讲清楚了，不必每行重复一遍。
+       */
       const modelRow = (model) => {
         const { patch } = patchOf(draftOf(model), initialOf(model));
         const overridden = model.override !== undefined && Object.keys(model.override).length > 0;
@@ -1208,16 +1323,15 @@ window.__ModuleLoader__.load({
             { className: 'dap-model-head' },
             h(
               'span',
-              { className: 'dap-model-identity' },
+              { className: 'dap-identity' },
               h('code', { className: 'dap-model-id' }, model.id),
-              model.name === model.id ? null : h('span', { className: 'dap-model-name' }, model.name),
+              model.name === model.id ? null : h('span', { className: 'dap-name' }, model.name),
+              overridden ? h('span', { className: 'dap-tag' }, t('overridden')) : null,
+              Object.keys(patch).length > 0 ? h('span', { className: 'dap-tag' }, t('pendingTag')) : null,
             ),
-            overridden ? h('span', { className: 'dap-tag' }, t('overridden')) : null,
-            model.route === undefined ? h('span', { className: 'dap-tag' }, t('unservedTag')) : null,
-            Object.keys(patch).length > 0 ? h('span', { className: 'dap-tag' }, t('pendingTag')) : null,
             h(
               'span',
-              { className: 'dap-model-actions' },
+              { className: 'dap-row-actions' },
               h('button', {
                 id: `dap-model-${model.id}-toggle`,
                 type: 'button',
@@ -1235,27 +1349,77 @@ window.__ModuleLoader__.load({
               list: model.endpoints.length === 0 ? t('noEndpoints') : model.endpoints.join(', '),
             }))
             : null,
-          open ? editor(model) : null,
+          open ? advanced(model) : null,
         );
       };
 
-      /** 一条路由的分组头：`provider · 协议` 一行，`→ 地址 · N 个模型` 一行。 */
-      const groupHead = (title, meta) => h(
-        'div',
-        { className: 'dap-group-head' },
-        h('span', { className: 'dap-group-title' }, title),
-        h('span', { className: 'dap-group-meta' }, meta),
-      );
+      /**
+       * 一条路由一张卡：卡头是 `provider · 协议` 加模型数，展开后是浅色面里的模型清单。
+       *
+       * 这就是官方那张 provider 卡的两层——卡头、以及卡里那块浅色面里的模型目录；区别只在
+       * 我们这一层装的是「这条路由解析出来的模型」。卡头上的点说这一轮有没有把它写进
+       * `llm-pi-ai`（同步关掉、失败、或者报告里根本没有同步结果时，就没有什么可说：不画点）。
+       *
+       * @param {string} key - 展开状态的键（路由 id 不会与模型 id 撞车）。
+       * @param {string} name - 卡头身份，`provider` 或「未服务」。
+       * @param {string|undefined} api - 协议；没有就不写。
+       * @param {string} note - 编辑区头上那一行说明。
+       * @param {object} models - 这张卡里的模型。
+       * @param {{state: string, title: string}|undefined} state - 卡头那枚状态点；不知道就
+       *   `undefined`（没有状态可说，不画点）。
+       * @returns {object} 路由卡。
+       */
+      const routeCard = (key, name, api, note, models, state) => {
+        const open = opened[key] === true;
+        return h(
+          'li',
+          { className: 'dap-route', key },
+          h(
+            'div',
+            { className: 'dap-card-head' },
+            h(
+              'span',
+              { className: 'dap-identity' },
+              h('span', { className: 'dap-name' }, name),
+              api === undefined ? null : h('code', { className: 'dap-model-id' }, api),
+              h('span', { className: 'dap-tag' }, t('modelsCount', { count: models.length })),
+              state === undefined ? null : dot(state.state, state.title),
+            ),
+            h(
+              'span',
+              { className: 'dap-row-actions' },
+              h('button', {
+                id: `dap-route-${key}-toggle`,
+                type: 'button',
+                className: 'dap-button',
+                'aria-label': t('edit'),
+                'aria-expanded': open ? 'true' : 'false',
+                disabled: busy !== '',
+                onClick: () => setOpened((state) => ({ ...state, [key]: !open })),
+              }, chevron(open), open ? t('advancedHide') : t('edit')),
+            ),
+          ),
+          open
+            ? h(
+              'div',
+              { className: 'dap-editor' },
+              h('div', { className: 'dap-editor-head' }, h('span', { className: 'dap-editor-route' }, note)),
+              h('ul', { className: 'dap-models' }, models.map(modelRow)),
+            )
+            : null,
+        );
+      };
 
       /**
        * 模型清单：先按路由分组，最后是没有任何路由能服务的那些。
        *
-       * 头部只说一句「已覆盖几个，其余沿用发现值与清单」（官方「模型」卡片左半边那句）；
-       * 右边没有官方的「撤销全部覆盖」——这里按行改，撤销也按行做，一次管一整份清单的动作
-       * 没有对应场景。
+       * 这一段与官方「模型」页同一副骨架：**页面级的标题 + 一叠可展开的卡片**，模型自己不套
+       * 外卡——官方那页也不是「一个大卡里装小卡」，而是标题下面直接排卡片。标题右边只有官方
+       * 那句「已覆盖几个，其余沿用发现值与清单」；没有官方的「撤销全部覆盖」，因为这里按行改，
+       * 撤销也按行做，一次管一整份清单的动作没有对应场景。
        *
-       * 每一行收起时只是一条事实，点「编辑」才展开面板：报告是这张标签页的主要用途，不该被
-       * 一地输入框淹掉。
+       * 每张卡收起时是卡头加一条事实，点「编辑」在**这张卡里**展开那块浅色面（官方那张
+       * DeepSeek 卡也是这个形状）：报告是这张标签页的主要用途，不该被一地输入框淹掉。
        *
        * @param {object} current - 报告。
        * @returns {object} 模型段。
@@ -1265,18 +1429,17 @@ window.__ModuleLoader__.load({
           (model) => model.override !== undefined && Object.keys(model.override).length > 0,
         );
 
-        const head = h(
-          'div',
-          { className: 'dap-row' },
+        const head = [
           h(
             'div',
-            { className: 'dap-head' },
+            { className: 'dap-row' },
             h('div', { className: 'dap-title' }, t('modelsHeading')),
-            h('p', { className: 'dap-hint' }, overridden.length === 0
-              ? t('modelsMetaInherit')
-              : t('modelsMetaOverride', { count: overridden.length })),
+            h('span', { className: 'dap-tag' }, t('modelsCount', { count: current.models.length })),
           ),
-        );
+          h('p', { className: 'dap-hint' }, overridden.length === 0
+            ? t('modelsMetaInherit')
+            : t('modelsMetaOverride', { count: overridden.length })),
+        ];
 
         if (current.models.length === 0) {
           return [
@@ -1287,33 +1450,46 @@ window.__ModuleLoader__.load({
           ];
         }
 
-        const groups = [];
+        // 同步结果只在报告里有时才说得出「写没写进 llm-pi-ai」；没有就交给 routeCard 不画点。
+        const sync = current.refresh === undefined ? undefined : current.refresh.sync;
+        const written = sync === undefined ? undefined : sync.routes;
+
+        const cards = [];
         for (const route of current.routes) {
           const models = current.models.filter((model) => model.route === route.provider);
           if (models.length === 0) continue;
-          const title = route.api === undefined ? route.provider : `${route.provider} · ${route.api}`;
-          const meta = [
-            route.baseURL === undefined ? undefined : `→ ${route.baseURL}`,
-            t('modelsCount', { count: models.length }),
-          ].filter((part) => part !== undefined).join(' · ');
-          groups.push(h(
-            'div',
-            { className: 'dap-group', key: route.provider },
-            groupHead(title, meta),
-            h('ul', { className: 'dap-models' }, models.map(modelRow)),
+          const note = route.baseURL === undefined
+            ? t('routeNoBaseURL')
+            : `→ ${route.baseURL}`;
+          const published = written === undefined ? undefined : written.includes(route.provider);
+          cards.push(routeCard(
+            route.provider,
+            route.provider,
+            route.api,
+            note,
+            models,
+            // 没写进去时把原因带上：只写「没写进去」等于让人去别处找原因，而这一轮为什么没写成
+            // 正是这个点唯一想说的话。
+            published === undefined
+              ? undefined
+              : {
+                state: published ? 'ok' : 'bad',
+                title: published
+                  ? t('dotPublished')
+                  : t('dotUnpublished', { reason: sync.reason ?? t('reasonUnknown') }),
+              },
           ));
         }
         const unserved = current.models.filter((model) => model.route === undefined);
         if (unserved.length > 0) {
-          groups.push(h(
-            'div',
-            { className: 'dap-group', key: 'unserved' },
-            groupHead(t('unservedHeading'), t('modelsCount', { count: unserved.length })),
-            h('ul', { className: 'dap-models' }, unserved.map(modelRow)),
-          ));
+          // 这张卡没有路由，它的点说的是模型自己的状态：一个都没接上。
+          cards.push(routeCard('unserved', t('unservedCard'), undefined, t('unservedHeading'), unserved, {
+            state: 'bad',
+            title: t('dotUnservedModels'),
+          }));
         }
 
-        return [head, groups];
+        return [head, h('ul', { className: 'dap-models' }, cards)];
       };
 
       return h(
@@ -1329,115 +1505,148 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { className: 'dap-section' },
-          h(
-            'div',
-            { className: 'dap-row' },
-            h('label', { className: 'dap-label', htmlFor: 'dap-base-url' }, t('addressLabel')),
-            h('input', {
-              id: 'dap-base-url',
-              className: 'dap-input',
-              type: 'text',
-              spellCheck: false,
-              autoComplete: 'off',
-              placeholder: t('addressPlaceholder'),
-              value: draft.baseUrl,
-              disabled,
-              onChange: (event) => setDraft({ baseUrl: event.target.value, sync: draft.sync }),
-            }),
+          cardHead(
+            [
+              h('span', { className: 'dap-name' }, t('tab')),
+              configuration.baseUrlOverridden
+                ? h('span', { className: 'dap-tag' }, t('overridden'))
+                : null,
+              draft.sync ? null : h('span', { className: 'dap-tag' }, t('syncOffTag')),
+              dot(dormant ? 'bad' : 'ok', dormant ? t('dotMissing') : t('dotConfigured')),
+            ],
             configuration.baseUrlOverridden
-              ? h('span', { className: 'dap-tag' }, t('overridden'))
-              : null,
-            configuration.baseUrlOverridden
-              ? h('button', {
+              ? [h('button', {
                 type: 'button',
                 className: 'dap-button',
                 disabled,
                 onClick: () => run('reset', () => panel.save(null, undefined), () => setConfigRevision((value) => value + 1)),
-              }, t('reset'))
-              : null,
+              }, t('reset'))]
+              : undefined,
+            { key: 'instance', open: sectionOpen('instance') },
           ),
-          h(
+          // 折起来时整块不渲染（官方也是 `open ? body : null`）：DOM 里不留一个藏着的输入框。
+          sectionOpen('instance') ? h(
             'div',
-            { className: 'dap-row' },
+            { className: 'dap-editor', id: 'dap-body-instance' },
             h(
-              'label',
-              { className: 'dap-check', htmlFor: 'dap-sync' },
-              h('input', {
-                id: 'dap-sync',
-                type: 'checkbox',
-                checked: draft.sync,
-                disabled,
-                onChange: (event) => setDraft({ baseUrl: draft.baseUrl, sync: event.target.checked }),
-              }),
-              t('syncLabel'),
+              'div',
+              { className: 'dap-editor-head' },
+              h('span', { className: 'dap-editor-title' }, t('tab')),
+              h('span', { className: 'dap-editor-route' }, 'aperture.baseUrl'),
             ),
-            h('span', { className: 'dap-tag' }, draft.sync ? t('syncOn') : t('syncOff')),
-            configuration.syncOverridden
-              ? h('span', { className: 'dap-tag' }, t('overridden'))
-              : null,
-          ),
-          configuration.writable ? null : h('p', { className: 'dap-banner', 'data-ok': 'false' }, t('readOnly')),
-          h(
-            'div',
-            { className: 'dap-actions' },
-            h('button', {
-              type: 'button',
-              className: 'dap-button',
-              'data-primary': 'true',
-              disabled: disabled || !dirty,
-              onClick: () => run('save', () => panel.save(draft.baseUrl, draft.sync), () => {
-                setConfigRevision((value) => value + 1);
-                setReportRevision((value) => value + 1);
-              }),
-            }, busy === 'save' ? t('saving') : t('save')),
-            h('button', {
-              type: 'button',
-              className: 'dap-button',
-              disabled: busy !== '' || !dirty,
-              onClick: () => setDraft({ baseUrl: configuration.baseUrl, sync: configuration.sync }),
-            }, t('cancel')),
-          ),
+            h(
+              'div',
+              { className: 'dap-fields' },
+              field(
+                'dap-base-url',
+                t('addressLabel'),
+                h('input', {
+                  id: 'dap-base-url',
+                  className: 'dap-input',
+                  type: 'text',
+                  spellCheck: false,
+                  autoComplete: 'off',
+                  placeholder: t('addressPlaceholder'),
+                  value: draft.baseUrl,
+                  disabled,
+                  onChange: (event) => setDraft({ baseUrl: event.target.value, sync: draft.sync }),
+                }),
+                undefined,
+                { wide: true, emphasis: true },
+              ),
+            ),
+            h(
+              'div',
+              { className: 'dap-row' },
+              h(
+                'label',
+                { className: 'dap-check', htmlFor: 'dap-sync' },
+                h('input', {
+                  id: 'dap-sync',
+                  type: 'checkbox',
+                  checked: draft.sync,
+                  disabled,
+                  onChange: (event) => setDraft({ baseUrl: draft.baseUrl, sync: event.target.checked }),
+                }),
+                t('syncLabel'),
+              ),
+              h('span', { className: 'dap-tag' }, draft.sync ? t('syncOn') : t('syncOff')),
+              configuration.syncOverridden
+                ? h('span', { className: 'dap-tag' }, t('overridden'))
+                : null,
+            ),
+            configuration.writable ? null : h('p', { className: 'dap-banner', 'data-ok': 'false' }, t('readOnly')),
+            h(
+              'div',
+              { className: 'dap-actions', 'data-align': 'end' },
+              h('button', {
+                type: 'button',
+                className: 'dap-button',
+                disabled: busy !== '' || !dirty,
+                onClick: () => setDraft({ baseUrl: configuration.baseUrl, sync: configuration.sync }),
+              }, t('cancel')),
+              h('button', {
+                type: 'button',
+                className: 'dap-button',
+                'data-primary': 'true',
+                disabled: disabled || !dirty,
+                onClick: () => run('save', () => panel.save(draft.baseUrl, draft.sync), () => {
+                  setConfigRevision((value) => value + 1);
+                  setReportRevision((value) => value + 1);
+                }),
+              }, busy === 'save' ? t('saving') : t('save')),
+            ),
+          ) : null,
         ),
 
         h(
           'div',
           { className: 'dap-section' },
-          h(
-            'div',
-            { className: 'dap-actions' },
-            h('button', {
-              type: 'button',
-              className: 'dap-button',
-              disabled,
-              onClick: () => run('refresh', () => panel.refresh(), () => setReportRevision((value) => value + 1)),
-            }, busy === 'refresh' ? t('refreshing') : t('refresh')),
-            h('button', {
-              type: 'button',
-              className: 'dap-button',
-              disabled,
-              onClick: () => run('withdraw', () => panel.withdraw(), () => setReportRevision((value) => value + 1)),
-            }, busy === 'withdraw' ? t('withdrawing') : t('withdraw')),
+          cardHead(
+            [
+              h('span', { className: 'dap-name' }, t('statusHeading')),
+              report === null || report.refresh === undefined
+                ? null
+                : dot(
+                  report.refresh.ok ? 'ok' : 'bad',
+                  report.refresh.ok ? t('dotRefreshOk') : t('dotRefreshFailed'),
+                ),
+            ],
+            [
+              h('button', {
+                type: 'button',
+                className: 'dap-button',
+                disabled,
+                onClick: () => run('refresh', () => panel.refresh(), () => setReportRevision((value) => value + 1)),
+              }, busy === 'refresh' ? t('refreshing') : t('refresh')),
+              h('button', {
+                type: 'button',
+                className: 'dap-button',
+                'data-danger': 'true',
+                disabled,
+                onClick: () => run('withdraw', () => panel.withdraw(), () => setReportRevision((value) => value + 1)),
+              }, busy === 'withdraw' ? t('withdrawing') : t('withdraw')),
+            ],
+            { key: 'status', open: sectionOpen('status') },
           ),
+          // 动作的反馈留在折叠体**外面**：卡折着的时候按了「立即刷新」，也得看得见结果。
           banner === null
             ? null
             : h('p', { className: 'dap-banner', 'data-ok': banner.ok ? 'true' : 'false' }, banner.text),
-          report === null
-            ? null
-            : h('p', { className: 'dap-hint' }, `Aperture：${report.place.length === 0 ? t('noAddress') : report.place}`),
+          sectionOpen('status') ? h(
+            'div',
+            { className: 'dap-body', id: 'dap-body-status' },
+            report === null
+              ? h('p', { className: 'dap-hint' }, t('neverRefreshed'))
+              : statusFacts(report),
+            report === null
+              ? null
+              : h('p', { className: 'dap-hint' }, `Aperture：${report.place.length === 0 ? t('noAddress') : report.place}`),
+          ) : null,
         ),
 
-        report === null
-          ? null
-          : h(
-            'div',
-            { className: 'dap-section' },
-            h('div', { className: 'dap-title' }, t('statusHeading')),
-            statusFacts(report),
-          ),
-
-        report === null
-          ? null
-          : h('div', { className: 'dap-section' }, modelList(report)),
+        // 模型段自己就是「标题 + 一叠卡片」，外面不再套一张卡（官方那页也没有外卡）。
+        report === null ? null : modelList(report),
       );
     }
 
