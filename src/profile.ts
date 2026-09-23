@@ -191,8 +191,13 @@ function resolveReasoning(
   protocol: ApertureProtocol,
   configured: ConfiguredModel | undefined,
 ): Pick<PiAiModelProfile, 'reasoningEfforts' | 'compat'> {
-  if (configured?.reasoningEfforts !== undefined) {
-    return { reasoningEfforts: { ...configured.reasoningEfforts }, ...compatFor(model, protocol) };
+  // 空字典等于什么都没声明。`llm-pi-ai` 适配器会以「reasoningEfforts 是空的」为由拒绝**整段**
+  // 写入——于是三条路由一条都发布不出去，而用户写下 `{}` 想说的显然不是「这条模型没有任何推理
+  // 档位」（那该写 `false`）。适配器自己的建议就是「省略这个字段以沿用已安装清单的能力」，
+  // 这里照它办：当作没声明，继续往下按模型推导。
+  const declared = configured?.reasoningEfforts;
+  if (declared !== undefined && Object.keys(declared).length > 0) {
+    return { reasoningEfforts: { ...declared }, ...compatFor(model, protocol) };
   }
   if (!model.reasoning) {
     return {};
