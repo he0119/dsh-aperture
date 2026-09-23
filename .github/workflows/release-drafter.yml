@@ -1,0 +1,43 @@
+name: Release Drafter
+
+on:
+  push:
+    branches: [main]
+  # 自动打标签（Autolabeler）要在 PR 事件上跑；fork 来的 PR 拿不到写权限，
+  # 真有外部贡献者时再改成 pull_request_target。
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: '直接发布草稿（会生成 v* 标签，从而触发 Publish 工作流发 npm）'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # 随 main 的推进维护一个 Release 草稿：按约定式提交分类、排序，并算出下一版本号。
+  # 发布动作有两条路：在 Releases 页面把草稿 Publish，或这里手动 dispatch 并勾选 publish。
+  draft:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: release-drafter/release-drafter@v7
+        with:
+          publish: ${{ inputs.publish == true }}
+
+  # 按 PR 标题与分支名自动补标签，供人筛选，也供草稿里的 label 规则（如 dependencies）匹配。
+  label:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: release-drafter/release-drafter/autolabeler@v7
