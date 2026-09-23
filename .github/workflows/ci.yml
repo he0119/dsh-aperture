@@ -14,16 +14,14 @@ jobs:
     # 推标签时 Publish 会以 workflow_call 复用这个 job，这里就不必再独立跑一遍。
     if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # engines 声明为 ^22.19.0 || >=24.0.0，两端都测。
-        node: ['22', '24']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # v5 起这两个动作跑在 Node 24 上；v4 在 runner 上只会被警告降级执行。
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: ${{ matrix.node }}
+          # 只测 Node 24：engines 下限就是 24，且 test 脚本用的 --test-isolation=none
+          # 在 Node 22 上不存在（node: bad option，退出码 9）。
+          node-version: 24
           cache: npm
       # 仓库不带原生依赖，安装是为了拿到 typescript 与各 @deepseek-ai/* 类型声明。
       - run: npm ci

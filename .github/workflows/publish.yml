@@ -29,10 +29,10 @@ jobs:
       # 下面两步都要 OIDC：npm 可信发布用它换取短期凭据，provenance 用它签名。
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Node 24 自带 npm 11，可信发布（Trusted Publishing）要求 npm >= 11.5.1。
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
