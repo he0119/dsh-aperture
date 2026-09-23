@@ -96,6 +96,9 @@ export interface PanelOps {
   /**
    * 写入配置。
    *
+   * 写完**等一轮重新发现落地**才返回：标签页拿到回答就会重读报告，而报告里的路由与模型事实
+   * 来自最近一次刷新，不等它就还是旧配置那一份。
+   *
    * @param baseUrl - 新地址；`null` 表示恢复默认（从用户层移除），`undefined` 表示不碰。
    * @param sync - 新开关；`null` 表示恢复默认，`undefined` 表示不碰。
    */
@@ -105,7 +108,8 @@ export interface PanelOps {
    *
    * 一次只动一个模型：界面上一行一个「保存」，写下去的就只有那一行，版本校验也只管这一次
    * 写入。没提到的字段原样留在设置文档里（界面根本不编辑的 `reasoningEfforts` 就不会被顺手
-   * 抹掉），空串与 `null` 都表示「这一项不覆盖」。
+   * 抹掉），空串与 `null` 都表示「这一项不覆盖」。与 {@link save} 一样，写完等一轮重新发现
+   * 落地才返回。
    *
    * @param id - 模型 id（Aperture 接受的那个）。
    * @param patch - 要改的字段；`null` 表示撤销这个模型的全部覆盖（含别名）。
@@ -316,11 +320,18 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
       try {
         // 带着刚读到的版本号写入：期间有别人改过就拒绝，而不是覆盖他的改动。
         await deps.settings.mutate(APERTURE_NAMESPACE, ops, readSection(deps.settings).revision);
+        // 写完等这一轮刷新落地再回答：标签页拿到回答就会重读报告，而报告里的模型事实来自最近
+        // 一次刷新——不等它，界面就会「保存了却没变」（地址换了，模型清单还是旧地址那一份）。
+        // 设置变更本身也会唤起同一轮刷新（`installSection` 的 onChange），因此这里通常是并进
+        // 那一轮，而不是另跑一轮。
+        const outcome = await deps.runtime.refresh('配置变更');
+        // 写入成功了，但重新发现可能失败——两件事不能混成一句话说。
+        const wrote = withdrawOnly ? '已恢复默认，回落到组合层与默认值' : '已写入设置';
         return {
           ok: true,
-          summary: withdrawOnly
-            ? '已恢复默认，回落到组合层与默认值。'
-            : '已写入设置；插件会按新配置重新发现。',
+          summary: outcome.ok
+            ? `${wrote}，并按新配置重新发现。`
+            : `${wrote}，但重新发现没有成功：${outcome.error ?? '原因未知'}`,
         };
       } catch (error) {
         return { ok: false, summary: `保存失败：${message(error)}` };
@@ -393,14 +404,21 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
 
       if (ops.length === 0) return { ok: true, summary: '没有要保存的改动。' };
 
-      const summary = revoked
-        ? `已撤销 "${modelId}" 的全部覆盖，回落到发现值与清单；插件会按新配置重新发现。`
-        : `已保存 "${modelId}" 的参数；插件会按新配置重新发现。`;
-
       try {
         // 与 `save` 同一条路径：带着刚读到的版本号写入，期间别人改过就拒绝。
         await deps.settings.mutate(APERTURE_NAMESPACE, ops, section.revision);
-        return { ok: true, summary };
+        // 等这一轮刷新落地再回答（理由见 `save`）：这一行的容量、模态、协议都是刷新算出来的
+        // 事实，不等它，标签页重读报告时看到的还是旧值——「保存了却没变」就是这么来的。
+        const outcome = await deps.runtime.refresh('配置变更');
+        const saved = revoked
+          ? `已撤销 "${modelId}" 的全部覆盖，回落到发现值与清单`
+          : `已保存 "${modelId}" 的参数`;
+        return {
+          ok: true,
+          summary: outcome.ok
+            ? `${saved}，并按新配置重新发现。`
+            : `${saved}，但重新发现没有成功：${outcome.error ?? '原因未知'}`,
+        };
       } catch (error) {
         return { ok: false, summary: `保存失败：${message(error)}` };
       }

@@ -14,6 +14,7 @@ import {
   Config,
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MODEL_METADATA_URL,
+  memoizedConfig,
   resolveConfig,
 } from '../src/config.ts';
 
@@ -153,5 +154,21 @@ describe('resolveConfig', () => {
   it('把已禁用的清单 URL 默认为空值，而非内置值', () => {
     assert.equal(resolveConfig(Config({ modelMetadataUrl: '' })).modelMetadataUrl, '');
     assert.equal(resolveConfig(defaults()).modelMetadataUrl, DEFAULT_MODEL_METADATA_URL);
+  });
+});
+
+describe('memoizedConfig', () => {
+  it('源没换时给同一个对象，换了就是新版本', () => {
+    let current = Config({ baseUrl: 'https://ai.example.ts.net' });
+    const read = memoizedConfig(() => current);
+
+    const first = read();
+    assert.equal(read(), first, '设置服务没提交时，解析结果还是同一份');
+
+    // 设置服务每次提交都换一份深冻结的解析结果；换了对象才是新版本。
+    current = Config({ baseUrl: 'https://other.example.ts.net' });
+    const second = read();
+    assert.notEqual(second, first, '换了源就得重新解析');
+    assert.equal(second.rawBaseUrl, 'https://other.example.ts.net');
   });
 });

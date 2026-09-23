@@ -33,7 +33,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { fetchModelsListing } from './aperture.ts';
 import { ModelCatalog } from './catalog.ts';
-import { APERTURE_NAMESPACE, Config as ConfigSchema, resolveConfig, type Config } from './config.ts';
+import { APERTURE_NAMESPACE, Config as ConfigSchema, memoizedConfig, resolveConfig, type Config } from './config.ts';
 import { createPanelOps } from './panel.ts';
 import { buildProfilePlan } from './profile.ts';
 import { buildRegistry, classifyProtocol } from './registry.ts';
@@ -96,7 +96,9 @@ export function apply(ctx: Context, config: Config): void {
   // 编辑都是就地替换，所以只有持有这个 thunk，后续的配置变更才能抵达本插件。下面
   // 所有读取都因此走它。
   let source: () => Config = () => config;
-  const readConfig = (): ReturnType<typeof resolveConfig> => resolveConfig(source());
+  // 解析结果按源缓存：设置服务每次提交都换一份深冻结的对象，因此这个 thunk 的返回值
+  // 身份就是**配置版本**——运行时靠它判断正在跑的那一轮读的是不是此刻这份配置。
+  const readConfig = memoizedConfig(() => source());
 
   const runtime = new ApertureRuntime({
     config: readConfig,

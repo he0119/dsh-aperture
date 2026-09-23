@@ -218,3 +218,26 @@ export function resolveConfig(config: Config): ResolvedConfig {
     timeoutMs: config.timeoutMs ?? 20_000,
   };
 }
+
+/**
+ * 把「解析当前的配置段」包成一个按源缓存的 thunk。
+ *
+ * 设置服务每次提交都换一份**深冻结**的解析结果（`scope.get()`），没变就还是同一个对象；因此
+ * 这个 thunk 的返回值可以直接当**配置版本**用——运行时靠它判断正在跑的那一轮读的是不是此刻
+ * 这份配置。不缓存的话每次调用都是新对象，那个判断永远不成立，于是每次刷新都会多排一轮。
+ *
+ * @param source - 生效配置段的活引用（设置服务每次编辑都会就地换掉它）。
+ * @returns 解析后的配置；源没换时返回同一个对象。
+ */
+export function memoizedConfig(source: () => Config): () => ResolvedConfig {
+  let from: Config | undefined;
+  let resolved: ResolvedConfig | undefined;
+  return () => {
+    const current = source();
+    if (resolved === undefined || from !== current) {
+      from = current;
+      resolved = resolveConfig(current);
+    }
+    return resolved;
+  };
+}

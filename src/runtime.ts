@@ -3,8 +3,9 @@
  *
  * 刷新来自四个方向——插件加载、设置变更、刷新间隔，以及设置界面的标签页——其中两个
  * 很容易重叠，因为本插件自己写入并提交的设置变更会唤醒触发这次写入的同一个 watcher。
- * 因此刷新是单飞（single-flight）的：在刷新过程中到达的请求会把自己记为下一次运行，
- * 而不是启动第二次，循环会用最新配置再跑一遍。
+ * 因此刷新是单飞（single-flight）的：在刷新过程中到达的请求，若正在跑的那一轮读的就是
+ * 此刻这份配置，就并进它；否则排在它后面（见 {@link ApertureRuntime.refresh}）。排队者
+ * 共享同一轮，因此再多的调用方也只多跑一轮。
  *
  * 记住的结果就是设置文档里那一份的影子：标签页报告的就是它，而真正服务请求的，是
  * 文档里已经生效的那一份。
@@ -73,7 +74,8 @@ export interface RuntimeDeps {
 export class ApertureRuntime {
   private readonly deps: RuntimeDeps;
   private running: Promise<RefreshOutcome> | undefined;
-  private queued: string | undefined;
+  /** 正在跑的那一轮读的是哪一份配置；用来判断排队者该并进它还是排到它后面。 */
+  private runningConfig: ResolvedConfig | undefined;
   private latest: RefreshOutcome | undefined;
 
   /**
@@ -89,34 +91,43 @@ export class ApertureRuntime {
   }
 
   /**
-   * 刷新；若已有刷新在运行，则把本次刷新排在其后。
+   * 刷新；已有刷新在运行时，等它收尾之后再决定是并进新的一轮，还是自己起一轮。
+   *
+   * 承诺是「返回的那一轮读的是**此刻**的配置」。正在跑的那一轮若读的就是此刻这份配置，调用方
+   * 并进它——它够新；否则等它收尾再重问一次。设置界面刚写完配置就来重读报告，等的必须是读过新
+   * 配置的那一轮：正在跑的那一轮读的是更早的配置，等它回来等于拿回一份过期报告，界面于是
+   * 「保存了却没变」。配置的身份可以直接比：设置服务每次提交都换一份深冻结的解析结果，没变就
+   * 还是同一个对象（见 `memoizedConfig`）。
+   *
+   * 排队者因此只多跑一轮，而不是每人一轮：先醒来的那个起一轮，其余的并进它。
+   *
    * @param trigger - 触发来源；出现在标签页的状态段里。
-   * @returns 本次调用所参与的那次刷新的结果。
+   * @returns 本次调用所参与的那一轮刷新的结果。
    */
   async refresh(trigger: string): Promise<RefreshOutcome> {
     if (this.running !== undefined) {
-      this.queued = trigger;
-      return this.running;
+      if (this.runningConfig === this.deps.config()) return this.running;
+      await this.running;
+      return this.refresh(trigger);
     }
-    this.running = this.run(trigger);
+    const config = this.deps.config();
+    const run = this.run(trigger, config);
+    this.running = run;
+    this.runningConfig = config;
     try {
-      return await this.running;
+      return await run;
     } finally {
       this.running = undefined;
-      const queued = this.queued;
-      this.queued = undefined;
-      if (queued !== undefined) {
-        void this.refresh(queued);
-      }
+      this.runningConfig = undefined;
     }
   }
 
   /** 执行一次刷新，绝不抛出异常。 */
-  private async run(trigger: string): Promise<RefreshOutcome> {
+  private async run(trigger: string, config: ResolvedConfig): Promise<RefreshOutcome> {
     const started = Date.now();
     const at = new Date();
     try {
-      return await this.execute(trigger, started, at);
+      return await this.execute(trigger, config, started, at);
     } catch (error) {
       // 上面的任何代码都不允许 reject：所有调用方都是即发即忘的 `void`，而在宿主的
       // loader 里出现未处理的 rejection 并不是报告清单损坏的可接受方式。
@@ -139,9 +150,12 @@ export class ApertureRuntime {
   }
 
   /** 一次刷新的主体。 */
-  private async execute(trigger: string, started: number, at: Date): Promise<RefreshOutcome> {
-    const config = this.deps.config();
-
+  private async execute(
+    trigger: string,
+    config: ResolvedConfig,
+    started: number,
+    at: Date,
+  ): Promise<RefreshOutcome> {
     if (config.instanceRoot === undefined) {
       const outcome: RefreshOutcome = {
         trigger,

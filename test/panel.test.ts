@@ -13,11 +13,15 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings';
-import { resolveConfig } from '../src/config.ts';
+import type { ModelCatalog } from '../src/catalog.ts';
+import { memoizedConfig, resolveConfig, type Config } from '../src/config.ts';
 import { createPanelOps, type PanelDeps, type PanelModelPatch } from '../src/panel.ts';
 import type { RoutePlan } from '../src/profile.ts';
-import type { ApertureRuntime, RefreshOutcome } from '../src/runtime.ts';
+import { ApertureRuntime, type RefreshOutcome, type RuntimeLogger } from '../src/runtime.ts';
 import type { DiscoveredModel } from '../src/types.ts';
+
+/** 什么都不输出的 logger。 */
+const quiet: RuntimeLogger = { error() {}, info() {}, warn() {}, debug() {} };
 
 /** 一个已发现模型，其来源全写在报告行里。 */
 function model(id: string): DiscoveredModel {
@@ -114,10 +118,69 @@ function fakeRuntime(first?: RefreshOutcome, next?: RefreshOutcome) {
     refresh: async (trigger: string) => {
       triggers.push(trigger);
       if (next !== undefined) latest = next;
-      return latest;
+      // 真的运行时永远返回一份结果（刷新失败也是一种结果），替身也照此：没摆报告时给一次空的
+      // 成功结果，好让只关心写入的用例不必先准备一份发现结果。`last()` 仍然可以是空的——那说的
+      // 是「还一次都没刷新过」，与这次调用的结果不是一回事。
+      return latest ?? outcome({ trigger, listed: 0, models: [], routes: [], unserved: [] });
     },
   };
   return { runtime: runtime as unknown as ApertureRuntime, triggers };
+}
+
+/**
+ * 一个真的会落盘的设置服务替身。
+ *
+ * 两件事照真的来：`mutate` 把路径操作应用到 `aperture` 段上，并且**每次提交都换一份新的解析
+ * 结果**（身份变了才是新版本，运行时靠它判断一轮刷新读的是不是此刻的配置）；通知也照
+ * `installSection` 的接法交给调用方去唤起刷新。
+ *
+ * @param options - `aperture` 段的起点。
+ * @returns 设置服务、读当前配置段的 thunk，以及登记变更通知的地方。
+ */
+function liveSettings(options: { baseUrl?: string; models?: unknown[] } = {}) {
+  let section: Record<string, unknown> = {
+    baseUrl: options.baseUrl ?? 'https://ai.example.ts.net',
+    route: 'aperture',
+    anthropicRoute: 'aperture-anthropic',
+    models: options.models ?? [],
+  };
+  let user: Record<string, unknown> = { models: section.models };
+  let revision = 1;
+  let notify: (() => void) | undefined;
+
+  const service = {
+    writable: true,
+    get: () => section,
+    describe: () => [{ ns: 'aperture', revision, value: section, user }],
+    mutate: async (_ns: string, ops: readonly SettingsPathOp[]): Promise<void> => {
+      const next = { ...section };
+      const nextUser = { ...user };
+      for (const op of ops) {
+        const [head, tail] = op.path;
+        if (head === undefined) throw new Error('路径为空');
+        // 这一条只走容量那条路：别的路径写错了就该响亮，而不是被替身悄悄放过。
+        if (tail !== undefined) throw new Error(`替身不认识的路径：${op.path.join('.')}`);
+        if (op.op === 'set') {
+          next[head] = op.value;
+          nextUser[head] = op.value;
+        } else {
+          delete next[head];
+          delete nextUser[head];
+        }
+      }
+      section = next;
+      user = nextUser;
+      revision += 1;
+      notify?.();
+    },
+  };
+  return {
+    service: service as unknown as SettingsProvider,
+    source: (() => section) as () => Config,
+    onChange: (fn: () => void) => {
+      notify = fn;
+    },
+  };
 }
 
 /**
@@ -377,6 +440,18 @@ describe('panel.edit', () => {
     }]);
   });
 
+  it('写入成功但重新发现失败时，那句话分开说', async () => {
+    const { ops } = panel({
+      first: outcome(),
+      next: outcome({ ok: false, error: '网关不可达' }),
+      aperture: section,
+    });
+    const action = await ops.edit('deepseek-flash', { contextWindow: 8192 });
+    assert.equal(action.ok, true, '写入本身是成功的');
+    assert.match(action.summary, /已保存 "deepseek-flash" 的参数/u);
+    assert.match(action.summary, /但重新发现没有成功：网关不可达/u);
+  });
+
   it('写回时剔掉 schema 补出来的空值，不把「没写」变成用户的覆盖', async () => {
     const { ops, writes } = panel({
       aperture: {
@@ -625,5 +700,43 @@ describe('panel.withdraw', () => {
     assert.match(action.summary, /设置文档拒绝这次写入/u);
     // 报告仍然读得到：失败时界面更应该显示现状。
     assert.equal(ops.status().place, 'https://ai.example.ts.net');
+  });
+});
+
+describe('写完等一轮刷新落地', () => {
+  it('保存之后重读报告，拿到的是新配置算出来的那一份', async () => {
+    const original = globalThis.fetch;
+    // 让发现慢一拍：不等刷新的实现会在这里露出来——它返回时报告还是旧的那一份，而标签页
+    // 拿到回答就会重读，于是「保存了却没变」。
+    globalThis.fetch = (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return new Response(JSON.stringify({ data: [{ id: 'm' }] }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const store = liveSettings({ models: [{ id: 'm', contextWindow: 1000 }] });
+      const config = memoizedConfig(store.source);
+      const runtime = new ApertureRuntime({
+        config,
+        settings: store.service,
+        logger: quiet,
+        // 清单只报可用性：这一条看的不是 models.dev，而是配置里的覆盖。
+        catalog: { load: async () => ({ entries: 0 }) } as unknown as ModelCatalog,
+      });
+      // 照 `index.ts` 的接法：设置一变就唤起一轮刷新。
+      store.onChange(() => void runtime.refresh('配置变更'));
+      const ops = createPanelOps({ runtime, config, settings: store.service });
+
+      await ops.refresh();
+      assert.equal(ops.status().models[0]?.contextWindow, 1000, '第一轮读的是旧配置');
+
+      await ops.edit('m', { contextWindow: 2000 });
+      assert.equal(ops.status().models[0]?.contextWindow, 2000);
+
+      // 地址同理：路由的 baseURL 是刷新算出来的事实。
+      await ops.save('https://other.example.ts.net', true);
+      assert.match(ops.status().routes[0]?.baseURL ?? '', /other\.example\.ts\.net/u);
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });
