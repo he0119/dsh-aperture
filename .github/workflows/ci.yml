@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # 推标签时 Publish 会以 workflow_call 复用这个 job，这里就不必再独立跑一遍。
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # engines 声明为 ^22.19.0 || >=24.0.0，两端都测。
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # 仓库不带原生依赖，安装是为了拿到 typescript 与各 @deepseek-ai/* 类型声明。
+      - run: npm ci
+      # test/ 含 .ts 用例，靠 node 自带的类型擦除运行，因此这一步同时是「类型没坏」的证明。
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build

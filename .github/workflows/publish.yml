@@ -1,0 +1,79 @@
+name: Publish
+
+# 推一个 v* 标签（例如 v0.1.1）就发布到 npm。
+# 版本号以标签为准：先手改 package.json 再打标签，或反过来用 workflow_dispatch 显式指定版本，
+# 两条路都会在下面「让 package.json 与标签一致」一步里对齐。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要发布的版本号（不带 v 前缀）；留空则用 package.json 里现有的版本'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # 发布前先跑一遍完整检查：标签打错 commit 时挡在 npm 之外。
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # 下面两步都要 OIDC：npm 可信发布用它换取短期凭据，provenance 用它签名。
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 自带 npm 11，可信发布（Trusted Publishing）要求 npm >= 11.5.1。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: 让 package.json 与标签一致
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="${INPUT_VERSION:-}"
+          if [ -z "$version" ] && [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          fi
+          if [ -z "$version" ]; then
+            echo "package.json: $(node -p 'require("./package.json").version')"
+            exit 0
+          fi
+          # 标签里的版本必须能解析成 x.y.z（可带预发布后缀），否则 npm publish 会报错。
+          node -e 'if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(process.argv[1])) { console.error("无效版本号: " + process.argv[1]); process.exit(1) }' "$version"
+          npm version "$version" --no-git-tag-version --allow-same-version
+          echo "package.json: $(node -p 'require("./package.json").version')"
+
+      - name: 判断该版本是否已经发布
+        id: check
+        run: |
+          set -euo pipefail
+          version="$(node -p 'require("./package.json").version')"
+          if npm view "dsh-aperture@${version}" version >/dev/null 2>&1; then
+            echo "dsh-aperture@${version} 已经在 npm 上了。"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "即将发布 dsh-aperture@${version}。"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # lib/ 不进 git，靠 prepare（tsc）在这里现场编译；npm publish 会自动触发它。
+      - name: 发布到 npm
+        if: steps.check.outputs.skip != 'true'
+        run: npm publish --provenance --access public
+
+      - name: 该版本已存在，跳过发布
+        if: steps.check.outputs.skip == 'true'
+        run: echo "无需发布，视为成功。"
