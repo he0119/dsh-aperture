@@ -45,11 +45,16 @@ interface ClientDescriptor {
   result: Codec;
 }
 
-/** 一个编解码器。 */
+/**
+ * 一个编解码器。
+ *
+ * `@deepseek-ai/dsh-typert-registry` 只认 strict 模式下的 `create` 工厂；`schema` 字段不被
+ * 承认，带它的贡献会在 `$mount` 时整份被拒。
+ */
 interface Codec {
   mode: string;
   typeSymbol?: string;
-  schema?: { parse: (value: unknown) => unknown };
+  create: () => { parse: (value: unknown, at?: string) => unknown };
 }
 
 /** 一次 `slots.register` 的登记。 */
@@ -495,11 +500,23 @@ describe('浏览器半边', () => {
     for (const descriptor of descriptors) {
       assert.equal(descriptor.result.mode, 'strict');
       assert.ok(descriptor.result.typeSymbol);
-      assert.equal(typeof descriptor.result.schema?.parse, 'function');
+      // 注册表（@deepseek-ai/dsh-typert-registry）要求 strict 编解码器交出 `create` 工厂，
+      // 拿一个 `schema` 字段顶替会让 `$mount` 抛 `strict codec has no create() factory`，
+      // 整份贡献被拒、界面安静地什么都不出现。键集与工厂都在这里钉住。
+      assert.deepEqual(Object.keys(descriptor.result).sort(), ['create', 'mode', 'typeSymbol']);
+      assert.equal(typeof descriptor.result.create().parse, 'function');
       assert.equal(descriptor.invocation.kind, 'direct');
       for (const parameter of descriptor.parameters) {
         assert.equal(parameter.codec.mode, 'strict');
         assert.equal(parameter.source, 'json');
+        assert.ok(parameter.codec.typeSymbol);
+        assert.deepEqual(
+          Object.keys(parameter.codec).sort(),
+          parameter.acceptsUndefined === true
+            ? ['acceptsUndefined', 'create', 'mode', 'typeSymbol']
+            : ['create', 'mode', 'typeSymbol'],
+        );
+        assert.equal(typeof parameter.codec.create().parse, 'function');
       }
     }
     // 缺省与否由参数自己说了算：`save` 的两个参数没提到就是「不碰」，`edit` 的补丁必须给出
@@ -514,12 +531,12 @@ describe('浏览器半边', () => {
     assert.ok(save);
     assert.deepEqual(Array.from(save.parameters, (parameter) => parameter.name), ['baseUrl', 'sync']);
     // `null` 是「恢复默认」的哨兵值，两个参数都必须过得了参数校验。
-    assert.equal(save.parameters[0]?.codec.schema?.parse(null), null);
-    assert.equal(save.parameters[0]?.codec.schema?.parse(undefined), undefined);
-    assert.throws(() => save.parameters[0]?.codec.schema?.parse(7), /期望 string/u);
-    assert.equal(save.parameters[1]?.codec.schema?.parse(true), true);
-    assert.equal(save.parameters[1]?.codec.schema?.parse(null), null);
-    assert.throws(() => save.parameters[1]?.codec.schema?.parse('yes'), /期望 boolean/u);
+    assert.equal(save.parameters[0]?.codec.create().parse(null), null);
+    assert.equal(save.parameters[0]?.codec.create().parse(undefined), undefined);
+    assert.throws(() => save.parameters[0]?.codec.create().parse(7), /期望 string/u);
+    assert.equal(save.parameters[1]?.codec.create().parse(true), true);
+    assert.equal(save.parameters[1]?.codec.create().parse(null), null);
+    assert.throws(() => save.parameters[1]?.codec.create().parse('yes'), /期望 boolean/u);
   });
 
   it('报告的形状有一份 strict 契约，漂移当场炸掉', async () => {
@@ -527,7 +544,7 @@ describe('浏览器半边', () => {
     await new Promise((resolve) => setImmediate(resolve));
     const status = harness.mounted?.descriptors.find((descriptor) => descriptor.method === 'status');
     assert.ok(status);
-    const parse = (value: unknown): unknown => status.result.schema?.parse(value);
+    const parse = (value: unknown): unknown => status.result.create().parse(value);
     const payload = report();
 
     // 合法的报告能原样过去。
@@ -556,8 +573,8 @@ describe('浏览器半边', () => {
     const edit = harness.mounted?.descriptors.find((descriptor) => descriptor.method === 'edit');
     assert.ok(edit);
     assert.deepEqual(Array.from(edit.parameters, (parameter) => parameter.name), ['id', 'patch']);
-    const id = edit.parameters[0]?.codec.schema;
-    const patch = edit.parameters[1]?.codec.schema;
+    const id = edit.parameters[0]?.codec.create();
+    const patch = edit.parameters[1]?.codec.create();
     assert.ok(id);
     assert.ok(patch);
     // 一行一次写入：`null` 补丁表示撤销这个模型的全部覆盖。

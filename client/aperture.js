@@ -43,9 +43,14 @@ window.__ModuleLoader__.load({
     /**
      * 一个 strict 结果编解码器。
      *
-     * 浏览器半边挂载贡献时强制要求每个参数与结果的编解码器都是 `strict`、带非空类型符号
-     * 与可用的 `parse`。生成器会塞进 zod schema；本插件的形状很小，手写校验就够了——手写
-     * 反而能在宿主与界面漂移时报出具体字段名（`…status.models[3].contextWindow：期望 number`）。
+     * 注册表（`@deepseek-ai/dsh-typert-registry`）对 strict 编解码器的要求是：非空
+     * `typeSymbol`，外加一个返回 `{ parse }` 的 **`create` 工厂**——不是一个 `schema` 字段。
+     * 少了 `create`，`ctx.remote.$mount` 会抛 `strict codec has no create() factory`，
+     * 整份贡献被拒，界面因此安静地什么都不出现（只在控制台留一行 console.error）。
+     *
+     * 生成器会塞进 zod schema；本插件的形状很小，手写校验就够了——手写反而能在宿主与界面
+     * 漂移时报出具体字段名（`…status.models[3].contextWindow：期望 number`）。工厂只在首次
+     * 边界使用时物化一次，schema 因此只建一次。
      *
      * 字段类型是一行小文法：
      * - `'string'` / `'number'` / `'boolean'`：基本类型；
@@ -59,10 +64,11 @@ window.__ModuleLoader__.load({
      * @returns {object} 编解码器。
      */
     function codec(typeSymbol, fields) {
+      let schema;
       return Object.freeze({
         mode: 'strict',
         typeSymbol,
-        schema: {
+        create: () => (schema ??= {
           parse(value, at) {
             if (value === null || typeof value !== 'object' || Array.isArray(value)) {
               throw new TypeError(`${at ?? typeSymbol}：期望一个对象`);
@@ -80,8 +86,13 @@ window.__ModuleLoader__.load({
             }
             return parsed;
           },
-        },
+        }),
       });
+    }
+
+    /** 取一个编解码器（或嵌套的类型说明）背后的 schema，只物化一次。 */
+    function schemaOf(inner) {
+      return inner.create();
     }
 
     /** 一个字段是否可省略。 */
@@ -118,12 +129,12 @@ window.__ModuleLoader__.load({
           if (!Array.isArray(value)) throw new TypeError(`${path}：期望数组`);
           return value.map((item, index) => parseKind(`${path}[${index}]`, kind.list, item));
         }
-        if (kind.codec !== undefined) return kind.codec.schema.parse(value, path);
+        if (kind.codec !== undefined) return schemaOf(kind.codec).parse(value, path);
         if (kind.nullable !== undefined) {
           return value === null ? null : parseKind(path, kind.nullable, value);
         }
         // 直接给了另一个 codec，就是「这里是它描述的那个嵌套对象」。
-        if (typeof kind.schema?.parse === 'function') return kind.schema.parse(value, path);
+        if (typeof kind.create === 'function') return schemaOf(kind).parse(value, path);
         throw new TypeError(`${path}：类型说明写错了`);
       }
 
@@ -162,16 +173,17 @@ window.__ModuleLoader__.load({
      * @returns {object} 参数编解码器。
      */
     function optionalParam(typeSymbol, kind) {
+      let schema;
       return Object.freeze({
         mode: 'strict',
         typeSymbol,
         acceptsUndefined: true,
-        schema: {
+        create: () => (schema ??= {
           parse(value) {
             if (value === undefined) return undefined;
             return parseKind(typeSymbol, kind, value);
           },
-        },
+        }),
       });
     }
 
@@ -186,15 +198,16 @@ window.__ModuleLoader__.load({
      * @returns {object} 参数编解码器。
      */
     function param(typeSymbol, kind) {
+      let schema;
       return Object.freeze({
         mode: 'strict',
         typeSymbol,
-        schema: {
+        create: () => (schema ??= {
           parse(value) {
             if (value === undefined) return undefined;
             return parseKind(typeSymbol, kind, value);
           },
-        },
+        }),
       });
     }
 
