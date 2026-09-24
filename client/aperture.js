@@ -41,185 +41,67 @@ window.__ModuleLoader__.load({
     // ---------------------------------------------------------------- 端点契约
 
     /**
-     * 一个 strict 结果编解码器。
+     * 浏览器半边与宿主半边之间的那层线格式。
      *
-     * 注册表（`@deepseek-ai/dsh-typert-registry`）对 strict 编解码器的要求是：非空
-     * `typeSymbol`，外加一个返回 `{ parse }` 的 **`create` 工厂**——不是一个 `schema` 字段。
-     * 少了 `create`，`ctx.remote.$mount` 会抛 `strict codec has no create() factory`，
-     * 整份贡献被拒，界面因此安静地什么都不出现（只在控制台留一行 console.error）。
+     * 这里只有一个直通编解码器，因为浏览器侧从不解析这些值：注册表
+     * （`@deepseek-ai/dsh-typert-registry`）只检查 `mode` 是 `strict`、`typeSymbol` 非空、
+     * `create` 是个函数；网关客户端只读参数上的 `mode` 与结果上可选的 `decode`/`encode`，
+     * **没有一处调用 `create()`**。逐字段手写一套 wire 校验因此永远不会执行——曾经那 300 行
+     * 文法还顺手埋了个雷：注册表要的是 `create` 工厂，`schema` 字段不被承认，于是 `$mount`
+     * 抛 `strict codec has no create() factory`，整份贡献被拒，界面安静地什么都不出现。
      *
-     * 生成器会塞进 zod schema；本插件的形状很小，手写校验就够了——手写反而能在宿主与界面
-     * 漂移时报出具体字段名（`…status.models[3].contextWindow：期望 number`）。工厂只在首次
-     * 边界使用时物化一次，schema 因此只建一次。
-     *
-     * 字段类型是一行小文法：
-     * - `'string'` / `'number'` / `'boolean'`：基本类型；
-     * - 末尾 `?`：可省略（宿主没给这个字段）；
-     * - 末尾 `|null`：允许 `null`（参数里表示「撤销这一条覆盖」）；
-     * - 末尾 `[]`：数组；
-     * - 直接给另一个 codec：嵌套对象；`opt(...)` 表示它可省略；`list(...)` 表示对象数组。
-     *
-     * @param {string} typeSymbol - 类型符号，注册表要求非空。
-     * @param {Record<string, string|object>} fields - 字段与类型。
-     * @returns {object} 编解码器。
+     * 端点名不能与命名空间服务自己的成员重名：api-gateway 为每个命名空间建一个
+     * `RemoteNamespaceService`，端点会成为它的属性，撞上 `remove` / `has` / `install` /
+     * `name` / `ctx` 这类预置名字时校验会拒绝**整份**贡献。「撤下路由」叫 `withdraw` 就是这个
+     * 原因。
      */
-    function codec(typeSymbol, fields) {
-      let schema;
-      return Object.freeze({
-        mode: 'strict',
-        typeSymbol,
-        create: () => (schema ??= {
-          parse(value, at) {
-            if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-              throw new TypeError(`${at ?? typeSymbol}：期望一个对象`);
-            }
-            const parsed = {};
-            for (const [name, kind] of Object.entries(fields)) {
-              // 嵌套时报错带完整路径（`…status.models[0].contextWindow`）；顶层就是类型符号。
-              const path = at === undefined ? `${typeSymbol}.${name}` : `${at}.${name}`;
-              const field = value[name];
-              if (field === undefined) {
-                if (isOptional(kind)) continue;
-                throw new TypeError(`${path}：缺字段`);
-              }
-              parsed[name] = parseKind(path, kind, field);
-            }
-            return parsed;
-          },
-        }),
-      });
-    }
-
-    /** 取一个编解码器（或嵌套的类型说明）背后的 schema，只物化一次。 */
-    function schemaOf(inner) {
-      return inner.create();
-    }
-
-    /** 一个字段是否可省略。 */
-    function isOptional(kind) {
-      return typeof kind === 'string' ? kind.endsWith('?') : kind.optional === true;
-    }
-
-    /** 可省略的嵌套对象字段。 */
-    function opt(inner) {
-      return Object.freeze({ codec: inner, optional: true });
-    }
-
-    /** 由另一个 codec 描述的对象数组字段。 */
-    function list(inner) {
-      return Object.freeze({ list: inner });
-    }
-
-    /** 允许 `null` 的嵌套字段（`null` 与「缺字段」是两件事，因此不能靠 `?`）。 */
-    function nullable(inner) {
-      return Object.freeze({ nullable: inner });
-    }
+    const SCHEMA = Object.freeze({ parse: (value) => value });
+    /** 每个参数与结果共用的直通编解码器。 */
+    const CODEC = Object.freeze({
+      mode: 'strict',
+      typeSymbol: `${PACKAGE}/types#any`,
+      create: () => SCHEMA,
+    });
 
     /**
-     * 按类型说明校验一个值。
+     * 一个端点的浏览器侧描述符。
      *
-     * @param {string} path - 出错信息里的字段路径。
-     * @param {string|object} kind - 类型说明。
-     * @param {*} value - 待校验的值。
-     * @returns {*} 校验过的值。
+     * 参数按宿主方法的形参顺序给出；调用点按位置传参，网关按 `wire` 映射，并且**自动省掉
+     * `undefined` 实参**（`if (value !== void 0) args[parameter.wire] = value`），所以「没提到
+     * 的参数」天然就是「不碰」，不需要描述符额外声明什么。
+     *
+     * @param {string} method - 端点方法名（也是宿主服务上的方法名）。
+     * @param {Array<string>} parameters - 参数名，顺序与宿主方法一致。
+     * @returns {object} 描述符。
      */
-    function parseKind(path, kind, value) {
-      if (typeof kind === 'object' && kind !== null) {
-        if (kind.list !== undefined) {
-          if (!Array.isArray(value)) throw new TypeError(`${path}：期望数组`);
-          return value.map((item, index) => parseKind(`${path}[${index}]`, kind.list, item));
-        }
-        if (kind.codec !== undefined) return schemaOf(kind.codec).parse(value, path);
-        if (kind.nullable !== undefined) {
-          return value === null ? null : parseKind(path, kind.nullable, value);
-        }
-        // 直接给了另一个 codec，就是「这里是它描述的那个嵌套对象」。
-        if (typeof kind.create === 'function') return schemaOf(kind).parse(value, path);
-        throw new TypeError(`${path}：类型说明写错了`);
-      }
-
-      let spec = kind;
-      if (spec.endsWith('?')) spec = spec.slice(0, -1);
-      const nullable = spec.endsWith('|null');
-      if (nullable) spec = spec.slice(0, -'|null'.length);
-      const items = spec.endsWith('[]');
-      const type = items ? spec.slice(0, -2) : spec;
-
-      if (value === null) {
-        if (nullable) return null;
-        throw new TypeError(`${path}：期望 ${type}，收到 null`);
-      }
-      if (items) {
-        if (!Array.isArray(value)) throw new TypeError(`${path}：期望数组`);
-        return value.map((item, index) => {
-          if (typeof item !== type) {
-            throw new TypeError(`${path}[${index}]：期望 ${type}，收到 ${typeof item}`);
-          }
-          return item;
-        });
-      }
-      if (typeof value !== type) throw new TypeError(`${path}：期望 ${type}，收到 ${typeof value}`);
-      return value;
-    }
-
-    /** 一个**可省略**的参数编解码器。
-     *
-     * `acceptsUndefined` 与「可省略」是一回事：`save` 的调用方常常只想改其中一个字段，没提到的
-     * 那个必须原样传过去。类型说明与 {@link param} 共用一套文法，因为这里要同时容下两种「空」：
-     * 省略是「不碰」，`null` 是「恢复默认」——两者都过得了校验，而且意思完全不同。
-     *
-     * @param {string} typeSymbol - 类型符号。
-     * @param {string|object} kind - 类型说明。
-     * @returns {object} 参数编解码器。
-     */
-    function optionalParam(typeSymbol, kind) {
-      let schema;
+    function descriptor(method, parameters = []) {
       return Object.freeze({
-        mode: 'strict',
-        typeSymbol,
-        acceptsUndefined: true,
-        create: () => (schema ??= {
-          parse(value) {
-            if (value === undefined) return undefined;
-            return parseKind(typeSymbol, kind, value);
-          },
-        }),
+        id: `${PACKAGE}#${PANEL}/${method}`,
+        service: PANEL,
+        namespace: PANEL,
+        method,
+        invocation: Object.freeze({ kind: 'direct' }),
+        parameters: Object.freeze(parameters.map((name) => Object.freeze({
+          name,
+          wire: name,
+          source: 'json',
+          codec: CODEC,
+        }))),
+        result: CODEC,
       });
     }
 
-    /**
-     * 一个参数编解码器。
-     *
-     * 类型说明用与字段同一套文法（数组、嵌套对象、`null` 都在其中），因此参数与结果只有一份规则。
-     * 可省略表示「这一项不碰」：省略编号会让同一个端点少传一个参数，而不是传一个空值。
-     *
-     * @param {string} typeSymbol - 类型符号。
-     * @param {string|object} kind - 类型说明。
-     * @returns {object} 参数编解码器。
-     */
-    function param(typeSymbol, kind) {
-      let schema;
-      return Object.freeze({
-        mode: 'strict',
-        typeSymbol,
-        create: () => (schema ??= {
-          parse(value) {
-            if (value === undefined) return undefined;
-            return parseKind(typeSymbol, kind, value);
-          },
-        }),
-      });
-    }
-
-    /** 动作结果。 */
-    const ACTION = codec(`${PACKAGE}/types#action`, { ok: 'boolean', summary: 'string' });
-    /** 表单要显示的配置。 */
-    const CONFIGURATION = codec(`${PACKAGE}/types#configuration`, {
-      baseUrl: 'string',
-      sync: 'boolean',
-      baseUrlOverridden: 'boolean',
-      syncOverridden: 'boolean',
-      writable: 'boolean',
+    /** 与宿主半边 `PANEL_INVOCATIONS` 一一对应的贡献。 */
+    const REMOTE = Object.freeze({
+      package: PACKAGE,
+      descriptors: Object.freeze([
+        descriptor('status'),
+        descriptor('refresh'),
+        descriptor('withdraw'),
+        descriptor('configuration'),
+        descriptor('save', ['baseUrl', 'sync']),
+        descriptor('edit', ['id', 'patch']),
+      ]),
     });
 
     /**
@@ -229,136 +111,6 @@ window.__ModuleLoader__.load({
      * 的那几项，它在报告里仍然是「已覆盖」，那颗标签会按不下去。
      */
     const EDITABLE_KEYS = Object.freeze(['name', 'api', 'contextWindow', 'maxTokens', 'input', 'thinking', 'alias']);
-
-    /** 一条事实的来源；未知来源原样显示。 */
-    const PROVENANCE = codec(`${PACKAGE}/types#provenance`, {
-      limits: 'string',
-      reasoning: 'string',
-      input: 'string',
-      name: 'string',
-    });
-
-    /** 报告里的一个模型。 */
-    const MODEL = codec(`${PACKAGE}/types#model`, {
-      id: 'string',
-      name: 'string',
-      route: 'string?',
-      protocol: 'string?',
-      endpoints: 'string[]',
-      contextWindow: 'number?',
-      maxTokens: 'number?',
-      input: 'string[]',
-      reasoning: 'boolean',
-      provenance: PROVENANCE,
-      overrideKeys: 'string[]?',
-      alias: 'string?',
-    });
-
-    /** 报告里的一条路由。 */
-    const ROUTE = codec(`${PACKAGE}/types#route`, {
-      provider: 'string',
-      api: 'string?',
-      baseURL: 'string?',
-      models: 'number',
-    });
-
-    /** 最近一次刷新的状态。 */
-    const REFRESH = codec(`${PACKAGE}/types#refresh`, {
-      trigger: 'string',
-      at: 'string',
-      durationMs: 'number',
-      ok: 'boolean',
-      error: 'string?',
-      catalog: codec(`${PACKAGE}/types#catalog`, {
-        available: 'boolean',
-        entries: 'number',
-        reason: 'string?',
-      }),
-      endpoint: opt(codec(`${PACKAGE}/types#endpoint`, { url: 'string', listed: 'number' })),
-      sync: opt(codec(`${PACKAGE}/types#sync`, {
-        applied: 'boolean',
-        ops: 'number',
-        routes: 'string[]',
-        reason: 'string?',
-      })),
-    });
-
-    /** 配置页要显示的整份报告。 */
-    const STATUS = codec(`${PACKAGE}/types#status`, {
-      place: 'string',
-      refresh: opt(REFRESH),
-      routes: list(ROUTE),
-      models: list(MODEL),
-    });
-
-    /**
-     * `edit` 的补丁：只带界面改动过的字段，缺字段表示不碰，`null` 表示这一条覆盖不要了。
-     */
-    const PATCH = codec(`${PACKAGE}/types#modelPatch`, {
-      name: 'string|null?',
-      api: 'string|null?',
-      contextWindow: 'number|null?',
-      maxTokens: 'number|null?',
-      input: 'string[]|null?',
-      thinking: 'boolean|null?',
-      alias: 'string|null?',
-    });
-
-    /**
-     * 一个端点的浏览器侧调用描述符。
-     *
-     * `acceptsUndefined` 由参数自己的编解码器决定，而不是一律为真：只有「可省略」的参数
-     * （`save` 的地址与开关，没提到就原样不碰）才接受 `undefined`。`edit` 的补丁必须显式给出，
-     * 因为 `null` 是有含义的（撤销覆盖），缺省不能顺便也当成撤销。
-     *
-     * @param {string} method - 端点方法名（也是宿主服务上的方法名）。
-     * @param {Array} parameters - `[参数名, 编解码器]` 对，顺序与宿主方法一致。
-     * @param {object} result - 结果编解码器。
-     * @returns {object} 描述符。
-     */
-    function descriptor(method, parameters, result) {
-      return Object.freeze({
-        id: `${PACKAGE}#${PANEL}/${method}`,
-        service: PANEL,
-        namespace: PANEL,
-        method,
-        invocation: Object.freeze({ kind: 'direct' }),
-        parameters: Object.freeze(parameters.map(([name, param]) => Object.freeze({
-          name,
-          wire: name,
-          source: 'json',
-          codec: param,
-          acceptsUndefined: param.acceptsUndefined === true,
-        }))),
-        result,
-      });
-    }
-
-    /**
-     * 与宿主半边 `PANEL_INVOCATIONS` 一一对应的贡献。
-     *
-     * 端点名不能与命名空间服务自己的成员重名：api-gateway 为每个命名空间建一个
-     * `RemoteNamespaceService`，端点会成为它的属性，撞上 `remove` / `has` / `install` /
-     * `name` / `ctx` 这类预置名字时 `validateContribution` 会拒绝**整份**贡献，界面因此
-     * 安静地什么都不出现。「撤下路由」叫 `withdraw` 就是这个原因。
-     */
-    const REMOTE = Object.freeze({
-      package: PACKAGE,
-      descriptors: Object.freeze([
-        descriptor('status', [], STATUS),
-        descriptor('refresh', [], ACTION),
-        descriptor('withdraw', [], ACTION),
-        descriptor('configuration', [], CONFIGURATION),
-        descriptor('save', [
-          ['baseUrl', optionalParam(`${PACKAGE}/types#baseUrl`, 'string|null')],
-          ['sync', optionalParam(`${PACKAGE}/types#sync`, 'boolean|null')],
-        ], ACTION),
-        descriptor('edit', [
-          ['id', param(`${PACKAGE}/types#modelId`, 'string')],
-          ['patch', param(`${PACKAGE}/types#modelPatch`, nullable(PATCH))],
-        ], ACTION),
-      ]),
-    });
 
     /**
      * 把 `RemoteResult` 拆成值，失败则抛人话。

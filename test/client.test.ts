@@ -41,7 +41,7 @@ interface ClientDescriptor {
   namespace: string;
   method: string;
   invocation: { kind: string };
-  parameters: ReadonlyArray<{ name: string; wire: string; source: string; acceptsUndefined?: boolean; codec: Codec }>;
+  parameters: ReadonlyArray<{ name: string; wire: string; source: string; codec: Codec }>;
   result: Codec;
 }
 
@@ -492,104 +492,38 @@ describe('浏览器半边', () => {
     );
   });
 
-  it('每个端点都带 strict 编解码器，可省略的参数才接受缺省', async () => {
+  it('每个端点都带一个注册表认得的直通编解码器', async () => {
     const { harness } = driveClient();
     await new Promise((resolve) => setImmediate(resolve));
     const descriptors = harness.mounted?.descriptors ?? [];
     assert.equal(descriptors.length, 6);
     for (const descriptor of descriptors) {
+      // 注册表（@deepseek-ai/dsh-typert-registry）只认这三样：`mode: 'strict'`、非空
+      // `typeSymbol`、以及一个返回 `{ parse }` 的 `create` 工厂。拿一个 `schema` 字段顶替会
+      // 让 `$mount` 抛 `strict codec has no create() factory`，整份贡献被拒、界面安静地什么
+      // 都不出现——键集与工厂都钉在这里。
+      assert.deepEqual(Object.keys(descriptor.result).sort(), ['create', 'mode', 'typeSymbol']);
       assert.equal(descriptor.result.mode, 'strict');
       assert.ok(descriptor.result.typeSymbol);
-      // 注册表（@deepseek-ai/dsh-typert-registry）要求 strict 编解码器交出 `create` 工厂，
-      // 拿一个 `schema` 字段顶替会让 `$mount` 抛 `strict codec has no create() factory`，
-      // 整份贡献被拒、界面安静地什么都不出现。键集与工厂都在这里钉住。
-      assert.deepEqual(Object.keys(descriptor.result).sort(), ['create', 'mode', 'typeSymbol']);
       assert.equal(typeof descriptor.result.create().parse, 'function');
       assert.equal(descriptor.invocation.kind, 'direct');
       for (const parameter of descriptor.parameters) {
-        assert.equal(parameter.codec.mode, 'strict');
+        assert.equal(parameter.codec, descriptor.result, '参数与结果共用同一个直通编解码器');
         assert.equal(parameter.source, 'json');
-        assert.ok(parameter.codec.typeSymbol);
-        assert.deepEqual(
-          Object.keys(parameter.codec).sort(),
-          parameter.acceptsUndefined === true
-            ? ['acceptsUndefined', 'create', 'mode', 'typeSymbol']
-            : ['create', 'mode', 'typeSymbol'],
-        );
-        assert.equal(typeof parameter.codec.create().parse, 'function');
+        assert.equal(parameter.wire, parameter.name);
       }
     }
-    // 缺省与否由参数自己说了算：`save` 的两个参数没提到就是「不碰」，`edit` 的补丁必须给出
-    // ——`null` 是「恢复默认」，缺省不能顺便也当成恢复。
-    for (const descriptor of descriptors) {
-      const optional = descriptor.method === 'save';
-      for (const parameter of descriptor.parameters) {
-        assert.equal(parameter.acceptsUndefined, optional, `${descriptor.method}.${parameter.name}`);
-      }
-    }
-    const save = descriptors.find((descriptor) => descriptor.method === 'save');
-    assert.ok(save);
-    assert.deepEqual(Array.from(save.parameters, (parameter) => parameter.name), ['baseUrl', 'sync']);
-    // `null` 是「恢复默认」的哨兵值，两个参数都必须过得了参数校验。
-    assert.equal(save.parameters[0]?.codec.create().parse(null), null);
-    assert.equal(save.parameters[0]?.codec.create().parse(undefined), undefined);
-    assert.throws(() => save.parameters[0]?.codec.create().parse(7), /期望 string/u);
-    assert.equal(save.parameters[1]?.codec.create().parse(true), true);
-    assert.equal(save.parameters[1]?.codec.create().parse(null), null);
-    assert.throws(() => save.parameters[1]?.codec.create().parse('yes'), /期望 boolean/u);
-  });
-
-  it('报告的形状有一份 strict 契约，漂移当场炸掉', async () => {
-    const { harness } = driveClient();
-    await new Promise((resolve) => setImmediate(resolve));
-    const status = harness.mounted?.descriptors.find((descriptor) => descriptor.method === 'status');
-    assert.ok(status);
-    const parse = (value: unknown): unknown => status.result.create().parse(value);
-    const payload = report();
-
-    // 合法的报告能原样过去。
-    const parsed = parse(payload) as Report;
-    assert.equal(parsed.place, 'https://ai.example.ts.net');
-    assert.equal(parsed.models.length, 2);
-    assert.deepEqual(plain(parsed.models[1]?.provenance), {
-      limits: 'default',
-      reasoning: 'default',
-      input: 'default',
-      name: 'default',
-    });
-    // 嵌套对象与对象数组也要被真的校验到，而不是只看着像。
-    assert.throws(() => parse({ ...payload, models: [{ ...payload.models[0], input: 'text' }] }), /models\[0\]\.input/u);
-    assert.throws(() => parse({ ...payload, models: [{ ...payload.models[0], provenance: { limits: 1 } }] }), /provenance/u);
-    assert.throws(() => parse({ ...payload, routes: [{ provider: 'aperture' }] }), /routes\[0\]\.models/u);
-    assert.throws(() => parse({ ...payload, refresh: { trigger: 'x' } }), /refresh\.at/u);
-    // 老的两段文本形态已经不认了。
-    assert.throws(() => parse({ status: 'x', models: 'y' }), /place/u);
-    assert.throws(() => parse(null), /期望一个对象/u);
-  });
-
-  it('edit 收一个 id 加一份补丁，允许 null（撤销），但拒绝越界的类型', async () => {
-    const { harness } = driveClient();
-    await new Promise((resolve) => setImmediate(resolve));
-    const edit = harness.mounted?.descriptors.find((descriptor) => descriptor.method === 'edit');
-    assert.ok(edit);
-    assert.deepEqual(Array.from(edit.parameters, (parameter) => parameter.name), ['id', 'patch']);
-    const id = edit.parameters[0]?.codec.create();
-    const patch = edit.parameters[1]?.codec.create();
-    assert.ok(id);
-    assert.ok(patch);
-    // 一行一次写入：`null` 补丁表示撤销这个模型的全部覆盖。
-    assert.equal(id.parse('a'), 'a');
-    assert.equal(patch.parse(null), null);
-    assert.deepEqual(plain(patch.parse({ contextWindow: 8, alias: 'x' })), { contextWindow: 8, alias: 'x' });
-    assert.equal(patch.parse(undefined), undefined);
-    assert.throws(() => id.parse(7), /期望 string/u);
-    assert.throws(() => patch.parse({ contextWindow: '8192' }), /contextWindow/u);
-    assert.throws(() => patch.parse({ thinking: 'yes' }), /thinking/u);
-    assert.throws(() => patch.parse({ input: [7] }), /input\[0\]/u);
-    // 只有「可省略」的参数才接受缺省：补丁缺省不是「撤销」，撤销要用显式的 `null`。
-    assert.equal(edit.parameters[1]?.acceptsUndefined, false);
-    const save = harness.mounted?.descriptors.find((descriptor) => descriptor.method === 'save');
-    assert.equal(save?.parameters[0]?.acceptsUndefined, true);
+    // 参数名与顺序就是宿主方法的形参表：网关按位置传参、按 `wire` 映射，并且自动省掉
+    // `undefined` 实参，所以「没提到的参数」天然是「不碰」，不需要描述符额外声明。
+    const names = (method: string): string[] => {
+      const descriptor = descriptors.find((candidate) => candidate.method === method);
+      assert.ok(descriptor, `没有 ${method} 端点`);
+      return Array.from(descriptor.parameters, (parameter) => parameter.name);
+    };
+    assert.deepEqual(names('status'), []);
+    assert.deepEqual(names('refresh'), []);
+    assert.deepEqual(names('save'), ['baseUrl', 'sync']);
+    assert.deepEqual(names('edit'), ['id', 'patch']);
   });
 
   it('端点名不碰命名空间服务的预置成员', () => {

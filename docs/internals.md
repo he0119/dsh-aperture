@@ -293,16 +293,22 @@ state、按卡记（官方也是 `?? true`），因此每一轮刷新重渲染�
 但它们对外只有运行时导出、没有可查的类型声明，而这份 CSS 是能逐条对照的字面量；等这两者的
 取舍反过来时再换。
 
-### 端点描述符是手写的
+### 端点描述符是手写的，但线格式只有一层直通
 
-生成描述符的 Typert 生成器并不随 DSH 发布，因此两半边都手写，契约本身很小：宿主用 `src-json`
-编解码器，浏览器带 `strict` 校验，两端共享同一组端点名（`dsh-aperture#aperturePanel/<方法>`）。
-浏览器那半边的 `codec()` 是一行小文法：`'string'` / `'number'` / `'boolean'`，`?` 可省略、
-`|null` 允许 `null`、`[]` 是数组，直接给另一个 `codec` 就是嵌套对象（`opt()` 包一层表示可
-省略，`list()` 包一层表示对象数组，`nullable()` 包一层表示「是它，或者 `null`」），参数与结果
-用同一套说明。报告是嵌套结构，手写这套比引入 schema 库更小，而且报错会带完整路径
-（`…status.models[0].contextWindow：期望 number`）。`test/client.test.ts` 会加载真实的浏览器
-半边，断言它的端点集合、id 与宿主那半边完全一致，并用故意漂移的载荷钉住这份契约。
+生成描述符的 Typert 生成器并不随 DSH 发布，因此两半边都手写。宿主用 `src-json` 编解码器；
+浏览器半边只需要一个**直通**的 strict 编解码器——不是因为图省事，而是因为浏览器侧从不解析这
+些值：注册表（`@deepseek-ai/dsh-typert-registry`）只检查 `mode` 是 `strict`、`typeSymbol` 非空、
+`create` 是个函数；网关客户端只读参数上的 `mode` 与结果上可选的 `decode`/`encode`，**没有一处
+调用 `create()`**。逐字段手写一套 wire 校验因此永远不会执行。曾经那三百行文法还顺手埋了个雷：
+注册表要的是 `create` 工厂，`schema` 字段不被承认，于是 `$mount` 抛
+`strict codec has no create() factory`、整份贡献被拒，界面安静地什么都不出现。现在只剩一个
+`{ parse: (value) => value }`，`test/client.test.ts` 把键集（`create` / `mode` / `typeSymbol`）
+与工厂一起钉住。
+
+参数名与顺序就是宿主方法的形参表：调用点按位置传参，网关按 `wire` 映射，并且自动省掉
+`undefined` 实参（`if (value !== void 0) args[parameter.wire] = value`），所以「没提到的参数」
+天然就是「不碰」。`test/client.test.ts` 会加载真实的浏览器半边，断言它的端点集合、id 与参数名
+跟宿主那半边完全一致。
 
 端点名另有一条不显眼的约束：api-gateway 在客户端给每个命名空间建一个
 `RemoteNamespaceService`，端点会成为它的属性，因此与它自己的成员（`ctx` / `empty` /
