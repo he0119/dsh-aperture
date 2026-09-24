@@ -16,10 +16,10 @@
  *
  * 它不转换任何协议格式。这正是重点。
  *
- * 界面在「插件」页里：浏览器半边（`client/aperture.js`）注册进插件管理页的
- * `plugins.row.config` 槽位，于是本插件那一行多出一个「配置」入口，用来改实例地址与
- * 同步开关（关掉即撤下已发布的路由）、立刻刷新。除此之外没有别的界面——发现本身发生
- * 在插件加载、配置变更与刷新间隔到点上。
+ * 界面在「插件」页里：浏览器半边（`client/aperture.js`）把自己注册成插件管理页的**包级**配置页
+ * （`plugins.bundle.config`，键是包名），于是插件列表里点开本插件就是这一页，用来改实例地址与
+ * 同步开关（关掉即撤下已发布的路由）、立刻刷新，以及就地改单个模型的参数。除此之外没有别的
+ * 界面——发现本身发生在插件加载、配置变更与刷新间隔到点上。
  *
  * ```yaml
  * - id: aperture
@@ -148,8 +148,8 @@ export function apply(ctx: Context, config: ConfigRef): void {
     void runtime.refresh('配置变更');
   });
 
-  // 本插件自己画配置页（浏览器半边注册进「插件」页的 `plugins.row.config` 槽位），因此
-  // 不让设置接缝再为它生成一个通用表单页。这只是页面归属的声明，不影响配置的读写能力。
+  // 本插件自己画设置表单（浏览器半边在包级配置页上拿 `configForms` 那份作用域手写这一页），
+  // 因此不让设置接缝再为它生成一个通用表单页。这只是页面归属的声明，不影响配置的读写能力。
   ctx.effect(
     () => ctx.settings.configure({ auto: false }, ctx.fiber),
     'aperture settings presentation',

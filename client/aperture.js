@@ -1,22 +1,30 @@
 /**
- * `dsh-aperture` 浏览器半边：**插件页里本插件那一行的配置页**。
+ * `dsh-aperture` 浏览器半边：**「插件」页里本插件那个包页上的配置页**。
  *
- * 扩展点与接线方式对齐参考实现 `@xiaoyuyu6420/dsh-backup`（`backupPanel` + 插件页配置页）：
+ * 写法照官方插件：页面只交内容，控件用官方原语，**没有卡片**。
  *
- * - 用 `plugins.row.config` 注册一个**键控槽位**，键是 `<包名>#<行 id>`（`dsh-aperture#aperture`）：
- *   插件页那一行由此长出「配置」入口，配置页由页面自己画标题、图标与面包屑，本模块只交内容；
- * - 注入面只有 `slots` / `locale` / `remote` 三个服务：报告与「立刻刷新」经自己的 `aperturePanel`
- *   Remote 往返，而**配置本身的读写走页主递来的 `form`**（`ConfigPageForm`：设置接缝的活快照 +
- *   带版本号校验的 `mutate`），因此地址与开关这两项不必自己再实现一遍版本、冲突与恢复；
- * - 组件拿 `panel`（报告端点）、`form`（配置读写面）与 `t`（字典，因为注册时声明了 `locale`），
- *   外加页主交过来的 `view`（`summary` 要一行字，`page` 要整块内容）。
+ * - 注册在包级配置槽位 `plugins.bundle.config` 上，键是包名 `dsh-aperture`：点开插件列表里的本
+ *   插件就直接是这一页，标题、图标与面包屑由页主画；
+ * - 地址与同步开关交给官方那套设置表单（`SettingsForm` / `SettingsValueField` /
+ *   `SettingsFormModel`）：草稿与生效值的差分、`revision` 围栏写入、保存失败保留草稿、只读与
+ *   「命名空间没在服务」的说明都归它管，本模块只声明每个字段怎么在「存下来的值」与「输入框里的
+ *   文本」之间换算；
+ * - 模型清单是一列 `DisclosureRow`（展开就是这一行的覆盖编辑），路由与刷新事实是扁平的
+ *   `dl` 配 `Tag` / `StateDot`；分组只靠小标题、字号与间距，不画边框与底色；
+ * - 客户端模块系统把 `dsh.client.inject` 里列出的包注册成可 `require` 的模块，因此这里可以
+ *   `require('@deepseek-ai/dsh-client-ui-primitives')`——官方客户端包就是这么用它的，本仓库
+ *   不必为此引入打包器。
+ *
+ * 注入面是 `slots` / `locale` / `remote` / `configForms` 四个服务。报告与「立刻刷新」经自己的
+ * `aperturePanel` Remote 往返；设置的读写面向 `configForms` 要——**包级**配置页页主只递
+ * `view: 'page'`、不递 `form`（递 `form` 的是行级与条目级），所以这一份得按设置命名空间自己取。
+ * 组件读宿主来的状态走官方的槽位钩子（注入面里的 `hooks`，渲染器把它变成 `useApertureCard`
+ * 选择器钩子），动作走注入面里的普通函数。
  *
  * **这个文件就是构建产物。** DSH 的客户端模块系统只要求一个经典脚本，用
  * `window.__ModuleLoader__.load({ id, factory })` 的握手把自己报上去；它不要求这份脚本
  * 经过打包器，也不检查它是否被压缩过。因此这里直接写 CJS 工厂体，用 `createElement`
- * 而不是 JSX：仓库不必为此引入打包器，也不必把一个编译产物提交进版本库。
- *
- * 运行时只 `require('react')`（DSH 平台基线模块），不需要 `dsh.client.external`。
+ * 而不是 JSX。
  *
  * @module dsh-aperture/client
  */
@@ -25,18 +33,39 @@ window.__ModuleLoader__.load({
   id: 'dsh-aperture',
   factory: (require) => {
     const React = require('react');
+    const {
+      SettingsForm,
+      SettingsValueField,
+      SettingsFormModel,
+      settingsTextField,
+      Button,
+      Checkbox,
+      DisclosureRow,
+      SegmentedControl,
+      StateDot,
+      Switch,
+      Tag,
+    } = require('@deepseek-ai/dsh-client-ui-primitives');
+
     const h = React.createElement;
 
     /** 字典命名空间（本插件拥有）。配置页的 `locale` 声明与 `ctx.locale.bind` 都用它。 */
     const NS = 'settings.aperturePanel';
     /** 宿主半边的 Remote 命名空间（`src/remote.ts`）。 */
     const PANEL = 'aperturePanel';
-    /** 包名，取自 package.json，同时是端点 id 的前缀。 */
+    /** 包名，取自 package.json。它同时是包级配置页的键。 */
     const PACKAGE = 'dsh-aperture';
-    /** 样式表归属标记；卸载与热替换时按它回收。 */
-    const STYLE_MARK = 'data-dsh-aperture';
-    /** `cordis.patch.yml` 里那一行的 id；「插件」页按 `<包名>#<行 id>` 找这一行的配置页。 */
-    const ROW_ID = 'aperture';
+    /** 样式表的归属标记；卸载与热替换时按它回收。 */
+    const STYLE_OWNER = 'aperture/client.js';
+    /**
+     * 设置命名空间（宿主半边 `src/config.ts` 里的 `APERTURE_NAMESPACE`，也是
+     * `cordis.patch.yml` 里那一行的 id）。
+     *
+     * 包级配置页页主不递 `form`，这一份表单就是按它向 `configForms` 服务要来的。
+     */
+    const SETTINGS_NS = 'aperture';
+    /** 这一页自己编辑的两个字段；其余配置键（`models` 除外）留给配置文件。 */
+    const FIELDS = Object.freeze(['baseUrl', 'sync']);
 
     // ---------------------------------------------------------------- 端点契约
 
@@ -123,363 +152,391 @@ window.__ModuleLoader__.load({
     // -------------------------------------------------------------------- 样式
 
     /**
-     * 注入配置页样式。
+     * 配置页样式。
      *
-     * 配置页在独立 bundle 里，用不了仓库的 CSS module 管线，因此样式随包分发、按 effect
-     * 生命周期注入，并在卸载时移除。选择器全部收在 `[data-dsh-aperture]` 之下；颜色只引用
-     * dsh web 的主题 token（`--dsw-alias-*`，各带回落值），深浅色自动跟随。
+     * 页面在独立 bundle 里，用不了仓库的 CSS module 管线，因此样式随包分发、按 effect 生命周期
+     * 注入，卸载时移除；元素按 `data-plugin-css` 认领，与自己重名的那份先删掉（热替换）。
      *
-     * 尺寸与形状照抄官方设置页的「模型」卡片（`@deepseek-ai/dsh-client-ui-settings-models`）：
-     * 卡片是 16px 圆角、`.5px` 的 l4 边框、`12px 14px` 内边距，卡头左身份右动作（`10px` 间距
-     * 加 `margin-left: auto`），身份里的状态点是 8px 的 state token 圆点；编辑区是 12px 圆角的
-     * 浅色面（`bg-module-platform`，`14px 16px` 内边距），参数排成 `minmax(160px, 1fr)` 的栅格，
-     * 字段标签 12px/500 的 label-secondary，行内动作按钮 28px / 14px 圆角，正文按钮 36px 胶囊，
-     * 编辑区底部的「取消 / 保存」右对齐。那份 CSS 是构建产物里的字面量，可以逐条对照，因此界面
-     * 不必赌一个没有类型声明的组件 API 也能与官方配置页长得一样。
-     *
-     * 根节点刻意**不设** `max-width`：这块界面现在挂在「插件」页里那一行的配置页下，而页面自己
-     * 把内容列收在 960px；再套一层更窄的度量只会让卡片比同一页上的描述与行窄一截。
+     * 选择器全部收在根节点的 `[data-dsh-aperture]` 之下，颜色只引用 dsh web 的主题 token
+     * （`--dsw-alias-*`，各带回落值），深浅色自动跟随。布局照官方设置页的口径：分组之间 20px、
+     * 组内 12px，字段排成 `minmax(200px, 1fr)` 的栅格，说明文字 12px，正文字号 13px。**没有
+     * 卡片**：分组靠小标题与间距分开，只有模型清单那种「一列可展开的行」才用一条细边框收着。
      *
      * @returns {Function} 卸载时移除样式表的 disposer。
      */
     function installStyles() {
-      if (document.querySelector(`style[${STYLE_MARK}]`) !== null) return () => {};
+      const stale = document.querySelector(`style[data-plugin-css="${STYLE_OWNER}"]`);
+      if (stale !== null && stale.parentNode !== null) stale.parentNode.removeChild(stale);
+
       const element = document.createElement('style');
-      element.setAttribute(STYLE_MARK, '');
+      element.dataset.plugin = PACKAGE;
+      element.dataset.pluginCss = STYLE_OWNER;
       element.textContent = `
-[${STYLE_MARK}] { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary, inherit); }
-[${STYLE_MARK}] .dap-title { font-size: 16px; font-weight: 500; line-height: 24px; }
-[${STYLE_MARK}] .dap-subtitle { margin: 0; font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
-/* 卡片就是官方「模型」页的一张 rowCard：16px 圆角、.5px 的 l4 边框、12px 14px 内边距、
-   12px 的列间距，底下**不铺色**——官方那张卡也是透明的，底来自页面本身。段卡（实例、刷新）
-   与路由卡在页面上是同一层，共用这条规则；模型行是路由编辑区**里面**的一层，用官方
-   modelEntry 的细框（10px 圆角、10px 12px 内边距），一眼看得出谁在谁里面。 */
-[${STYLE_MARK}] .dap-section, [${STYLE_MARK}] .dap-route { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; border: .5px solid var(--dsw-alias-border-l4, rgba(127,127,127,.3)); border-radius: 16px; }
-/* 卡头：左边是身份（名字 + 标签 + 状态点），右边是这一张卡自己的动作——官方 rowHead。 */
-[${STYLE_MARK}] .dap-card-head { display: flex; align-items: center; gap: 10px; }
-[${STYLE_MARK}] .dap-identity { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-/* 段卡的卡头本身是个折叠开关：箭头 + 身份，形状照官方那个分组头（groupToggle 里放箭头与
-   标题，右边的控件留在按钮外面）。动作留在按钮**外面**——按钮里不能再嵌按钮。 */
-[${STYLE_MARK}] .dap-card-toggle { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-[${STYLE_MARK}] .dap-card-toggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4d6bfe); outline-offset: 2px; border-radius: 6px; }
-[${STYLE_MARK}] .dap-card-toggle .dap-chevron { color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
-[${STYLE_MARK}] .dap-name { font-size: 14px; font-weight: 500; line-height: 22px; }
-[${STYLE_MARK}] .dap-row-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
-[${STYLE_MARK}] .dap-row-actions .dap-button { height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12px; line-height: 18px; }
-/* 状态点：官方拿它说「这个提供方的凭据配好了没有」——8px 的圆、state token 上色。这里
-   沿用同一个记号，语义换成「这个实例能不能用」（实例卡：地址可用、上一轮刷新没失败）
-   与「有没有路由把它服务出去」（模型卡）。颜色不是唯一的说法：title 与 aria-label 里写着
-   同一句话。 */
-[${STYLE_MARK}] .dap-dot { box-sizing: border-box; display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; }
-[${STYLE_MARK}] .dap-dot[data-state="ok"] { background: var(--dsw-alias-state-success-primary, #2e9e5b); }
-[${STYLE_MARK}] .dap-dot[data-state="bad"] { background: var(--dsw-alias-state-error-primary, #d9534f); }
-[${STYLE_MARK}] .dap-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-[${STYLE_MARK}] .dap-hint { margin: 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
-
-/* 输入控件照抄官方：32px 高、8px 圆角、.5px 的 l4 边框、bg-layer-1 底、聚焦只换边框色。
-   select 的箭头是官方那段内联 SVG（颜色写死，深浅色下都够用）。 */
-[${STYLE_MARK}] .dap-input { box-sizing: border-box; width: 100%; min-width: 0; height: 32px; font: inherit; font-size: 14px; line-height: 22px; padding: 0 10px; border: .5px solid var(--dsw-alias-border-l4, rgba(127,127,127,.4)); border-radius: 8px; background: var(--dsw-alias-bg-layer-1, transparent); color: var(--dsw-alias-label-primary, inherit); }
-[${STYLE_MARK}] .dap-input:focus { border-color: var(--dsw-alias-brand-primary, rgba(127,127,127,.6)); outline: none; }
-[${STYLE_MARK}] .dap-input::placeholder { color: var(--dsw-alias-label-dimmed, rgba(127,127,127,.6)); }
-[${STYLE_MARK}] .dap-input:disabled { opacity: .6; cursor: default; }
-[${STYLE_MARK}] select.dap-input { max-width: 240px; cursor: pointer; appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-position: right 12px center; background-repeat: no-repeat; background-size: 12px 12px; }
-
-[${STYLE_MARK}] .dap-tag { flex: none; padding: 1px 6px; border: .5px solid var(--dsw-alias-border-l3, rgba(127,127,127,.4)); border-radius: 4px; font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-secondary, inherit); }
-[${STYLE_MARK}] .dap-check { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; line-height: 22px; }
-[${STYLE_MARK}] .dap-check > input { accent-color: var(--dsw-alias-brand-primary, rgba(127,127,127,.6)); }
-[${STYLE_MARK}] .dap-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-[${STYLE_MARK}] .dap-actions[data-align="end"] { justify-content: flex-end; }
-[${STYLE_MARK}] .dap-button { box-sizing: border-box; display: inline-flex; justify-content: center; align-items: center; gap: 4px; height: 36px; padding: 0 14px; border: none; border-radius: 18px; background: none; color: var(--dsw-alias-label-primary, inherit); font: inherit; font-size: 14px; line-height: 22px; cursor: pointer; }
-[${STYLE_MARK}] .dap-button:not([data-primary="true"]) { border: .5px solid var(--dsw-alias-border-l3, rgba(127,127,127,.4)); }
-[${STYLE_MARK}] .dap-button:not([data-primary="true"]):hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-solid, var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.12))); }
-[${STYLE_MARK}] .dap-button[data-danger="true"] { border: none; color: var(--dsw-alias-state-error-primary, #d9534f); }
-[${STYLE_MARK}] .dap-button[data-danger="true"]:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-danger, rgba(217,83,79,.12)); }
-[${STYLE_MARK}] .dap-button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--dsw-alias-border-l3, rgba(127,127,127,.4)); }
-/* 主按钮的底色与文字是一对 token，不能只换底色。--dsw-alias-brand-primary 在浅色主题里是
-   近黑、在深色主题里是近白，而继承来的正文色恰好与它同色——只写 background 就是「深底深字」。
-   --dsw-alias-label-primary-foreground 就是为这种底色准备的对比色。禁用态用主题自己的
-   dimmed 填充 + label-secondary：官方的整颗 opacity: .4 会把底色与文字一起压向页面底色，
-   两个都变浅之后反而谁也看不清（浅色主题下大约 1.4:1）。 */
-[${STYLE_MARK}] .dap-button[data-primary="true"] { background: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, rgba(127,127,127,.5))); color: var(--dsw-alias-label-primary-foreground, #fff); }
-[${STYLE_MARK}] .dap-button[data-primary="true"]:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover, var(--dsw-alias-brand-primary, rgba(127,127,127,.5))); }
-[${STYLE_MARK}] .dap-button[data-primary="true"]:disabled { opacity: 1; background: var(--dsw-alias-button-primary-dimmed, rgba(127,127,127,.18)); color: var(--dsw-alias-label-secondary, rgba(127,127,127,.9)); }
-[${STYLE_MARK}] .dap-button:disabled { cursor: default; }
-/* 官方每一颗按钮的禁用态都是整颗 opacity: .4；主按钮那一处例外与理由写在上面。 */
-[${STYLE_MARK}] .dap-button:not([data-primary="true"]):disabled { opacity: .4; }
-
-[${STYLE_MARK}] .dap-banner { margin: 0; font-size: 12px; line-height: 18px; white-space: pre-wrap; }
-[${STYLE_MARK}] .dap-banner[data-ok="false"] { color: var(--dsw-alias-state-error-primary, #d9534f); }
-[${STYLE_MARK}] .dap-banner[data-ok="true"] { color: var(--dsw-alias-state-success-primary, inherit); }
-/* 状态段是一串「标签 + 值」，不用表格：值本身可能是地址或一列路由名，会很长。 */
-[${STYLE_MARK}] .dap-facts { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
-/* 「最近一次刷新」是这张卡的一份只读诊断，跟着实例走：同一块浅色面上切一条线（与模型参数面
-   同一套做法），不另起一张卡、也不铺第二层底色。 */
-[${STYLE_MARK}] .dap-status { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: .5px solid var(--dsw-alias-border-l2, rgba(127,127,127,.18)); }
-[${STYLE_MARK}] .dap-status-head { font-size: 12px; font-weight: 500; line-height: 18px; color: var(--dsw-alias-label-secondary, inherit); }
-[${STYLE_MARK}] .dap-fact { display: flex; gap: 12px; padding: 5px 0; border-top: .5px solid var(--dsw-alias-border-l2, rgba(127,127,127,.18)); }
-[${STYLE_MARK}] .dap-fact:first-child { border-top: none; padding-top: 0; }
-[${STYLE_MARK}] .dap-fact > dt { flex: 0 0 84px; font-size: 12px; line-height: 22px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
-[${STYLE_MARK}] .dap-fact > dd { margin: 0; min-width: 0; font-size: 14px; line-height: 22px; word-break: break-word; }
-
-[${STYLE_MARK}] .dap-models { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-[${STYLE_MARK}] .dap-model { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: .5px solid var(--dsw-alias-border-l4, rgba(127,127,127,.3)); border-radius: 10px; }
-[${STYLE_MARK}] .dap-model-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-/* 卡头是「id + 显示名」——官方 modelCatalog 那一行也是 id 在前、名字在后。 */
-[${STYLE_MARK}] .dap-model-id { font-family: var(--ds-font-family-code, monospace); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
-[${STYLE_MARK}] .dap-model-facts { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary, inherit); }
-[${STYLE_MARK}] .dap-model-meta { margin: 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
-/* 模型行自己展开的参数面不再另铺一层灰：它已经在编辑区那块浅色面里了，官方 modelAdvanced
-   也是在同底色上切一条 l2 细线——再套一层灰，边界根本看不见。 */
-[${STYLE_MARK}] .dap-advanced { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; border-top: .5px solid var(--dsw-alias-border-l2, rgba(127,127,127,.18)); }
-
-/* 编辑区与官方一样是卡片里的一块浅色面：12px 圆角、14px 16px 内边距。路由卡展开后，这块面
-   里装的正是官方那张 provider 卡的两层：先是「→ 地址」那一行（对应官方编辑区头上的名字与
-   provider id），再是模型清单（官方 modelCatalog）。 */
-[${STYLE_MARK}] .dap-editor { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px; border-radius: 12px; background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-layer-1, transparent)); }
-[${STYLE_MARK}] .dap-editor-head { display: flex; gap: 8px; align-items: baseline; }
-[${STYLE_MARK}] .dap-editor-title { font-size: 14px; font-weight: 500; line-height: 22px; }
-[${STYLE_MARK}] .dap-editor-route { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
-[${STYLE_MARK}] .dap-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
-[${STYLE_MARK}] .dap-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-[${STYLE_MARK}] .dap-field > label { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
-/* 「已覆盖」那对记号跟着它描述的那个字段：官方 ValueField 的 head/badges 就是这个位置。
-   搁在卡头上时它是一句没有主语的「已覆盖」，离要撤销的那一项越远越像在说别的东西。 */
-[${STYLE_MARK}] .dap-field-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-[${STYLE_MARK}] .dap-field-badges { display: inline-flex; align-items: center; gap: 8px; }
-/* 「恢复默认」是官方那个纯文字按钮：12px、label-secondary、没有边框也没有底色。 */
-[${STYLE_MARK}] .dap-reset { padding: 0; border: 0; background: none; font: inherit; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary, inherit); cursor: pointer; }
-[${STYLE_MARK}] .dap-reset:disabled { cursor: default; color: var(--dsw-alias-label-dimmed, rgba(127,127,127,.6)); }
-/* 编辑区里的字段是官方 fieldLabel（12px/500 的 label-secondary），模型那一格沿用官方
-   modelFieldLabel 的 12px label-tertiary；整行的格子（地址、密钥那种值）横跨整个栅格。 */
-[${STYLE_MARK}] .dap-field[data-emphasis="true"] > label, [${STYLE_MARK}] .dap-field[data-emphasis="true"] .dap-field-head > label { display: inline-flex; align-items: center; gap: 10px; font-weight: 500; color: var(--dsw-alias-label-secondary, inherit); }
-[${STYLE_MARK}] .dap-field[data-wide="true"] { grid-column: 1 / -1; }
-[${STYLE_MARK}] .dap-field-note { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
-[${STYLE_MARK}] .dap-error { margin: 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-state-error-primary, #d9534f); }
-[${STYLE_MARK}] .dap-chevron { display: inline-flex; transition: transform 120ms ease; }
-[${STYLE_MARK}] .dap-chevron[data-open="true"] { transform: rotate(90deg); }
+[data-dsh-aperture] {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary, #e6e6e6);
+}
+[data-dsh-aperture] .dap-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+[data-dsh-aperture] .dap-groupHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+[data-dsh-aperture] .dap-groupTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+[data-dsh-aperture] .dap-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+[data-dsh-aperture] .dap-banner {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
+}
+[data-dsh-aperture] .dap-banner[data-ok='false'] {
+  color: var(--dsw-alias-state-error-primary, #e06c75);
+}
+[data-dsh-aperture] .dap-toggleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+[data-dsh-aperture] .dap-toggleText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+[data-dsh-aperture] .dap-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+[data-dsh-aperture] .dap-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 12px;
+  list-style: none;
+  border: 0.5px solid var(--dsw-alias-border-l4, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  max-height: 420px;
+  overflow: auto;
+}
+[data-dsh-aperture] .dap-rowFacts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+[data-dsh-aperture] .dap-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 14px;
+}
+[data-dsh-aperture] .dap-editorGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px 16px;
+}
+[data-dsh-aperture] .dap-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+[data-dsh-aperture] .dap-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+[data-dsh-aperture] .dap-controlLabel {
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
+}
+[data-dsh-aperture] .dap-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+[data-dsh-aperture] .dap-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+[data-dsh-aperture] .dap-routes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+[data-dsh-aperture] .dap-routeHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+[data-dsh-aperture] .dap-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+[data-dsh-aperture] .dap-fact {
+  display: flex;
+  gap: 8px;
+}
+[data-dsh-aperture] .dap-fact dt {
+  flex: none;
+  min-width: 72px;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+[data-dsh-aperture] .dap-fact dd {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
+  word-break: break-all;
+}
 `;
-      document.head.append(element);
-      return () => element.remove();
+      document.head.appendChild(element);
+      return () => {
+        if (element.parentNode !== null) element.parentNode.removeChild(element);
+      };
     }
 
     // -------------------------------------------------------------------- 字典
 
-    /**
-     * 中英文字典。
-     *
-     * 注册时必须一次交齐所有内置语言，缺一个都会在注册处被拒绝；中文是本插件的主语言，
-     * 英文只求达意。`{name}` 是插值占位符（由 locale 服务替换）。
-     */
     const zh = {
-      tab: 'Aperture',
-      subtitle: '把实例通告的模型发布成 llm-pi-ai 的 provider 路由。',
-      loading: '正在读取状态…',
-      addressLabel: '实例地址',
-      addressPlaceholder: 'https://ai.example.ts.net',
-      addressDormant: '没有实例地址：发现处于休眠，插件不探测，也不会写入 llm-pi-ai。',
-      syncLabel: '同步到 llm-pi-ai',
-      syncOn: '写入 provider 字典',
-      syncOff: '只探测，不写入',
-      overridden: '已覆盖',
-      overriddenHint: '这一项写在你的设置文件里；存在就算覆盖，值与默认相同也算。',
-      overriddenKeys: '这一行在设置文件里写了：{keys}',
-      keyReasoningEfforts: '推理档位',
-      listSeparator: '、',
-      syncOffTag: '不同步',
-      reset: '恢复默认',
-      resetHint: '从设置文件里删掉这一项，回落缺省值。',
-      dotConfigured: '实例地址已配置',
-      dotReady: '实例地址已配置，最近一次刷新成功',
-      dotMissing: '没有实例地址',
-      dotRefreshFailed: '最近一次刷新失败',
-      dotPublished: '这一轮已写入 llm-pi-ai',
-      dotUnpublished: '这一轮没有写入 llm-pi-ai：{reason}',
-      dotUnservedModels: '这些模型没有路由可用',
-      reasonUnknown: '报告里没有写原因',
       save: '保存',
       saving: '保存中…',
-      cancel: '取消',
-      refresh: '立即刷新',
-      refreshing: '正在发现…',
-      readOnly: '当前设置文档不接受写入，表单只读。',
-      configUnavailable: '这一页读不到设置快照，因此只显示发现结果。',
-      configSaved: '已写入设置；那一轮重新发现：{result}',
-      configReset: '已恢复默认，回落到缺省值；那一轮重新发现：{result}',
-      configRefused: '写入被设置服务拒绝（多半是期间别处改过配置）；刷新后重试。',
+      saveFailed: '没被接受：文档可能只读，或刚被别处改过',
+      readOnly: '这份设置是只读的，改不动。',
+      unavailable: '这一份设置现在读不到：宿主没有把 aperture 段服务给这个页面。',
 
-      statusHeading: '最近一次刷新',
-      noAddress: '未配置地址',
-      neverRefreshed: '尚未完成任何刷新：稍后会自动重试，也可以按「立即刷新」。',
-      refreshOk: '成功',
-      refreshFailed: '失败',
+      addressLabel: '实例地址',
+      addressHint: '填 Aperture 的地址；留空即休眠，不再发现模型。',
+      addressPlaceholder: 'http://127.0.0.1:54117',
+      syncLabel: '自动同步',
+      syncHint: '每轮发现之后，把模型与参数写进 dsh 的 llm-pi-ai 路由。',
+
+      overridden: '已覆盖',
+      overriddenKeys: '覆盖了 {keys}',
+      resetField: '恢复默认',
+      invalidField: '要填不小于 1 的整数，或留空',
+
+      refresh: '立刻刷新',
+      refreshHint: '立刻重新发现并发布，然后把这一轮的报告摆出来。',
+      refreshing: '刷新中…',
+      loading: '读取中…',
+
+      configRefused: '设置已被别处改过，这次改动没有写入：刷新页面后再改一遍。',
+      savedResult: '已保存：{result}',
+      noChanges: '没有改动，因此没有写入。',
+      invalidNumber: '{field} 只能填不小于 1 的整数。',
+
+      reportTitle: '发现报告',
+      reportHint: '报告说的是最近一次刷新算出的事实；改设置或按「立刻刷新」都会重跑一轮。',
+      dormantHint: '还没有实例地址：填上并保存之后才会去发现模型。',
+      routesTitle: '路由',
+      noRoutes: '还没有发布任何路由。',
+      routeModels: '{count} 个模型',
+      routePublished: '已写入',
+      routeNotPublished: '未写入',
+      routeNoBaseUrl: '（这一条路由没有 baseURL）',
+      neverRefreshed: '这一轮还没跑过。',
+
+      modelsTitle: '模型',
+      modelsHint: '一行一个模型；展开改这一行的覆盖，「保存这一行」只写这一行。顺序来自发现顺序，没有路由可服务的排在最后。',
+      noModels: '还没有发现任何模型。',
+      unservedTag: '未服务',
+      dirtyTag: '有未保存的改动',
+
       factTrigger: '触发',
       factTime: '时间',
       factDuration: '耗时',
       factResult: '结果',
       factCatalog: '清单',
-      catalogEntries: '{count} 个条目',
-      catalogUnavailable: '不可用（{reason}）',
       factEndpoint: '端点',
-      endpointListed: '{url} 列出了 {count} 行',
-      factSync: '设置',
-      syncApplied: '向 llm-pi-ai 写入 {count} 个操作（{routes}）',
-      syncOnlyRemoval: '仅移除',
-      syncSkipped: '未写入（{reason}）',
+      factSync: '写入',
+      factContextWindow: '上下文 {count}',
+      factMaxTokens: '最大输出 {count}',
+      factAlias: '别名 {alias}',
+      factEndpoints: '网关通告的端点：',
+      factSource: '来源：{source}',
 
-      modelsHeading: '模型与路由',
-      modelsCount: '{count} 个模型',
-      modelsMetaOverride: '已覆盖 {count} 个模型，其余沿用发现值与清单',
-      modelsMetaInherit: '全部沿用发现值与清单',
-      routeNoBaseURL: '→ 这条路由没有写地址',
-      noModels: '未发现任何模型。',
-      modelsError: '未发现任何内容：{error}',
-      unservedHeading: '未服务：没有本插件可发布的端点',
-      unservedCard: '未服务',
-      unservedHint: '填上协议可以让它在对应路由上发布。',
-      unservedEndpoints: '通告的端点：{list}',
-      noEndpoints: '未通告任何端点',
-      pendingTag: '待保存',
-      advancedHide: '收起',
+      refreshOk: '成功',
+      refreshFailed: '失败',
+      catalogEntries: '清单 {count} 条',
+      catalogUnavailable: '清单不可用（{reason}）',
+      endpointListed: '{url} 列出 {count} 行',
+      syncApplied: '写入 {count} 项（{routes}）',
+      syncSkipped: '没写（{reason}）',
+      syncOnlyRemoval: '只做了删除',
 
-      factContextWindow: '{count} 上下文窗口',
-      factMaxTokens: '{count} 输出',
       modalityText: '文本',
-      modalityImage: '图像',
-      modalityNone: '无模态',
-      factReasoningOn: '推理',
-      factReasoningOff: '无推理',
-      factAlias: '清单别名 {alias}',
-      sourceAperture: 'aperture',
-      sourceNote: '来自 {source}',
+      modalityImage: '图片',
+      modalityNone: '不接收任何模态',
+      reasoningFollow: '跟随发现',
+      reasoningOn: '开',
+      reasoningOff: '关',
+
+      sourceAperture: 'Aperture',
       sourceModelsDev: 'models.dev',
       sourceConfig: '配置',
-      sourceDefault: '默认',
+      sourceDefault: '默认值',
 
-      edit: '编辑',
-      noAlias: '未收录',
-      noChanges: '没有要保存的改动。',
       editName: '显示名',
-      editAlias: '清单别名',
-      editContextWindow: '上下文',
-      editMaxTokens: '最大输出',
-      editInput: '输入模态',
-      editReasoning: '推理',
       editApi: '协议',
-      editHint: '显示名、容量与模态留空表示这一项不覆盖，回落到发现值；容量可以写成 1M、100K 这种写法；协议与推理的「跟随发现」同理。',
-      effectiveHint: '生效 {value}',
-      effectiveSource: '生效 {value} · 来自 {source}',
-      optionAuto: '跟随发现',
-      optionOn: '开',
-      optionOff: '关',
-      invalidNumber: '{field} 必须是不小于 1 的整数。',
+      editContextWindow: '上下文容量',
+      editMaxTokens: '最大输出',
+      editInput: '请求模态',
+      editReasoning: '推理',
+      editAlias: '清单别名',
+      editNameHint: '留空即用发现到的名字。',
+      editApiHint: '未服务的模型只有这里能救：填上协议它才有路由；留空即用网关通告的协议。',
+      editCapacityHint: '可以写 1M、384K；留空即用发现到的容量。',
+      editAliasHint: '写进 llm-pi-ai 清单的别名。',
+      editInputHint: '这里能覆盖报告说它接收的模态。',
+      editReasoningHint: '「跟随发现」就是这一项不写。',
+      saveRow: '保存这一行',
+      clearOverrides: '清空覆盖',
+      cancelRow: '取消',
+      keyReasoningEfforts: '推理档位',
+      listSeparator: '、',
     };
 
     const en = {
-      tab: 'Aperture',
-      subtitle: 'Publish the models your instance advertises as llm-pi-ai provider routes.',
-      loading: 'Reading state…',
-      addressLabel: 'Instance address',
-      addressPlaceholder: 'https://ai.example.ts.net',
-      addressDormant: 'No instance address: discovery is dormant, so nothing is probed and nothing is written to llm-pi-ai.',
-      syncLabel: 'Sync into llm-pi-ai',
-      syncOn: 'writes the provider dictionary',
-      syncOff: 'probe only, write nothing',
-      overridden: 'Overridden',
-      overriddenHint: 'This field is set in your settings file; presence alone marks it overridden, even when the value matches the default.',
-      overriddenKeys: 'written into your settings file for this row: {keys}',
-      keyReasoningEfforts: 'reasoning efforts',
-      listSeparator: ', ',
-      syncOffTag: 'no sync',
-      reset: 'Reset to default',
-      resetHint: 'Remove this key from your settings file and fall back to the default.',
-      dotConfigured: 'instance address configured',
-      dotReady: 'instance address configured and the last refresh succeeded',
-      dotMissing: 'no instance address',
-      dotRefreshFailed: 'last refresh failed',
-      dotPublished: 'written into llm-pi-ai this round',
-      dotUnpublished: 'not written into llm-pi-ai this round: {reason}',
-      dotUnservedModels: 'no route can serve these models',
-      reasonUnknown: 'the report records no reason',
       save: 'Save',
       saving: 'Saving…',
-      cancel: 'Cancel',
-      refresh: 'Refresh now',
-      refreshing: 'Discovering…',
-      readOnly: 'This deployment does not accept settings writes, so the form is read-only.',
-      configUnavailable: 'This page cannot read the settings snapshot, so only the discovery report is shown.',
-      configSaved: 'Written to settings; that rediscovery round: {result}',
-      configReset: 'Reset to default; that rediscovery round: {result}',
-      configRefused: 'The settings service refused the write (usually because the configuration changed elsewhere); refresh and try again.',
+      saveFailed: 'not accepted: the document may be read-only, or just changed elsewhere',
+      readOnly: 'These settings are read-only, so nothing can be changed here.',
+      unavailable: 'These settings cannot be read right now: the Host does not serve the aperture section to this page.',
 
-      statusHeading: 'Last refresh',
-      noAddress: 'no address configured',
-      neverRefreshed: 'No refresh has finished yet: one is retried shortly, or press “Refresh now”.',
-      refreshOk: 'succeeded',
-      refreshFailed: 'failed',
+      addressLabel: 'Instance address',
+      addressHint: 'Where Aperture listens; leave it empty to go dormant and stop discovering models.',
+      addressPlaceholder: 'http://127.0.0.1:54117',
+      syncLabel: 'Sync automatically',
+      syncHint: 'After each discovery round, write the models and their parameters into dsh\u2019s llm-pi-ai routes.',
+
+      overridden: 'overridden',
+      overriddenKeys: 'overrides {keys}',
+      resetField: 'Reset to default',
+      invalidField: 'Enter an integer of at least 1, or leave it empty',
+
+      refresh: 'Refresh now',
+      refreshHint: 'Discover and republish now, then show this round’s report.',
+      refreshing: 'Refreshing…',
+      loading: 'Loading…',
+
+      configRefused: 'These settings changed elsewhere, so this edit was not written. Reload the page and try again.',
+      savedResult: 'Saved: {result}',
+      noChanges: 'Nothing changed, so nothing was written.',
+      invalidNumber: '{field} takes an integer of at least 1.',
+
+      reportTitle: 'Discovery report',
+      reportHint: 'The report states what the last discovery round worked out; saving settings or pressing Refresh now runs another.',
+      dormantHint: 'No instance address yet: models are discovered once you set and save one.',
+      routesTitle: 'Routes',
+      noRoutes: 'No routes published yet.',
+      routeModels: '{count} models',
+      routePublished: 'written',
+      routeNotPublished: 'not written',
+      routeNoBaseUrl: '(this route has no baseURL)',
+      neverRefreshed: 'No round has run yet.',
+
+      modelsTitle: 'Models',
+      modelsHint: 'One model per row; expand a row to edit its overrides, and Save row writes only that row. The order comes from discovery, with anything no route can serve last.',
+      noModels: 'No models discovered yet.',
+      unservedTag: 'unserved',
+      dirtyTag: 'unsaved edits',
+
       factTrigger: 'Trigger',
       factTime: 'Time',
-      factDuration: 'Took',
+      factDuration: 'Duration',
       factResult: 'Result',
       factCatalog: 'Catalog',
-      catalogEntries: '{count} entries',
-      catalogUnavailable: 'unavailable ({reason})',
       factEndpoint: 'Endpoint',
-      endpointListed: '{url} listed {count} rows',
-      factSync: 'Settings',
-      syncApplied: 'wrote {count} operations to llm-pi-ai ({routes})',
-      syncOnlyRemoval: 'removals only',
-      syncSkipped: 'not written ({reason})',
-
-      modelsHeading: 'Models and routes',
-      modelsCount: '{count} models',
-      modelsMetaOverride: '{count} models overridden, the rest inherit discovery and the catalog',
-      modelsMetaInherit: 'everything inherits discovery and the catalog',
-      routeNoBaseURL: '→ this route writes no address',
-      noModels: 'No models discovered.',
-      modelsError: 'Nothing discovered: {error}',
-      unservedHeading: 'Unserved: no endpoint this plugin can publish',
-      unservedCard: 'Unserved',
-      unservedHint: 'Filling in a protocol publishes it on the matching route.',
-      unservedEndpoints: 'Advertised endpoints: {list}',
-      noEndpoints: 'no endpoints advertised',
-      pendingTag: 'unsaved',
-      advancedHide: 'Collapse',
-
-      factContextWindow: '{count} context window',
+      factSync: 'Sync',
+      factContextWindow: '{count} context',
       factMaxTokens: '{count} output',
+      factAlias: 'alias {alias}',
+      factEndpoints: 'Endpoints the gateway advertises:',
+      factSource: 'Source: {source}',
+
+      refreshOk: 'ok',
+      refreshFailed: 'failed',
+      catalogEntries: 'catalog has {count} entries',
+      catalogUnavailable: 'catalog unavailable ({reason})',
+      endpointListed: '{url} listed {count} rows',
+      syncApplied: 'wrote {count} entries ({routes})',
+      syncSkipped: 'skipped ({reason})',
+      syncOnlyRemoval: 'removals only',
+
       modalityText: 'text',
       modalityImage: 'image',
-      modalityNone: 'no modality',
-      factReasoningOn: 'reasoning',
-      factReasoningOff: 'no reasoning',
-      factAlias: 'catalog alias {alias}',
-      sourceAperture: 'aperture',
-      sourceNote: '来自 {source}',
+      modalityNone: 'accepts nothing',
+      reasoningFollow: 'Follow discovery',
+      reasoningOn: 'On',
+      reasoningOff: 'Off',
+
+      sourceAperture: 'Aperture',
       sourceModelsDev: 'models.dev',
       sourceConfig: 'config',
       sourceDefault: 'default',
 
-      edit: 'Edit',
-      noAlias: 'not in the catalog',
-      noChanges: 'Nothing to save.',
       editName: 'Display name',
-      editAlias: 'Catalog alias',
-      editContextWindow: 'Context',
-      editMaxTokens: 'Max output',
-      editInput: 'Input modalities',
-      editReasoning: 'Reasoning',
       editApi: 'Protocol',
-      editHint: 'An empty display name, capacity or modality drops that override and falls back to discovery; capacities accept 1M or 100K; the same goes for “follow discovery” on protocol and reasoning.',
-      effectiveHint: 'in effect: {value}',
-      effectiveSource: 'in effect: {value} · from {source}',
-      optionAuto: 'follow discovery',
-      optionOn: 'on',
-      optionOff: 'off',
-      invalidNumber: '{field} must be an integer of at least 1.',
+      editContextWindow: 'Context window',
+      editMaxTokens: 'Max output',
+      editInput: 'Request modalities',
+      editReasoning: 'Reasoning',
+      editAlias: 'Catalog alias',
+      editNameHint: 'Leave it empty to use the discovered name.',
+      editApiHint: 'The only way an unserved model gets a route is a protocol here; leave it empty to use the advertised one.',
+      editCapacityHint: 'Write 1M or 384K; leave it empty to use the discovered capacity.',
+      editAliasHint: 'The alias written into the llm-pi-ai catalog.',
+      editInputHint: 'This overrides the modalities the report says it accepts.',
+      editReasoningHint: '\u201cFollow discovery\u201d leaves this key unwritten.',
+      saveRow: 'Save row',
+      clearOverrides: 'Clear overrides',
+      cancelRow: 'Cancel',
+      keyReasoningEfforts: 'reasoning efforts',
+      listSeparator: ', ',
     };
 
-
-    // ------------------------------------------------------------------ 配置页
+    // ------------------------------------------------------------------ 小工具
 
     /** 一个错误的人话形式。 */
     function textOf(error) {
@@ -580,65 +637,132 @@ window.__ModuleLoader__.load({
       ));
     }
 
+    // ------------------------------------------------------------ 设置表单模型
+
     /**
-     * Aperture 面板：实例卡（地址、同步开关、立刻刷新）与模型清单。
+     * 布尔字段的换算规格。
      *
-     * 只持有视图状态：报告由一个 effect 拉取、动作按下后再拉一次，配置则由页主递进来的
-     * `form` 快照现读（写回也用同一个 `form`）。**effect 的依赖里刻意不放注入面**——`inject`
-     * 面由渲染器每次渲染重新组装，把它的身份放进依赖会让 effect 每渲染一次就重跑一次，进而
-     * 无限循环。因此这里用自增计数器当刷新信号，草稿的依赖只用两个原始值。
+     * 官方的设置表单按「草稿文本」组织，`SettingsFieldSpec` 只要求给出两个方向：存下来的值怎么
+     * 写成文本，文本怎么变成一次写入。开关因此用 `'true'` / `'false'` 两个词当草稿，空串是
+     * 「这一项不写」（用户层里没这个键，值回落到组合层与 schema 默认）。
      *
-     * 面板不自画标题与描述：「插件」页那一行的配置页由页面画标题、图标与面包屑。只有
-     * 「没有实例地址」这句话留着——它是状态，不是介绍。
+     * @param {string} field - 命名空间段里的字段名。
+     * @returns {object} 字段规格。
+     */
+    function booleanField(field) {
+      return {
+        field,
+        format: (value) => (value === true ? 'true' : value === false ? 'false' : ''),
+        parse: (text) => {
+          if (text === '') return { kind: 'clear' };
+          if (text === 'true') return { kind: 'set', value: true };
+          if (text === 'false') return { kind: 'set', value: false };
+          return undefined;
+        },
+      };
+    }
+
+    /**
+     * 这份设置没有服务时用的替身。
      *
-     * @param {object} props - 渲染器交过来的 `panel`、`form` 与 `t`。
-     * @returns {object} 面板元素。
+     * `configForms` 缺席时（注入表保证不会，但这一页不该因此整页消失）照样要有一个可用的表单：
+     * 让 `SettingsFormModel` 读到一个 `unavailable` 的快照，官方表单自己会画那句「读不到」，
+     * 报告那半块照旧。写入一律回绝——没有服务时没有任何东西可以接受它。
+     */
+    const UNSERVED = Object.freeze({
+      getSnapshot: () => ({
+        status: 'unavailable',
+        value: undefined,
+        base: undefined,
+        user: undefined,
+        writable: false,
+        revision: undefined,
+      }),
+      subscribe: () => () => {},
+      mutate: async () => false,
+    });
+
+    // ------------------------------------------------------------------ 配置页
+
+    /**
+     * 一个模型此刻在表单里长什么样。
+     *
+     * 取的都是**生效值**，这样输入框里显示的永远是此刻真正在用的东西；提交时逐字段与这份
+     * 快照比较，只有改动过的字段才会被发出去（没提到的字段保持原样，因此界面不编辑的
+     * `reasoningEfforts` 之类不会被顺手抹掉）。
+     *
+     * @param {object} model - 报告里的一个模型。
+     * @returns {object} 各字段的初值（都是草稿文本或布尔）。
+     */
+    function initialOf(model) {
+      return {
+        name: model.name,
+        alias: model.alias ?? '',
+        // 容量回写成能原样读回来的最短写法（`1M`、`384K`），与官方「模型」页同一套词汇。
+        contextWindow: formatCapacity(model.contextWindow),
+        maxTokens: formatCapacity(model.maxTokens),
+        text: model.input.includes('text'),
+        image: model.input.includes('image'),
+        // 「跟随发现」= 用户层里没写过这个键。写过了，生效值就是用户写的那个值。
+        reasoning: declaredIn(model, 'thinking') ? (model.reasoning ? 'on' : 'off') : 'auto',
+        api: declaredIn(model, 'api') ? (model.protocol ?? '') : '',
+      };
+    }
+
+    /**
+     * 用户层里写没写过这个键——这就是「覆盖」的判据。
+     *
+     * 报告里的 `overrideKeys` 直接来自用户层，因此不必拿生效值和默认值比：比出来的答案既会漏
+     * （写了与默认相同的值），也会多（schema 补出来的空值）。
+     *
+     * @param {object} model - 报告里的一个模型。
+     * @param {string} key - 字段名。
+     * @returns {boolean} 写过没有。
+     */
+    function declaredIn(model, key) {
+      return (model.overrideKeys ?? []).includes(key);
+    }
+
+    /** 覆盖键在界面上的名字；界面不编辑的键（`reasoningEfforts`）另给一个词条。 */
+    const OVERRIDE_NAMES = {
+      name: 'editName',
+      api: 'editApi',
+      contextWindow: 'editContextWindow',
+      maxTokens: 'editMaxTokens',
+      input: 'editInput',
+      thinking: 'editReasoning',
+      alias: 'editAlias',
+      reasoningEfforts: 'keyReasoningEfforts',
+    };
+
+    /**
+     * 配置页：实例（地址、同步开关）与模型清单、发现报告。
+     *
+     * 表单状态读注入面里的 `useApertureCard`（官方 SettingsFormModel 的投影），报告、提示语与
+     * 每行的草稿是本组件的局部状态——它们是这一页的视图状态，不是设置文档的一部分。
+     *
+     * **effect 的依赖里刻意不放注入面**：`inject` 面由渲染器每次渲染重新组装，把它的身份放进
+     * 依赖会让 effect 每渲染一次就重跑一次。因此报告用一个自增计数器当重读信号（依赖里只有
+     * 那个数），注入面里的函数在事件处理里调用，拿到的永远是当轮的那份。
+     *
+     * @param {object} props - 注入面：`useApertureCard`、`panel`（报告端点）、`save` / `edit` /
+     *   `resetField` / `discard` / `failed`（设置表单）与 `t`（字典，注册时声明了 `locale`）。
+     * @returns {object} 页面元素。
      */
     function AperturePanel(props) {
-      const panel = props.panel;
-      const form = props.form;
       const t = typeof props.t === 'function' ? props.t : (key, params) => interpolate(zh[key] ?? key, params);
+      const state = props.useApertureCard((snapshot) => snapshot);
 
-      const [draft, setDraft] = React.useState(null);
       const [report, setReport] = React.useState(null);
       const [banner, setBanner] = React.useState(null);
       const [busy, setBusy] = React.useState('');
       const [drafts, setDrafts] = React.useState({});
       const [opened, setOpened] = React.useState({});
-      const [collapsed, setCollapsed] = React.useState({});
-      const [reportRevision, setReportRevision] = React.useState(0);
-
-      /**
-       * 配置页要显示的那两项，直接读页主递来的设置快照。
-       *
-       * `value` 是叠加了默认值、组合层与用户层之后的生效值，`user` 是用户层的原始片段——
-       * 字段在不在 `user` 里才是「有没有被覆盖」的判据（拿生效值和默认值比会漏掉「写了与默认
-       * 相同的值」这种覆盖）。页主在镜像变动时重渲染这一块，因此写完之后这里会自己变新，
-       * 不需要重读。
-       */
-      const section = form !== undefined && form !== null ? form.state : undefined;
-      const configuration =
-        section === undefined || section.status !== 'ready' || typeof section.value !== 'object' || section.value === null
-          ? null
-          : {
-              baseUrl: typeof section.value.baseUrl === 'string' ? section.value.baseUrl : '',
-              sync: section.value.sync === true,
-              baseUrlOverridden: hasKey(section.user, 'baseUrl'),
-              syncOverridden: hasKey(section.user, 'sync'),
-              writable: section.writable !== false,
-            };
-
-      // 草稿跟着生效值走：镜像一变（自己刚写完、或别处改了配置）就回到干净的那份。
-      const liveBaseUrl = configuration === null ? undefined : configuration.baseUrl;
-      const liveSync = configuration === null ? undefined : configuration.sync;
-      React.useEffect(() => {
-        if (liveBaseUrl === undefined || liveSync === undefined) return;
-        setDraft({ baseUrl: liveBaseUrl, sync: liveSync });
-      }, [liveBaseUrl, liveSync]);
+      const [revision, setRevision] = React.useState(0);
 
       React.useEffect(() => {
         let cancelled = false;
-        panel.status().then(
+        props.panel.status().then(
           (next) => {
             if (!cancelled) setReport(next);
           },
@@ -649,9 +773,9 @@ window.__ModuleLoader__.load({
         return () => {
           cancelled = true;
         };
-      }, [reportRevision]);
+      }, [revision]);
 
-      /** 跑一个动作：期间禁用按钮，结束后把结果贴出来并按需重读。 */
+      /** 跑一个动作：期间禁用控件，结束后把结果贴出来并按需重读报告。 */
       const run = (key, action, after) => {
         setBusy(key);
         setBanner(null);
@@ -663,121 +787,64 @@ window.__ModuleLoader__.load({
             setBanner({ ok: false, text: textOf(error) });
           } finally {
             setBusy('');
-            after();
+            if (after !== undefined) after();
           }
         })();
       };
 
       /**
-       * 写配置里的一项，然后等一轮重新发现落地再把结果贴出来。
+       * 保存设置里那两个字段，然后等一轮重新发现落地再说话。
        *
-       * 写入走页主递来的 `form.mutate`：它自己带版本号校验（期间别处改过就拒绝，而不是覆盖
-       * 别人的改动）、自己把结果折回那份快照，因此这里既不发版本号也不重读配置——重渲染时
-       * 快照已经是新的了。写入本身只改设置文档，报告里的路由与模型事实来自最近一次刷新，
-       * 因此写完必须等一轮：不等它，界面就会「保存了却没变」（地址换了，模型清单还是旧的那份）。
-       * 配置变更自己也会唤起同一轮刷新（Loader 的 `loader/volatile-update`），运行时的单飞判定
-       * 按配置版本合并，所以这里通常是并进那一轮，而不是另跑一轮。
-       *
-       * @param {string} okKey - 成功那句的前半句。
-       * @param {object[]} ops - 路径操作（`set` / `unset`）。
+       * 写入走官方表单模型的 `save()`：它自己带 `revision` 围栏（期间别处改过就拒绝，而不是覆盖
+       * 别人的改动）、自己从宿主接受的那份重新播种，因此这里写完不重读设置——投影会自己变新。
+       * 报告里的路由与模型事实来自最近一次刷新，写完必须等一轮：不等它，界面就会「保存了却没变」
+       * （地址换了，模型清单还是旧的那份）。设置变更自己也会唤起同一轮刷新，运行时的单飞判定按
+       * 配置版本合并，因此这里通常是并进那一轮，而不是另跑一轮。
        */
-      const writeConfig = (okKey, ops) =>
-        run('save', async () => {
-          const accepted = await form.mutate(ops, section.revision);
-          if (!accepted) return { ok: false, summary: t('configRefused') };
-          const round = await panel.refresh();
-          // 写入成功了，但重新发现可能失败——两件事不能混成一句话说，因此后半句照抄那一轮的说法。
-          return { ok: round.ok, summary: t(okKey, { result: round.summary }) };
-        }, () => setReportRevision((value) => value + 1));
+      const saveSettings = () => run('save', async () => {
+        await props.save();
+        if (props.failed()) return { ok: false, summary: t('configRefused') };
+        const round = await props.panel.refresh();
+        // 写入成功了，但重新发现可能失败——两件事不能混成一句话说，因此后半句照抄那一轮的说法。
+        return { ok: round.ok, summary: t('savedResult', { result: round.summary }) };
+      }, () => setRevision((value) => value + 1));
 
-      /**
-       * 一个模型此刻在表单里长什么样。
-       *
-       * 取的都是**生效值**，这样输入框里显示的永远是此刻真正在用的东西；提交时逐字段与这份
-       * 快照比较，只有改动过的字段才会被发出去（没提到的字段保持原样，因此界面不编辑的
-       * `reasoningEfforts` 之类不会被顺手抹掉）。
-       *
-       * @param {object} model - 报告里的一个模型。
-       * @returns {object} 八个字段的初值。
-       */
-      const initialOf = (model) => ({
-        name: model.name,
-        alias: model.alias ?? '',
-        // 容量回写成能原样读回来的最短写法（`1M`、`384K`），与官方「模型」页同一套词汇。
-        contextWindow: formatCapacity(model.contextWindow),
-        maxTokens: formatCapacity(model.maxTokens),
-        text: model.input.includes('text'),
-        image: model.input.includes('image'),
-        // 「跟随发现」= 用户层里没写过这个键。写过了，生效值就是用户写的那个值。
-        reasoning: declared(model, 'thinking') ? (model.reasoning ? 'on' : 'off') : 'auto',
-        api: declared(model, 'api') ? (model.protocol ?? '') : '',
-      });
-
-      /**
-       * 用户层里写没写过这个键——这就是「覆盖」的判据。
-       *
-       * 报告里的 `overrideKeys` 直接来自用户层，因此不必拿生效值和默认值比：比出来的答案既会漏
-       * （写了与默认相同的值），也会多（schema 补出来的空值）。
-       *
-       * @param {object} model - 报告里的一个模型。
-       * @param {string} key - 字段名。
-       * @returns {boolean} 写过没有。
-       */
-      const declared = (model, key) => (model.overrideKeys ?? []).includes(key);
-
-      /** 覆盖键在界面上的名字；界面不编辑的键（`reasoningEfforts`）另给一个词条。 */
-      const OVERRIDE_NAMES = {
-        name: 'editName',
-        api: 'editApi',
-        contextWindow: 'editContextWindow',
-        maxTokens: 'editMaxTokens',
-        input: 'editInput',
-        thinking: 'editReasoning',
-        alias: 'editAlias',
-        reasoningEfforts: 'keyReasoningEfforts',
-      };
-
-      /**
-       * 把覆盖键翻成给人看的一句话。
-       *
-       * 只挂一句「已覆盖」，用户就得自己猜是哪一项；界面不编辑的键更是猜不出来。认不出的键照原样
-       * 写出键名——那多半是宿主新加的字段，写出来至少能在设置文件里搜到。
-       *
-       * @param {object} model - 报告里的一个模型。
-       * @returns {string} 逗号分隔的字段名。
-       */
-      const overrideKeyNames = (model) => (model.overrideKeys ?? [])
-        .map((key) => (OVERRIDE_NAMES[key] === undefined ? key : t(OVERRIDE_NAMES[key])))
-        .join(t('listSeparator'));
-
-      /**
-       * 一个模型的当前草稿；没改过就是生效值本身。
-       */
+      /** 一个模型此刻的草稿；没改过就是生效值本身。 */
       const draftOf = (model) => drafts[model.id] ?? initialOf(model);
 
-      /** 改一个字段；用函数式更新，同一个 tick 里连着改几个字段也不会互相覆盖。 */
-      const edit = (model, field, value) => {
+      /** 改这一行的几个字段；用函数式更新，同一个 tick 里连着改几项也不会互相覆盖。 */
+      const stage = (model, changes) => {
         setDrafts((current) => ({
           ...current,
-          [model.id]: { ...(current[model.id] ?? initialOf(model)), [field]: value },
+          [model.id]: { ...(current[model.id] ?? initialOf(model)), ...changes },
         }));
       };
 
-      /** 改动的字段 → 补丁；没变的不进补丁，非法值只报字段名。 */
+      /**
+       * 改动的字段 → 补丁；没变的不进补丁，非法值只报字段名。
+       *
+       * 补丁里的空值就是「这一项不覆盖」：文本字段用空串或 `null`（别名用空串），模态用 `null`，
+       * 推理用 `null` 表示回落到发现。
+       */
       const patchOf = (draft, initial) => {
         const patch = {};
         const bad = [];
 
-        if (draft.name !== initial.name) patch.name = draft.name.trim() === '' ? null : draft.name.trim();
-        if (draft.alias !== initial.alias) patch.alias = draft.alias.trim();
+        // 前后空白不算改动：只把 `  名字  ` 的空格去掉不算换过值，否则会凭空写下一笔覆盖。
+        const name = draft.name.trim();
+        if (name !== initial.name) patch.name = name === '' ? null : name;
+
+        const alias = draft.alias.trim();
+        if (alias !== initial.alias) patch.alias = alias;
 
         for (const [field, label] of [['contextWindow', 'editContextWindow'], ['maxTokens', 'editMaxTokens']]) {
           if (draft[field] === initial[field]) continue;
           // 容量认 `1M`、`100K` 这种写法（官方「模型」页同一套）；空串是「这一项不覆盖」。
           const value = parseCapacity(draft[field]);
-          if (value === undefined) patch[field] = null;
-          else if (!Number.isInteger(value) || value < 1) bad.push(t(label));
-          else patch[field] = value;
+          if (capacityBad(draft[field])) bad.push(t(label));
+          else if (value === undefined) patch[field] = null;
+          // 换一种写法写同一个数（`100k` 对 `100K`）不是改动：写下去只会多一笔没人改过的覆盖。
+          else if (value !== parseCapacity(initial[field])) patch[field] = value;
         }
 
         if (draft.api !== initial.api) patch.api = draft.api === '' ? null : draft.api;
@@ -793,29 +860,18 @@ window.__ModuleLoader__.load({
       };
 
       /**
-       * 保存这一行的改动。
+       * 容量那一项的本地判定，输入框与保存走同一条规矩。
        *
-       * 一行一个保存按钮，写下去的就只有这一行——多行同时开着也不会互相牵连，版本校验也只
-       * 管这一次写入。保存成功后收起面板：这一行的覆盖标签与事实都会跟着变，收起才看得见。
-       *
-       * @param {object} model - 报告里的一个模型。
+       * 空串不是非法，是「这一项不覆盖」；其余必须是不小于 1 的整数——面板那一层只收这种值，
+       * 放过去只会换来一次没必要的往返与一句后端的话。`1G`、`1.5`、`0` 都在这里被挡下。
        */
-      const submit = (model) => {
-        const { patch, bad } = patchOf(draftOf(model), initialOf(model));
-        if (bad.length > 0) {
-          setBanner({ ok: false, text: t('invalidNumber', { field: bad.join('、') }) });
-          return;
-        }
-        if (Object.keys(patch).length === 0) {
-          setBanner({ ok: true, text: t('noChanges') });
-          return;
-        }
-        run('edit', () => panel.edit(model.id, patch), () => {
-          dropDraft(model.id);
-          close(model.id);
-          setReportRevision((value) => value + 1);
-        });
+      const capacityBad = (text) => {
+        const value = parseCapacity(text);
+        return value !== undefined && (!Number.isInteger(value) || value < 1);
       };
+
+      /** 这一行有没有还没写下去的改动。 */
+      const dirtyOf = (model) => Object.keys(patchOf(draftOf(model), initialOf(model)).patch).length > 0;
 
       /** 丢掉一行的草稿：输入框回到生效值。 */
       const dropDraft = (id) => {
@@ -825,13 +881,38 @@ window.__ModuleLoader__.load({
         });
       };
 
-      /** 收起一行（草稿已经丢掉或写入成功）。 */
-      const close = (id) => setOpened((state) => ({ ...state, [id]: false }));
+      /** 展开或收起一行；收起不动草稿——收起来不等于放弃，标签会写着还有未保存的改动。 */
+      const toggleRow = (model) => setOpened((current) => ({ ...current, [model.id]: current[model.id] !== true }));
+
+      /**
+       * 保存这一行的改动。
+       *
+       * 一行一个保存按钮，写下去的就只有这一行：多行同时开着也不会互相牵连，宿主那边的版本校验
+       * 也只管这一次写入。成功后收起面板——这一行的覆盖标签与事实都会跟着变，收起才看得见。
+       *
+       * @param {object} model - 报告里的一个模型。
+       */
+      const submitRow = (model) => {
+        const { patch, bad } = patchOf(draftOf(model), initialOf(model));
+        if (bad.length > 0) {
+          setBanner({ ok: false, text: t('invalidNumber', { field: bad.join(t('listSeparator')) }) });
+          return;
+        }
+        if (Object.keys(patch).length === 0) {
+          setBanner({ ok: true, text: t('noChanges') });
+          return;
+        }
+        run('edit', () => props.panel.writeModel(model.id, patch), () => {
+          dropDraft(model.id);
+          setOpened((current) => ({ ...current, [model.id]: false }));
+          setRevision((value) => value + 1);
+        });
+      };
 
       /** 取消这一行的编辑：草稿丢掉、面板收起，什么都不写。 */
-      const cancel = (model) => {
+      const cancelRow = (model) => {
         dropDraft(model.id);
-        close(model.id);
+        setOpened((current) => ({ ...current, [model.id]: false }));
         setBanner(null);
       };
 
@@ -840,7 +921,7 @@ window.__ModuleLoader__.load({
        *
        * 不是整条删掉：`aperture.models` 里那条可能还有界面根本不编辑的键（例如
        * `reasoningEfforts`），整条删掉等于把用户手写的东西一起扔掉。因此这里只把已知被覆盖的
-       * 字段逐个置空——与保存走同一个端点，只是补丁全是 `null`。万一报告的覆盖里出现了界面
+       * 字段逐个置空——与保存走同一个端点，只是补丁全是「不覆盖」。万一报告的覆盖里出现了界面
        * 不认识的键（宿主以后加了字段），整条删掉是唯一能让这一行真的回落到发现值的做法。
        *
        * @param {object} model - 报告里的一个模型。
@@ -849,50 +930,22 @@ window.__ModuleLoader__.load({
         const keys = model.overrideKeys ?? [];
         const known = keys.filter((key) => EDITABLE_KEYS.includes(key));
         const unknown = keys.filter((key) => !EDITABLE_KEYS.includes(key));
-        // 别名用空串表示「不要再覆盖」；其余字段 `null` 就是「删掉这一项」。
+        // 别名用空串表示「不要再覆盖」；其余字段 `null` 就是「不覆盖这一项」。
         const patch = Object.fromEntries(known.map((key) => [key, key === 'alias' ? '' : null]));
-        // 有界面不认识的键（例如 `reasoningEfforts`）时只能整条撤：只清认得的那几项，这一行在
-        // 报告里仍然是「已覆盖」，那颗标签会按不下去。一条键都没有时同理，没什么可逐个清的。
         const payload = unknown.length > 0 || known.length === 0 ? null : patch;
-        run('revert', () => panel.edit(model.id, payload), () => {
+        run('revert', () => props.panel.writeModel(model.id, payload), () => {
           dropDraft(model.id);
-          close(model.id);
-          setReportRevision((value) => value + 1);
+          setOpened((current) => ({ ...current, [model.id]: false }));
+          setRevision((value) => value + 1);
         });
       };
 
-      // 设置快照读不到时（页主没递来 `form`，或这一行还没进客户端镜像）表单那半块只剩一句说明，
-      // 报告照常显示——报告才是这一页每次都有的东西，因此这里不等设置。
-      const hasConfig = configuration !== null && draft !== null;
+      const refreshReport = () => run('refresh', () => props.panel.refresh(), () => setRevision((value) => value + 1));
 
-      if (!hasConfig && report === null) {
-        // 两样都还没有：报错优先，其次区分「读不到设置」与「正在读」——前者不是暂时的，也就是说
-        // 这句话得说清是这一页说明不了配置，而不是让用户一直等下去。
-        const text =
-          banner !== null
-            ? banner.text
-            : section !== undefined && section.status === 'unavailable'
-              ? t('configUnavailable')
-              : t('loading');
-        return h('div', { [STYLE_MARK]: '', 'aria-busy': 'true' }, h('p', { className: 'dap-subtitle' }, text));
-      }
-
-      // 「立即刷新」只需要没在忙：它不改设置，因此只读文档也该按得动。
-      const refreshDisabled = busy !== '' || (hasConfig && !configuration.writable);
-      const disabled = busy !== '' || !hasConfig || !configuration.writable;
-      const dirty = hasConfig && (draft.baseUrl !== configuration.baseUrl || draft.sync !== configuration.sync);
-      // 「休眠」看的是有没有地址：有快照时看草稿（用户正在输入的那个），没有就看报告里生效的那个。
-      const dormant = hasConfig ? draft.baseUrl.trim().length === 0 : report !== null && report.place.length === 0;
-      // 卡头那颗点说的是**整张卡**：地址能不能用，以及最近一次刷新成不成功。两件事现在都在这张
-      // 卡里，因此哪种出问题都让它变红，标题点名是哪一种——折起来时它是唯一的信号，而颜色不是
-      // 唯一的说法（`title` 与 `aria-label` 写着同一句话）。
-      const refreshFailed = report !== null && report.refresh !== undefined && !report.refresh.ok;
-      const refreshed = report !== null && report.refresh !== undefined;
-      const headState = dormant || refreshFailed ? 'bad' : 'ok';
-      // 三种「没事」的说法不一样：还没刷新过就只说地址，刷新过了就把两件事一起说清。
-      const headTitle = dormant
-        ? t('dotMissing')
-        : refreshFailed ? t('dotRefreshFailed') : refreshed ? t('dotReady') : t('dotConfigured');
+      /** 来源那句：报告里的事实都有出处，界面按语言渲染它。 */
+      const sourceOf = (fact) => t('factSource', {
+        source: SOURCE_KEYS[fact] === undefined ? fact : t(SOURCE_KEYS[fact]),
+      });
 
       /** 「标签 + 值」的一行；没有标签时就是一个整行的值（错误什么的）。 */
       const fact = (key, label, value) => h(
@@ -902,12 +955,232 @@ window.__ModuleLoader__.load({
         h('dd', null, value),
       );
 
-      /** 状态段：最近一次刷新决定了什么。 */
-      const statusFacts = (current) => {
-        const refresh = current.refresh;
-        if (refresh === undefined) {
-          return h('p', { className: 'dap-hint' }, t('neverRefreshed'));
+      /** 一个模型那几项生效的事实，摊成一行。 */
+      const modelFacts = (model) => {
+        const facts = [model.route === undefined ? t('unservedTag') : model.route];
+        if (model.protocol !== undefined) facts.push(model.protocol);
+        if (model.contextWindow !== undefined) {
+          facts.push(t('factContextWindow', { count: formatCount(model.contextWindow) }));
         }
+        if (model.maxTokens !== undefined) facts.push(t('factMaxTokens', { count: formatCount(model.maxTokens) }));
+        facts.push(model.input.length === 0
+          ? t('modalityNone')
+          : model.input.map((item) => t(item === 'image' ? 'modalityImage' : 'modalityText')).join('+'));
+        facts.push(model.reasoning ? t('reasoningOn') : t('reasoningOff'));
+        if (model.alias !== undefined && model.alias !== '') facts.push(t('factAlias', { alias: model.alias }));
+        return facts.join(' · ');
+      };
+
+      /** 把覆盖键翻成给人看的一句话：只挂一句「已覆盖」，用户得自己猜是哪一项。 */
+      const overrideKeyNames = (model) => (model.overrideKeys ?? [])
+        .map((key) => (OVERRIDE_NAMES[key] === undefined ? key : t(OVERRIDE_NAMES[key])))
+        .join(t('listSeparator'));
+
+      /**
+       * 一个文本类覆盖字段。
+       *
+       * 官方 `SettingsValueField` 的语义与这里正好对得上：「已覆盖」= 用户层里有这个键（报告给的
+       * `overrideKeys`），「恢复默认」= 把草稿改回「不覆盖」的那个值，非法草稿只标出来、由保存
+       * 拦住。`hint` 里挂的是这一项事实的来源，所以输入框下面那句总是说得出「现在这个值是谁定的」。
+       */
+      const textField = (model, key, copy) => h(SettingsValueField, {
+        id: `dap-${model.id}-${key}`,
+        label: t(copy.label),
+        hint: `${t(copy.hint)} ${sourceOf(copy.source(model))}`,
+        ...(copy.placeholder === undefined ? {} : { placeholder: copy.placeholder(model) }),
+        ...(copy.numeric === true ? { numeric: true } : {}),
+        text: draftOf(model)[key],
+        overridden: declaredIn(model, key),
+        // 只有容量那两项用 `1M`/`384K` 的词汇，因此也只有它们会「读不出来」；文本字段写什么都算数。
+        invalid: copy.numeric === true && capacityBad(draftOf(model)[key]),
+        overriddenLabel: t('overridden'),
+        resetLabel: t('resetField'),
+        invalidLabel: t('invalidField'),
+        disabled: busy !== '',
+        onEdit: (text) => stage(model, { [key]: text }),
+        onReset: () => stage(model, { [key]: copy.cleared }),
+      });
+
+      /** 一行模型的覆盖编辑器。 */
+      const editor = (model) => {
+        const draft = draftOf(model);
+        const overriddenKeys = model.overrideKeys ?? [];
+        return h(
+          'div',
+          { className: 'dap-editor' },
+          h(
+            'div',
+            { className: 'dap-editorGrid' },
+            textField(model, 'name', {
+              label: 'editName',
+              hint: 'editNameHint',
+              source: (item) => item.provenance.name,
+              cleared: '',
+            }),
+            textField(model, 'api', {
+              label: 'editApi',
+              hint: 'editApiHint',
+              // 协议没有单独一项来源：写过就是配置，没写过就是从通告的端点推导出来的。
+              source: (item) => (declaredIn(item, 'api') ? 'config' : 'aperture'),
+              cleared: '',
+              placeholder: (item) => item.protocol ?? '',
+            }),
+            textField(model, 'contextWindow', {
+              label: 'editContextWindow',
+              hint: 'editCapacityHint',
+              source: (item) => item.provenance.limits,
+              cleared: '',
+              numeric: true,
+            }),
+            textField(model, 'maxTokens', {
+              label: 'editMaxTokens',
+              hint: 'editCapacityHint',
+              source: (item) => item.provenance.limits,
+              cleared: '',
+              numeric: true,
+            }),
+            textField(model, 'alias', {
+              label: 'editAlias',
+              hint: 'editAliasHint',
+              source: () => 'config',
+              cleared: '',
+            }),
+          ),
+          h(
+            'div',
+            { className: 'dap-inline' },
+            h(
+              'div',
+              { className: 'dap-control' },
+              h('span', { className: 'dap-controlLabel' }, t('editInput')),
+              h(Checkbox, {
+                checked: draft.text,
+                onChange: (next) => stage(model, { text: next }),
+                label: t('modalityText'),
+                disabled: busy !== '',
+              }),
+              h(Checkbox, {
+                checked: draft.image,
+                onChange: (next) => stage(model, { image: next }),
+                label: t('modalityImage'),
+                disabled: busy !== '',
+              }),
+              overriddenKeys.includes('input')
+                ? h('span', { className: 'dap-badges' }, h(Tag, { tone: 'info' }, t('overridden')))
+                : null,
+              h('span', { className: 'dap-hint' }, `${t('editInputHint')} ${sourceOf(model.provenance.input)}`),
+            ),
+            h(
+              'div',
+              { className: 'dap-control' },
+              h('span', { className: 'dap-controlLabel' }, t('editReasoning')),
+              h(SegmentedControl, {
+                id: `dap-${model.id}-reasoning`,
+                label: t('editReasoning'),
+                value: draft.reasoning,
+                options: [
+                  { value: 'auto', label: t('reasoningFollow') },
+                  { value: 'on', label: t('reasoningOn') },
+                  { value: 'off', label: t('reasoningOff') },
+                ],
+                onChange: (next) => stage(model, { reasoning: next }),
+                disabled: busy !== '',
+              }),
+              h(
+                'span',
+                { className: 'dap-hint' },
+                `${t('editReasoningHint')} ${sourceOf(model.provenance.reasoning)}`,
+              ),
+            ),
+          ),
+          model.endpoints.length === 0
+            ? null
+            : h(
+                'p',
+                { className: 'dap-mono' },
+                `${t('factEndpoints')}\n${model.endpoints.join('\n')}`,
+              ),
+          h(
+            'div',
+            { className: 'dap-actions' },
+            h(Button, {
+              variant: 'primary',
+              size: 'sm',
+              onClick: () => submitRow(model),
+              disabled: busy !== '',
+            }, busy === 'edit' ? t('saving') : t('saveRow')),
+            overriddenKeys.length === 0
+              ? null
+              : h(Button, {
+                  variant: 'outline',
+                  size: 'sm',
+                  onClick: () => clearOverrides(model),
+                  disabled: busy !== '',
+                }, t('clearOverrides')),
+            h(Button, {
+              variant: 'ghost',
+              size: 'sm',
+              onClick: () => cancelRow(model),
+              disabled: busy !== '',
+            }, t('cancelRow')),
+          ),
+        );
+      };
+
+      /** 一行模型：折起来是事实，展开是覆盖编辑器。 */
+      const modelRow = (model) => h(
+        'li',
+        { key: model.id, className: 'dap-row' },
+        h(
+          DisclosureRow,
+          {
+            icon: h(StateDot, { state: model.route === undefined ? 'warning' : 'idle', size: 16 }),
+            title: model.name,
+            open: opened[model.id] === true,
+            expandable: true,
+            expandOnRowClick: true,
+            onToggle: () => toggleRow(model),
+            collapsedContent: h(
+              'div',
+              { className: 'dap-rowFacts' },
+              h('span', null, modelFacts(model)),
+              (model.overrideKeys ?? []).length === 0
+                ? null
+                : h(Tag, { tone: 'info' }, t('overriddenKeys', { keys: overrideKeyNames(model) })),
+              dirtyOf(model) ? h(Tag, { tone: 'warning' }, t('dirtyTag')) : null,
+            ),
+          },
+          opened[model.id] === true ? editor(model) : null,
+        ),
+      );
+
+      /** 已发布路由：写入与否来自最近一次刷新的写入结果。 */
+      const writtenRoutes = report === null || report.refresh === undefined || report.refresh.sync === undefined
+        ? undefined
+        : report.refresh.sync.routes;
+
+      const routeRow = (route) => h(
+        'li',
+        { key: route.provider, className: 'dap-route' },
+        h(
+          'div',
+          { className: 'dap-routeHead' },
+          h('span', null, route.provider),
+          route.api === undefined ? null : h(Tag, { tone: 'outline' }, route.api),
+          h(Tag, { tone: 'quiet' }, t('routeModels', { count: route.models })),
+          writtenRoutes === undefined
+            ? null
+            : h(Tag, { tone: writtenRoutes.includes(route.provider) ? 'success' : 'neutral' }, t(
+              writtenRoutes.includes(route.provider) ? 'routePublished' : 'routeNotPublished',
+            )),
+        ),
+        h('p', { className: 'dap-mono' }, route.baseURL ?? t('routeNoBaseUrl')),
+      );
+
+      /** 最近一次刷新决定了什么。 */
+      const reportFacts = (current) => {
+        const refresh = current.refresh;
+        if (refresh === undefined) return h('p', { className: 'dap-hint' }, t('neverRefreshed'));
         return h(
           'dl',
           { className: 'dap-facts' },
@@ -934,707 +1207,129 @@ window.__ModuleLoader__.load({
             : fact('sync', t('factSync'), refresh.sync.applied
               ? t('syncApplied', {
                 count: refresh.sync.ops,
-                routes: refresh.sync.routes.join(', ') || t('syncOnlyRemoval'),
+                routes: refresh.sync.routes.join(t('listSeparator')) || t('syncOnlyRemoval'),
               })
               : t('syncSkipped', { reason: refresh.sync.reason ?? '—' })),
         );
       };
 
-      /** 一个模型那几项生效的事实。 */
-      const modelFacts = (model) => {
-        const facts = [];
-        if (model.contextWindow !== undefined) {
-          facts.push(t('factContextWindow', { count: formatCount(model.contextWindow) }));
-        }
-        if (model.maxTokens !== undefined) facts.push(t('factMaxTokens', { count: formatCount(model.maxTokens) }));
-        facts.push(model.input.length === 0
-          ? t('modalityNone')
-          : model.input.map((item) => t(item === 'image' ? 'modalityImage' : 'modalityText')).join('+'));
-        facts.push(model.reasoning ? t('factReasoningOn') : t('factReasoningOff'));
-        if (model.alias !== undefined && model.alias !== '') facts.push(t('factAlias', { alias: model.alias }));
-        return facts.join(' · ');
-      };
-
-      /** 披露箭头；展开时转 90 度（官方那份也是自己画的内联 SVG）。 */
-      const chevron = (open) => h(
-        'span',
-        { className: 'dap-chevron', 'data-open': open ? 'true' : 'false' },
-        h(
-          'svg',
-          { width: '12', height: '12', viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true' },
-          h('path', {
-            d: 'M6 3.5L10.5 8L6 12.5',
-            stroke: 'currentColor',
-            strokeWidth: '1.5',
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-          }),
-        ),
-      );
-
-      /**
-       * 身份里的状态点。
-       *
-       * 官方拿这个 8px 的圆点说「这个提供方的凭据配好了没有」；这里沿用同一个记号，实例卡上
-       * 说「地址可用、上一轮刷新没失败」，路由卡上说「这一轮有没有把它写进 `llm-pi-ai`」。颜色
-       * 不是唯一的说法：`title` 与 `aria-label` 里写着同一句话，悬停与读屏都拿得到。
-       *
-       * @param {'ok'|'bad'} state - 圆点的状态。
-       * @param {string} label - 与圆点同义的文案。
-       * @returns {object} 一个圆点元素。
-       */
-      const dot = (state, label) => h('span', {
-        className: 'dap-dot',
-        'data-state': state,
-        role: 'img',
-        title: label,
-        'aria-label': label,
-      });
-
-      /**
-       * 两张段卡（实例、最近一次刷新）默认展开，折叠状态按卡记——官方那边也是 `?? true`：只有
-       * 用户明确折过才收起，重渲染（每次刷新都会重渲染）不会把它弹回来。
-       *
-       * @param {string} key - 卡片键。
-       * @returns {boolean} 这张卡现在是不是展开的。
-       */
-      const sectionOpen = (key) => collapsed[key] !== true;
-
-      /**
-       * 卡片头：左边是身份（名字 + 标签 + 状态点），右边是这一张卡自己的动作——官方 `rowHead`。
-       *
-       * 给了 `collapse` 时，身份那一段整体变成一个折叠按钮：箭头 + 身份。官方分组头就是这个形状
-       * （`groupToggle` 里放箭头与标题），动作必须留在按钮**外面**，因为按钮里不能再嵌按钮。
-       *
-       * @param {object[]} identity - 身份那几个元素。
-       * @param {object[]} [actions] - 右对齐的动作按钮；没有动作时整块不出现。
-       * @param {{key: string, open: boolean}} [collapse] - 折叠开关；不给就是一张折不动的卡。
-       * @returns {object} 卡片头。
-       */
-      const cardHead = (identity, actions, collapse) => h(
-        'div',
-        { className: 'dap-card-head' },
-        collapse === undefined
-          ? h('span', { className: 'dap-identity' }, identity)
-          : h(
-            'button',
-            {
-              type: 'button',
-              id: `dap-card-${collapse.key}-toggle`,
-              className: 'dap-card-toggle',
-              'aria-expanded': collapse.open ? 'true' : 'false',
-              'aria-controls': `dap-body-${collapse.key}`,
-              onClick: () => setCollapsed((current) => ({
-                ...current,
-                [collapse.key]: current[collapse.key] !== true,
-              })),
-            },
-            h('span', { className: 'dap-identity' }, [chevron(collapse.open), ...identity]),
-          ),
-        actions === undefined ? null : h('span', { className: 'dap-row-actions' }, actions),
-      );
-
-      /**
-       * 一个参数格子：标签在上、控件在下（官方的 `modelAdvanced` 栅格就是这样）。
-       *
-       * @param {string} key - React key 与控件 id。
-       * @param {string} label - 12px 的小标签。
-       * @param {object} control - 控件元素。
-       * @param {string} [note] - 生效值一类的补充说明。
-       * @param {object} [flags] - `wide`（横跨整行）与 `emphasis`（官方 fieldLabel 的
-       *   12px/500 label-secondary，模型那些格子用的是更轻的 modelFieldLabel）。
-       * @param {object} [badges] - 跟在标签右边的那对记号（见 {@link overrideBadges}）。
-       * @returns {object} 一个栅格单元。
-       */
-      const field = (key, label, control, note, flags = {}, badges) => h(
-        'div',
-        {
-          className: 'dap-field',
-          key,
-          'data-wide': flags.wide === true ? 'true' : undefined,
-          'data-emphasis': flags.emphasis === true ? 'true' : undefined,
-        },
-        badges === undefined
-          ? h('label', { htmlFor: key }, label)
-          : h(
-            'div',
-            { className: 'dap-field-head' },
-            h('label', { htmlFor: key }, label),
-            badges,
-          ),
-        control,
-        note === undefined ? null : h('span', { className: 'dap-field-note' }, note),
-      );
-
-      /**
-       * 「已覆盖」那对记号：一枚标签加一个「恢复默认」，紧挨着它描述的那个字段的标签——官方
-       * `ValueField` 的 `badges` 就在这个位置。搁在卡头上时它是一句没有主语的「已覆盖」，而它离
-       * 要撤销的那一项越远，越像在说别的东西。
-       *
-       * @param {Function} onReset - 按下「恢复默认」之后做什么。
-       * @returns {object} 标签与按钮。
-       */
-      const overrideBadges = (onReset) => h('span', { className: 'dap-field-badges' }, [
-        h('span', { className: 'dap-tag', title: t('overriddenHint') }, t('overridden')),
-        h('button', {
-          type: 'button',
-          className: 'dap-reset',
-          title: t('resetHint'),
-          disabled,
-          onClick: onReset,
-        }, t('reset')),
-      ]);
-
-      /** 一个 `<select>` 的选项。 */
-      const option = (value, label) => h('option', { value, key: value === '' ? 'auto' : value }, label);
-
-      /**
-       * 一个字段旁边的注脚：当前生效的值，以及它从哪里来。
-       *
-       * 来源跟着**它描述的那个字段**走：「容量 1,048,576 · 来自 aperture」和输入框摆在一起
-       * 才读得懂。把四项来源串成一句话挂在行尾，用户得自己把每一项对回去，而一张十一行模型
-       * 的清单每行再挂一串，正文就被诊断信息盖住了。
-       *
-       * @param {string} value - 当前生效的值。
-       * @param {string} [source] - 来源代号；没有来源时（例如协议是推导出来的）只说值。
-       * @returns {string} 注脚。
-       */
-      const inEffect = (value, source) => source === undefined
-        ? t('effectiveHint', { value })
-        : t('effectiveSource', { value, source: t(SOURCE_KEYS[source] ?? source) });
-
-      /** 编辑面板里的一个文本输入框。`capacity` 那一格认 `1M` / `100K` 的写法。 */
-      const textField = (model, name, label, options = {}) => {
-        const id = `dap-model-${model.id}-${name}`;
-        return field(
-          id,
-          label,
-          h('input', {
-            id,
-            className: 'dap-input',
-            type: 'text',
-            inputMode: options.capacity === true ? 'numeric' : undefined,
-            spellCheck: false,
-            autoComplete: 'off',
-            placeholder: options.placeholder,
-            value: draftOf(model)[name],
-            disabled: !configuration.writable,
-            onChange: (event) => edit(model, name, event.target.value),
-            // 失焦时把写法定形：`100k` 变回 `100K`、`1000000` 变回 `1M`。既让人看见自己那套写法
-            // 被认下了，也让「只是换个写法」不至于变成一次没必要的覆盖——值没变却写进用户层，
-            // 那一行就会凭空多一颗「已覆盖」。读不出来的写法原样留着，好让人看见自己写了什么。
-            onBlur: options.capacity === true
-              ? () => {
-                const value = parseCapacity(draftOf(model)[name]);
-                if (value !== undefined && !Number.isNaN(value)) edit(model, name, formatCapacity(value));
-              }
-              : undefined,
-          }),
-          options.note,
-        );
-      };
-
-      /**
-       * 一个模型的参数面：展开后才出现的全部字段，以及这一行的三个动作。
-       *
-       * 它落在**路由卡那块浅色编辑区里面**，所以自己不铺底——只切一条 l2 细线跟上方的模型行
-       * 分开（官方 `modelAdvanced` 就是这么处理的）。里面仍是官方那套：`minmax(160px, 1fr)` 的
-       * 参数栅格、12px 的小标签、右对齐的动作行（危险动作在左、主按钮在右）。
-       *
-       * @param {object} model - 报告里的一个模型。
-       * @returns {object} 参数面。
-       */
-      const advanced = (model) => {
-        const current = draftOf(model);
-        const overridden = (model.overrideKeys ?? []).length > 0;
-        const { patch } = patchOf(current, initialOf(model));
-        const count = (value) => (value === undefined ? '—' : formatCount(value));
-        const modalities = model.input.length === 0
-          ? t('modalityNone')
-          : model.input.map((item) => t(item === 'image' ? 'modalityImage' : 'modalityText')).join('+');
-        const toggle = (name, id) => h(
-          'label',
-          { className: 'dap-check', htmlFor: id },
-          h('input', {
-            id,
-            type: 'checkbox',
-            checked: current[name],
-            disabled: !configuration.writable,
-            onChange: (event) => edit(model, name, event.target.checked),
-          }),
-          t(name === 'text' ? 'modalityText' : 'modalityImage'),
-        );
-
-        return h(
-          'div',
-          { className: 'dap-advanced' },
-          h(
-            'div',
-            { className: 'dap-fields' },
-            textField(model, 'name', t('editName'), {
-              placeholder: model.name,
-              // 输入框里显示的就是这个值，注脚只要说它从哪儿来。
-              note: t('sourceNote', { source: t(SOURCE_KEYS[model.provenance.name] ?? model.provenance.name) }),
-            }),
-            textField(model, 'alias', t('editAlias'), { placeholder: t('noAlias') }),
-            textField(model, 'contextWindow', t('editContextWindow'), {
-              capacity: true,
-              note: inEffect(count(model.contextWindow), model.provenance.limits),
-            }),
-            textField(model, 'maxTokens', t('editMaxTokens'), {
-              capacity: true,
-              note: inEffect(count(model.maxTokens), model.provenance.limits),
-            }),
-            field(
-              `dap-model-${model.id}-input`,
-              t('editInput'),
-              h(
-                'div',
-                { className: 'dap-row' },
-                toggle('text', `dap-model-${model.id}-text`),
-                toggle('image', `dap-model-${model.id}-image`),
-              ),
-              inEffect(modalities, model.provenance.input),
-            ),
-            field(
-              `dap-model-${model.id}-reasoning`,
-              t('editReasoning'),
-              h(
-                'select',
-                {
-                  id: `dap-model-${model.id}-reasoning`,
-                  className: 'dap-input',
-                  value: current.reasoning,
-                  disabled: !configuration.writable,
-                  onChange: (event) => edit(model, 'reasoning', event.target.value),
-                },
-                option('auto', t('optionAuto')),
-                option('on', t('optionOn')),
-                option('off', t('optionOff')),
-              ),
-              inEffect(model.reasoning ? t('optionOn') : t('optionOff'), model.provenance.reasoning),
-            ),
-            field(
-              `dap-model-${model.id}-api`,
-              t('editApi'),
-              h(
-                'select',
-                {
-                  id: `dap-model-${model.id}-api`,
-                  className: 'dap-input',
-                  value: current.api,
-                  disabled: !configuration.writable,
-                  onChange: (event) => edit(model, 'api', event.target.value),
-                },
-                option('', t('optionAuto')),
-                option('openai-completions', 'openai-completions'),
-                option('anthropic-messages', 'anthropic-messages'),
-              ),
-              // 协议是从通告的端点上推导出来的，没有来源可报，只说当前是哪一种。
-              inEffect(model.protocol ?? '—'),
-            ),
-          ),
-          h('p', { className: 'dap-field-note' }, t('editHint')),
-          model.route === undefined ? h('p', { className: 'dap-field-note' }, t('unservedHint')) : null,
-          h(
-            'div',
-            { className: 'dap-actions', 'data-align': 'end' },
-            overridden
-              ? h('button', {
-                id: `dap-model-${model.id}-revert`,
-                type: 'button',
-                className: 'dap-button',
-                'data-danger': 'true',
-                disabled: disabled,
-                onClick: () => clearOverrides(model),
-              }, busy === 'revert' ? t('saving') : t('reset'))
-              : null,
-            h('button', {
-              id: `dap-model-${model.id}-cancel`,
-              type: 'button',
-              className: 'dap-button',
-              disabled: busy !== '',
-              onClick: () => cancel(model),
-            }, t('cancel')),
-            h('button', {
-              id: `dap-model-${model.id}-save`,
-              type: 'button',
-              className: 'dap-button',
-              'data-primary': 'true',
-              // 没改动就没什么可保存的（官方那张卡片的「应用」也是这样）。
-              disabled: disabled || Object.keys(patch).length === 0,
-              onClick: () => submit(model),
-            }, busy === 'edit' ? t('saving') : t('save')),
-          ),
-        );
-      };
-
-      /**
-       * 一个模型一行（路由编辑区里的一层）：收起时只有 id、标签与生效的事实，点「编辑」才在
-       * 这一行自己下面展开参数。
-       *
-       * 这一行不再自己带状态点：它有没有被服务，外面那张路由卡（或「未服务」那张卡）的卡头
-       * 已经说过了——嵌套本身就把这件事讲清楚了，不必每行重复一遍。
-       */
-      const modelRow = (model) => {
-        const { patch } = patchOf(draftOf(model), initialOf(model));
-        const overridden = (model.overrideKeys ?? []).length > 0;
-        const open = opened[model.id] === true;
-
-        return h(
-          'li',
-          { className: 'dap-model', key: model.id },
-          h(
-            'div',
-            { className: 'dap-model-head' },
-            h(
-              'span',
-              { className: 'dap-identity' },
-              h('code', { className: 'dap-model-id' }, model.id),
-              model.name === model.id ? null : h('span', { className: 'dap-name' }, model.name),
-              // 这一行的标签说的是「这一行整体有覆盖」，因此它撤不掉单个字段：点开这一行，
-              // 每个字段的生效值旁边写着它从哪儿来，底下那颗「恢复默认」才是清掉整行的那颗。
-              // title 里点名是哪几项：界面不编辑的键（`reasoningEfforts`）光看字段看不出来。
-              overridden
-                ? h(
-                  'span',
-                  { className: 'dap-tag', title: t('overriddenKeys', { keys: overrideKeyNames(model) }) },
-                  t('overridden'),
-                )
-                : null,
-              Object.keys(patch).length > 0 ? h('span', { className: 'dap-tag' }, t('pendingTag')) : null,
-            ),
-            h(
-              'span',
-              { className: 'dap-row-actions' },
-              h('button', {
-                id: `dap-model-${model.id}-toggle`,
-                type: 'button',
-                className: 'dap-button',
-                'aria-label': t('edit'),
-                'aria-expanded': open ? 'true' : 'false',
-                disabled: busy !== '',
-                onClick: () => setOpened((state) => ({ ...state, [model.id]: !open })),
-              }, chevron(open), open ? t('advancedHide') : t('edit')),
-            ),
-          ),
-          h('div', { className: 'dap-model-facts' }, modelFacts(model)),
-          model.route === undefined
-            ? h('p', { className: 'dap-model-meta' }, t('unservedEndpoints', {
-              list: model.endpoints.length === 0 ? t('noEndpoints') : model.endpoints.join(', '),
-            }))
-            : null,
-          open ? advanced(model) : null,
-        );
-      };
-
-      /**
-       * 一条路由一张卡：卡头是 `provider · 协议` 加模型数，展开后是浅色面里的模型清单。
-       *
-       * 这就是官方那张 provider 卡的两层——卡头、以及卡里那块浅色面里的模型目录；区别只在
-       * 我们这一层装的是「这条路由解析出来的模型」。卡头上的点说这一轮有没有把它写进
-       * `llm-pi-ai`（同步关掉、失败、或者报告里根本没有同步结果时，就没有什么可说：不画点）。
-       *
-       * @param {string} key - 展开状态的键（路由 id 不会与模型 id 撞车）。
-       * @param {string} name - 卡头身份，`provider` 或「未服务」。
-       * @param {string|undefined} api - 协议；没有就不写。
-       * @param {string} note - 编辑区头上那一行说明。
-       * @param {object} models - 这张卡里的模型。
-       * @param {{state: string, title: string}|undefined} state - 卡头那枚状态点；不知道就
-       *   `undefined`（没有状态可说，不画点）。
-       * @returns {object} 路由卡。
-       */
-      const routeCard = (key, name, api, note, models, state) => {
-        const open = opened[key] === true;
-        return h(
-          'li',
-          { className: 'dap-route', key },
-          h(
-            'div',
-            { className: 'dap-card-head' },
-            h(
-              'span',
-              { className: 'dap-identity' },
-              h('span', { className: 'dap-name' }, name),
-              api === undefined ? null : h('code', { className: 'dap-model-id' }, api),
-              h('span', { className: 'dap-tag' }, t('modelsCount', { count: models.length })),
-              state === undefined ? null : dot(state.state, state.title),
-            ),
-            h(
-              'span',
-              { className: 'dap-row-actions' },
-              h('button', {
-                id: `dap-route-${key}-toggle`,
-                type: 'button',
-                className: 'dap-button',
-                'aria-label': t('edit'),
-                'aria-expanded': open ? 'true' : 'false',
-                disabled: busy !== '',
-                onClick: () => setOpened((state) => ({ ...state, [key]: !open })),
-              }, chevron(open), open ? t('advancedHide') : t('edit')),
-            ),
-          ),
-          open
-            ? h(
-              'div',
-              { className: 'dap-editor' },
-              h('div', { className: 'dap-editor-head' }, h('span', { className: 'dap-editor-route' }, note)),
-              h('ul', { className: 'dap-models' }, models.map(modelRow)),
-            )
-            : null,
-        );
-      };
-
-      /**
-       * 模型清单：先按路由分组，最后是没有任何路由能服务的那些。
-       *
-       * 这一段与官方「模型」页同一副骨架：**页面级的标题 + 一叠可展开的卡片**，模型自己不套
-       * 外卡——官方那页也不是「一个大卡里装小卡」，而是标题下面直接排卡片。标题右边只有官方
-       * 那句「已覆盖几个，其余沿用发现值与清单」；没有官方的「撤销全部覆盖」，因为这里按行改，
-       * 撤销也按行做，一次管一整份清单的动作没有对应场景。
-       *
-       * 每张卡收起时是卡头加一条事实，点「编辑」在**这张卡里**展开那块浅色面（官方那张
-       * DeepSeek 卡也是这个形状）：报告是这个配置页的主要用途，不该被一地输入框淹掉。
-       *
-       * @param {object} current - 报告。
-       * @returns {object} 模型段。
-       */
-      const modelList = (current) => {
-        const overridden = current.models.filter(
-          (model) => (model.overrideKeys ?? []).length > 0,
-        );
-
-        const head = [
-          h(
-            'div',
-            { className: 'dap-row' },
-            h('div', { className: 'dap-title' }, t('modelsHeading')),
-            h('span', { className: 'dap-tag' }, t('modelsCount', { count: current.models.length })),
-          ),
-          h('p', { className: 'dap-hint' }, overridden.length === 0
-            ? t('modelsMetaInherit')
-            : t('modelsMetaOverride', { count: overridden.length })),
-        ];
-
-        if (current.models.length === 0) {
-          return [
-            head,
-            h('p', { className: 'dap-hint' }, current.refresh !== undefined && current.refresh.error !== undefined
-              ? t('modelsError', { error: current.refresh.error })
-              : t('noModels')),
-          ];
-        }
-
-        // 同步结果只在报告里有时才说得出「写没写进 llm-pi-ai」；没有就交给 routeCard 不画点。
-        const sync = current.refresh === undefined ? undefined : current.refresh.sync;
-        const written = sync === undefined ? undefined : sync.routes;
-
-        const cards = [];
-        for (const route of current.routes) {
-          const models = current.models.filter((model) => model.route === route.provider);
-          if (models.length === 0) continue;
-          const note = route.baseURL === undefined
-            ? t('routeNoBaseURL')
-            : `→ ${route.baseURL}`;
-          const published = written === undefined ? undefined : written.includes(route.provider);
-          cards.push(routeCard(
-            route.provider,
-            route.provider,
-            route.api,
-            note,
-            models,
-            // 没写进去时把原因带上：只写「没写进去」等于让人去别处找原因，而这一轮为什么没写成
-            // 正是这个点唯一想说的话。
-            published === undefined
-              ? undefined
-              : {
-                state: published ? 'ok' : 'bad',
-                title: published
-                  ? t('dotPublished')
-                  : t('dotUnpublished', { reason: sync.reason ?? t('reasonUnknown') }),
-              },
-          ));
-        }
-        const unserved = current.models.filter((model) => model.route === undefined);
-        if (unserved.length > 0) {
-          // 这张卡没有路由，它的点说的是模型自己的状态：一个都没接上。
-          cards.push(routeCard('unserved', t('unservedCard'), undefined, t('unservedHeading'), unserved, {
-            state: 'bad',
-            title: t('dotUnservedModels'),
-          }));
-        }
-
-        return [head, h('ul', { className: 'dap-models' }, cards)];
-      };
-
-      /**
-       * 实例卡里表单那半块。
-       *
-       * 读得到设置快照时就是地址与同步开关加那排按钮；读不到时只留一句说明——报告照旧显示，
-       * 缺一份设置快照不该让整页停在「正在读取」。
-       *
-       * @returns {object[]} 编辑器里表单部分的子元素。
-       */
-      const configForm = () => (hasConfig ? [
-        h(
-          'div',
-          { className: 'dap-editor-head', key: 'head' },
-          h('span', { className: 'dap-editor-title' }, t('tab')),
-          h('span', { className: 'dap-editor-route' }, 'aperture.baseUrl'),
-        ),
-        h(
-          'div',
-          { className: 'dap-fields', key: 'fields' },
-          field(
-            'dap-base-url',
-            t('addressLabel'),
-            h('input', {
-              id: 'dap-base-url',
-              className: 'dap-input',
-              type: 'text',
-              spellCheck: false,
-              autoComplete: 'off',
-              placeholder: t('addressPlaceholder'),
-              value: draft.baseUrl,
-              disabled,
-              onChange: (event) => setDraft({ baseUrl: event.target.value, sync: draft.sync }),
-            }),
-            undefined,
-            { wide: true, emphasis: true },
-            configuration.baseUrlOverridden
-              ? overrideBadges(() => writeConfig('configReset', [{ op: 'unset', path: ['baseUrl'] }]))
-              : undefined,
-          ),
-        ),
-        h(
-          'div',
-          { className: 'dap-row', key: 'row' },
-          h(
-            'label',
-            { className: 'dap-check', htmlFor: 'dap-sync' },
-            h('input', {
-              id: 'dap-sync',
-              type: 'checkbox',
-              checked: draft.sync,
-              disabled,
-              onChange: (event) => setDraft({ baseUrl: draft.baseUrl, sync: event.target.checked }),
-            }),
-            t('syncLabel'),
-          ),
-          h('span', { className: 'dap-tag' }, draft.sync ? t('syncOn') : t('syncOff')),
-          configuration.syncOverridden
-            ? overrideBadges(() => writeConfig('configReset', [{ op: 'unset', path: ['sync'] }]))
-            : null,
-        ),
-        configuration.writable ? null : h('p', { className: 'dap-banner', 'data-ok': 'false', key: 'read-only' }, t('readOnly')),
-        h(
-          'div',
-          { className: 'dap-actions', 'data-align': 'end', key: 'actions' },
-          h('button', {
-            type: 'button',
-            className: 'dap-button',
-            disabled: busy !== '' || !dirty,
-            onClick: () => setDraft({ baseUrl: configuration.baseUrl, sync: configuration.sync }),
-          }, t('cancel')),
-          h('button', {
-            type: 'button',
-            className: 'dap-button',
-            'data-primary': 'true',
-            disabled: disabled || !dirty,
-            // 只发改动过的字段：没提的键不动，因此另一项在别处被改成什么样都留着。
-            onClick: () =>
-              writeConfig('configSaved', [
-                ...(draft.baseUrl === configuration.baseUrl
-                  ? []
-                  : [{ op: 'set', path: ['baseUrl'], value: draft.baseUrl.trim() }]),
-                ...(draft.sync === configuration.sync ? [] : [{ op: 'set', path: ['sync'], value: draft.sync }]),
-              ]),
-          }, busy === 'save' ? t('saving') : t('save')),
-        ),
-      ] : [h('p', { className: 'dap-hint', key: 'unavailable' }, t('configUnavailable'))]);
+      const controlsDisabled = !state.available || !state.writable;
 
       return h(
         'div',
-        { [STYLE_MARK]: '', 'aria-busy': busy !== '' ? 'true' : 'false' },
-        // 「插件」页已经画过标题与描述了，这里只剩操作状态值得说一句：没有实例地址时发现
-        // 处于休眠——这句话是状态而不是介绍，因此留着。
-        dormant ? h('p', { className: 'dap-subtitle' }, t('addressDormant')) : null,
-
+        { 'data-dsh-aperture': '' },
         h(
-          'div',
-          { className: 'dap-section' },
-          cardHead(
-            [
-              h('span', { className: 'dap-name' }, t('tab')),
-              draft !== null && !draft.sync ? h('span', { className: 'dap-tag' }, t('syncOffTag')) : null,
-              dot(headState, headTitle),
-            ],
-            // 「立即刷新」是这张卡的动作，因此留在卡头、折叠开关**外面**：卡折着也按得到。
-            // 表单自己的「取消 / 保存」在卡体里，因为它改的就是卡体里的那两个字段。
-            // 卡头上不挂「已覆盖」与「恢复默认」：它们各自跟着自己描述的那个字段走（见两处
-            // `overrideBadges`），卡头只留身份。想让已发布的路由消失就关掉同步开关——那一轮
-            // 刷新会把它们撤下来，不需要第二个按钮。
-            [
-              h('button', {
-                type: 'button',
-                className: 'dap-button',
-                disabled: refreshDisabled,
-                onClick: () => run('refresh', () => panel.refresh(), () => setReportRevision((value) => value + 1)),
-              }, busy === 'refresh' ? t('refreshing') : t('refresh')),
-            ],
-            { key: 'instance', open: sectionOpen('instance') },
-          ),
-          // 动作的反馈留在折叠体**外面**：卡折着的时候按了「立即刷新」，也得看得见结果。
-          banner === null
-            ? null
-            : h('p', { className: 'dap-banner', 'data-ok': banner.ok ? 'true' : 'false' }, banner.text),
-          // 折起来时整块不渲染（官方也是 `open ? body : null`）：DOM 里不留一个藏着的输入框。
-          sectionOpen('instance') ? h(
+          SettingsForm,
+          {
+            labels: {
+              unavailable: t('unavailable'),
+              readOnly: t('readOnly'),
+              saveFailed: t('saveFailed'),
+              save: t('save'),
+              saving: t('saving'),
+            },
+            state,
+            onSave: saveSettings,
+            onDiscard: props.discard,
+          },
+          h(SettingsValueField, {
+            id: 'dap-base-url',
+            label: t('addressLabel'),
+            hint: t('addressHint'),
+            placeholder: t('addressPlaceholder'),
+            text: state.baseUrl.text,
+            overridden: state.baseUrl.overridden,
+            invalid: state.baseUrl.invalid,
+            overriddenLabel: t('overridden'),
+            resetLabel: t('resetField'),
+            invalidLabel: t('invalidField'),
+            disabled: controlsDisabled || state.saving,
+            onEdit: (text) => props.edit('baseUrl', text),
+            onReset: () => props.resetField('baseUrl'),
+          }),
+          h(
             'div',
-            { className: 'dap-editor', id: 'dap-body-instance' },
-            ...configForm(),
-            // 「最近一次刷新」跟着实例走：同一块浅色面上切一条线，不再另起一张卡，也不再铺第二层
-            // 底色（与模型参数面同一套做法）。它是只读诊断，因此排在表单动作之后——卡里那两半的
-            // 分界正是那排按钮。
+            { className: 'dap-toggleRow' },
             h(
               'div',
-              { className: 'dap-status' },
-              h('div', { className: 'dap-status-head' }, t('statusHeading')),
-              report === null
-                ? h('p', { className: 'dap-hint' }, t('neverRefreshed'))
-                : statusFacts(report),
-              report === null
-                ? null
-                : h('p', { className: 'dap-hint' }, `Aperture：${report.place.length === 0 ? t('noAddress') : report.place}`),
+              { className: 'dap-toggleText' },
+              h('span', null, t('syncLabel')),
+              h('span', { className: 'dap-hint' }, t('syncHint')),
             ),
-          ) : null,
+            h(
+              'div',
+              { className: 'dap-inline' },
+              state.sync.overridden
+                ? h(Tag, { tone: 'info' }, t('overridden'))
+                : null,
+              state.sync.overridden
+                ? h(Button, {
+                    variant: 'ghost',
+                    size: 'sm',
+                    onClick: () => props.resetField('sync'),
+                    disabled: controlsDisabled || state.saving,
+                  }, t('resetField'))
+                : null,
+              h(Switch, {
+                checked: state.sync.text === 'true',
+                onChange: (next) => props.edit('sync', next ? 'true' : 'false'),
+                label: t('syncLabel'),
+                disabled: controlsDisabled || state.saving,
+              }),
+            ),
+          ),
         ),
-
-        // 模型段自己就是「标题 + 一叠卡片」，外面不再套一张卡（官方那页也没有外卡）。
-        report === null ? null : modelList(report),
+        banner === null
+          ? null
+          : h('p', {
+              className: 'dap-banner',
+              'data-ok': banner.ok ? 'true' : 'false',
+              role: 'status',
+              'aria-live': 'polite',
+            }, banner.text),
+        h(
+          'section',
+          { className: 'dap-group' },
+          h(
+            'div',
+            { className: 'dap-groupHead' },
+            h('h3', { className: 'dap-groupTitle' }, t('modelsTitle')),
+            h(Button, {
+              variant: 'ghost',
+              size: 'sm',
+              onClick: refreshReport,
+              disabled: busy !== '',
+              title: t('refreshHint'),
+            }, busy === 'refresh' ? t('refreshing') : t('refresh')),
+          ),
+          h('p', { className: 'dap-hint' }, t('modelsHint')),
+          report === null
+            ? h('p', { className: 'dap-hint' }, t('loading'))
+            : report.models.length === 0
+              ? h('p', { className: 'dap-hint' }, t('noModels'))
+              : h('ul', { className: 'dap-rows' }, report.models.map(modelRow)),
+        ),
+        h(
+          'section',
+          { className: 'dap-group' },
+          h('h3', { className: 'dap-groupTitle' }, t('reportTitle')),
+          report !== null && report.place.length === 0
+            ? h('p', { className: 'dap-hint' }, t('dormantHint'))
+            : null,
+          report === null
+            ? h('p', { className: 'dap-hint' }, t('loading'))
+            : h(
+                'div',
+                { className: 'dap-group' },
+                h('h4', { className: 'dap-groupTitle' }, t('routesTitle')),
+                report.routes.length === 0
+                  ? h('p', { className: 'dap-hint' }, t('noRoutes'))
+                  : h('ul', { className: 'dap-routes' }, report.routes.map(routeRow)),
+              ),
+          report === null ? null : reportFacts(report),
+          h('p', { className: 'dap-hint' }, t('reportHint')),
+        ),
       );
-    }
-
-    /**
-     * 「插件」页里本插件那一行的配置页。
-     *
-     * 页主按 `view` 问两次：`summary` 只要一行字（作为那一行描述缺失时的兜底），`page` 要那块
-     * 带自己保存动作的表单。两种视图共用同一个面板；标题、图标与面包屑整块由页面自己画。
-     *
-     * 页面随 `form` 一起交出来的 `state` / `mutate` 就是配置的读写面：它由设置接缝的镜像驱动
-     * （`ConfigFormController`），字段在不在用户层里、当前版本号是多少、写完怎么折回来，都由它
-     * 说；本插件不再自己实现一遍。`form` 只在命名空间真的出现在客户端镜像里时才有——那时本行
-     * 的配置才读得出来，没有它就只剩报告可看。
-     *
-     * @param {object} props - 页主交过来的 `view`（与仅 `page` 视图有的 `form`），以及注入的
-     *   `panel` 与 `t`。
-     * @returns {string|object} 一行摘要，或者配置页元素。
-     */
-    function ApertureRowConfig(props) {
-      const t = typeof props.t === 'function' ? props.t : (key, params) => interpolate(zh[key] ?? key, params);
-      // 摘要就是面板的副标题：同一个说法只写一遍，免得页面上那张卡与这一行各说各话。
-      if (props.view === 'summary') return t('subtitle');
-      return h(AperturePanel, { panel: props.panel, form: props.form, t });
     }
 
     // ---------------------------------------------------------------- 插件本体
@@ -1670,14 +1365,14 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 浏览器插件主体：字典、样式、Remote 贡献，以及「插件」页里那一行的配置页。
+     * 浏览器插件主体：字典、样式、Remote 贡献，以及「插件」页里本插件那个包页的配置页。
      *
-     * `ctx.slots.inject` 是必需的，不是可选的：`plugins.row.config` 由插件管理页自己声明，
+     * `ctx.slots.inject` 是必需的，不是可选的：`plugins.bundle.config` 由插件管理页自己声明，
      * 那个声明完全可能在本插件 `apply` 之后才发生，直接 register 会撞上「槽位尚未声明」。
      *
-     * 注册的键是 `<包名>#<行 id>`——`dsh-aperture` 的 `cordis.patch.yml` 里那一行的 id 是
-     * `aperture`。这一条注册就是那一行「配置」入口存在的原因：没有它，那一行只是插件列表里
-     * 一行不可编辑的配置。
+     * 注册的键是**包名**：键控槽位按它找贡献，点开插件列表里的本插件就是这一页。设置那一份表单
+     * 也在这里取——页主只递 `view`，`configForms.get(命名空间)` 才是这一页的配置读写面；服务
+     * 按命名空间缓存控制器，因此它与插件页自己取到的是同一份。
      *
      * @param {object} ctx - 客户端根上下文。
      */
@@ -1692,24 +1387,49 @@ window.__ModuleLoader__.load({
         const panel = {
           status: async () => unwrap(await namespace().status()),
           refresh: async () => unwrap(await namespace().refresh()),
-          edit: async (id, patch) => unwrap(await namespace().edit(id, patch)),
+          writeModel: async (id, patch) => unwrap(await namespace().edit(id, patch)),
         };
-        scope.slots.inject('plugins.row.config', () => scope.slots.register({
-          name: 'plugins.row.config',
-          key: `${PACKAGE}#${ROW_ID}`,
+
+        // 官方设置表单那一套：这一份模型负责草稿、`revision` 围栏与「哪些字段已覆盖」，页面只读
+        // 它的投影。表单自己订阅控制器，因此设置一变，投影就会变新。
+        const controller = ctx.configForms === undefined ? UNSERVED : ctx.configForms.get(SETTINGS_NS);
+        const form = new SettingsFormModel(controller, [settingsTextField('baseUrl'), booleanField('sync')]);
+        const actions = form.actions();
+        const card = form.bind(() => ({
+          ...form.shell(),
+          baseUrl: form.field('baseUrl'),
+          sync: form.field('sync'),
+        }));
+        scope.effect(() => () => form.dispose(), 'dsh-aperture: settings form');
+
+        scope.slots.inject('plugins.bundle.config', () => scope.slots.register({
+          name: 'plugins.bundle.config',
+          key: PACKAGE,
           locale: NS,
-          inject: () => ({ panel }),
-        }, ApertureRowConfig));
+          inject: () => ({
+            hooks: { apertureCard: card },
+            panel,
+            edit: actions.edit,
+            resetField: actions.resetField,
+            discard: actions.discard,
+            save: () => form.save(),
+            failed: () => form.shell().failed,
+          }),
+        }, AperturePanel));
       });
     }
 
     const module = { exports: {} };
     module.exports.name = PACKAGE;
-    /** 本插件依赖的客户端服务：槽位、字典与 Remote 调用面。 */
-    module.exports.inject = ['slots', 'locale', 'remote'];
+    /** 本插件依赖的客户端服务：槽位、字典、Remote 调用面，以及设置接缝的配置表单。 */
+    module.exports.inject = ['slots', 'locale', 'remote', 'configForms'];
     module.exports.apply = apply;
     /** 字典命名空间（测试与排查用）。 */
     module.exports.NS = NS;
+    /** 设置命名空间，也是包级配置页这一份表单的键（测试与排查用）。 */
+    module.exports.SETTINGS_NS = SETTINGS_NS;
+    /** 这一页自己编辑的字段（测试与排查用）。 */
+    module.exports.FIELDS = FIELDS;
     /** 上报给 Remote 注册表的贡献（测试与排查用）。 */
     module.exports.REMOTE = REMOTE;
     return module.exports;

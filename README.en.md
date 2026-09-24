@@ -53,7 +53,7 @@ npx @deepseek-ai/dsh plugin --profile web add /path/to/dsh-aperture
 
 This layer (the profile patch document, i.e. the user layer) is this plugin's settings namespace, `aperture`. The `cordis.patch.yml` this package ships (the composition layer) only declares the row and writes no `config`: every key's default lives in the schema, so writing only the keys you want to change is enough and the rest fall back to the defaults. Note that patch layers **replace the whole row** rather than deep-merging — this row's `config` supersedes the composition row's outright, and because the composition row has none, what you write is all there is.
 
-You can also fill it in from the GUI: on the **Plugins** page find the `dsh-aperture` row and press Configure; the "实例地址" field on that configuration page writes the same `aperture.baseUrl`, and saving lands in the same file.
+You can also fill it in from the GUI: on the **Plugins** page open this package, and the first field of its configuration page ("Instance address") writes the same `aperture.baseUrl`; saving lands in the same file.
 
 ### 3. Restart DSH
 
@@ -65,66 +65,52 @@ npx @deepseek-ai/dsh --profile web --dump-config   # should show a "# == dsh-ape
 
 ### 4. Confirm
 
-The models appear in the selector under the route `Aperture`. To see what the last refresh did, look at **Plugins → dsh-aperture → Configure**: the status block lays every fact out on its own row, and the models are listed per route underneath.
+The models appear in the selector under the route `Aperture`. To see what the last refresh did, look at **Plugins → dsh-aperture**: this package's configuration page is that page — the instance address and sync toggle on top, one row per discovered model in the middle, and this round's discovery report at the bottom.
 
 ```
-▾ Aperture  ●                                  [Refresh now]
-  Aperture  aperture.baseUrl
-  Instance address  Overridden  Reset to default
-  [https://ai.example.ts.net             ]
-  ☑ Sync into llm-pi-ai   writes the provider dictionary
-                                                           [Cancel] [Save]
-  ────────────────────────────────────────────────────────────────────────
-  Last refresh
-  Trigger  配置变更          Time    2026-09-23 12:32:36
-  Took     286ms             Result  succeeded
-  Catalog  422 entries       Endpoint  https://ai.example.ts.net/v1/models listed 16 rows
-  Settings wrote 2 operations to llm-pi-ai (aperture, aperture-anthropic)
-  Aperture: https://ai.example.ts.net
+Instance address  Overridden  Reset to default
+[https://ai.example.ts.net                            ]
+Where Aperture listens; leave it empty to go dormant and stop discovering models.
 
-Models and routes  15 models
-1 models overridden, the rest inherit discovery and the catalog
+Sync automatically                 Overridden  Reset to default   ●━
+After each discovery round, write the models into dsh's llm-pi-ai routes.  [Save]
 
-aperture  openai-completions  11 models  ●                 [▾ Collapse]
-  → https://ai.example.ts.net/v1
-  deepseek-v4-flash  DeepSeek V4 Flash  overridden        [▾ Collapse]
-    1,048,576 context window · 384,000 output · text+image · reasoning
-    │ Display name  [DeepSeek V4 Flash           ]  from models.dev
-    │ Catalog alias [deepseek/deepseek-v4-flash]
-    │ Context       [1048576]  in effect 1,048,576 · from aperture
-    │ Max output    [384K]     in effect 384,000 · from aperture
-    │ Modalities    ☑ text ☑ image   in effect text+image · from config
-    │ Reasoning     [follow discovery ▾]  in effect on · from models.dev
-    │ Protocol      [follow discovery ▾]  in effect openai-completions
-    │ An empty display name, capacity or modality drops that override; capacities accept 1M or 100K…  [Reset to default] [Cancel] [Save]
-  gemini-2.5-flash  Gemini 2.5 Flash                      [▸ Edit]
-    128,000 context window · text · no reasoning
+Models                                        [Refresh now]
+One model per row; expand a row to edit its overrides, and Save row writes only that row.
 
-Unserved  4 models  ●                                      [▸ Edit]
+● deepseek-v4-flash  aperture · openai-completions · 1,048,576 context · 384,000 output
+                     text+image · on · overrides Display name, Catalog alias
+● gemini-2.5-flash   aperture · openai-completions · 128,000 context · text · off
+⚠ qwen3-vl-32b       unserved · 262,144 context · text+image · on
+
+Discovery report
+Routes
+  aperture             openai-completions   11 models   written
+  https://ai.example.ts.net/v1
+Trigger  配置变更        Time     2026-09-23 12:32:36
+Took     286ms           Result   ok
+Catalog  422 entries     Endpoint https://ai.example.ts.net/v1/models listed 16 rows
+Sync     wrote 2 entries (aperture, aperture-anthropic)
 ```
 
-**Instance** is one card with two halves in its body: the address and sync toggle on the grey editing face, and **Last refresh** below it as a read-only diagnosis (a rule across the same face rather than a second card — a summary does not deserve a card head of its own). The card head is itself the collapse toggle — an arrow plus the name, shaped after the group header on the official plugin-list page, expanded by default, folding both halves away. The card-head action (`[Refresh now]`) and the banner a press produces stay **outside** the toggle, so they still work while folded. The head's `●` speaks for the whole card: whether the address is usable and whether the last round succeeded, either problem turning it red, with a hover title naming which one. A field you wrote into your settings file yourself carries an "Overridden" badge with a "Reset to default" button right beside its label — the same two words and the same position as the official plugin-config page (the `badges` of its `ValueField`), so "Overridden" never floats on a card head with nothing to attach to; the one on a model row also names the overridden fields on hover (including `reasoningEfforts`, which the interface never edits — precisely why "Reset to default" has to drop that whole entry). **Models and routes** is a page-level section: the title sits directly above the cards, the same skeleton as the official Models page, with no outer card — one card per route, its head carrying `provider · api` and the model count, and its body the "→ address" line plus that route's model list. A model row expands once more, and its parameter face lands inside that row (a rule across the same grey face, not a second grey panel). The pill buttons on the right of a card head are that card's own actions, and the `●` says that card's own state: the address and last round (Instance), whether this round wrote the route into `llm-pi-ai` (route cards; red when it did not), and whether any route is available at all (the Unserved card).
-
-Collapsed, the first level is just the route card head and the second just one row of facts (id, display name, capacities); "Edit" expands the level inside it, where every source sits next to the field it describes ("in effect 1,048,576 · from aperture"). Each row gets its own Save and Cancel: Save writes that row only, Cancel throws that row's edits away.
+**The configuration page is the package's page.** The instance address and the sync toggle are two fields of one official settings form: where a field says "Overridden", a "Reset to default" right beside it drops that key from your settings file (the same two words in the same position as the official plugin-config page), and Save writes only the fields you actually changed. **Models** are one row each: collapsed, a row is one line of facts (route, protocol, capacities, modalities, reasoning, and which fields are overridden); expanded, it is that row's override editor — display name, protocol, context window, max output and catalog alias as text fields, two checkboxes for the modalities, and a three-way switch for reasoning (follow discovery / on / off). A caption under each field names where its current value comes from ("Leave it empty to use the discovered name. Source: Aperture") and disappears while the row is collapsed. Each row gets its own "Save row / Clear overrides / Cancel": Save row writes that row only, and collapsing a row does not throw its draft away — the "unsaved edits" tag stays until you save or cancel. **The discovery report** closes the page: the routes (`provider`, protocol, model count, and whether this round wrote it into `llm-pi-ai`) above the facts of the last refresh (trigger, time, duration, result, catalog, endpoint, sync). There are no cards and no second level of collapsing — headings and spacing separate the groups, and the only thing you can expand is a model row.
 
 (The configuration page itself is bilingual; the labels above are its English wording.)
 
 ## Usage
 
-The interface is at **Plugins → dsh-aperture → Configure** (press Configure on this plugin's row on the Plugins page). The page header's name and icon and the row's one-line description come from the package's `locale/*.json` and `package.json`'s `icon`, while the page chrome itself is drawn by the Plugins page. It shows your instance address and what the last refresh did, lists the discovered models per route, and lets you edit the address, toggle `sync` (turning it off withdraws whatever this plugin published), discover and republish now, and edit model parameters in place. The address and the toggle stay drafts until you press Save; the save is handed to the host half, which writes through the settings seam, so it is revision-fenced — a form that has drifted from the settings document is refused rather than overwriting someone else's edit. Model parameters work the same way, **one row at a time**: an expanded row edits a draft (the row shows an "unsaved" tag), Save writes that row only, and Cancel drops it. There is no batch edit.
+The interface is at **Plugins → dsh-aperture** (open this plugin in the plugin list; the configuration page hangs off the package, so there is no separate Configure button). The page header's name and icon and the description come from the package's `locale/*.json` and `package.json`'s `icon`, while the page chrome itself is drawn by the Plugins page. The body shows your instance address, the sync toggle, the discovered models and the report of the last refresh. The address and the toggle stay drafts until you press Save; the save goes through the settings seam, so it is revision-fenced — a form that has drifted from the settings document is refused rather than overwriting someone else's edit. Model parameters work the same way, **one row at a time**: an expanded row edits a draft (the row shows an "unsaved edits" tag), Save row writes that row only, and Cancel drops it (collapsing a row keeps the draft, the tag stays visible). There is no batch edit.
 
 | Where | Effect |
 | --- | --- |
-| Configuration page · 实例卡 | the instance address, sync toggle and last refresh; the head's dot says whether the address is usable and whether the last round succeeded, naming which one on hover |
-| Configuration page · 实例地址 | edits `baseUrl` (written through the settings seam; when it says "Overridden", the "Reset to default" beside it falls back to the default) |
-| Configuration page · 同步开关 | edits `sync`: off discovers without writing `llm-pi-ai` and withdraws whatever this plugin had published in that same round; carries the same "Overridden / Reset to default" pair |
-| Configuration page · 保存 | bottom right of the editor (Cancel sits to its left): writes the address and toggle drafts into the settings document; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
-| Configuration page · 最近一次刷新 | the read-only diagnosis in the lower half of the card body: what the last refresh did, what triggered it, and the catalog, endpoint and settings-write results |
-| Configuration page · 立即刷新 | an action on the Instance card head: discover and republish now, then show that round's report |
-| Configuration page · 模型与路由 | one page-level section: an expandable card per route (its head carrying `provider · api`, the model count and a dot saying whether this round wrote it into `llm-pi-ai`), whose body holds the address and the model list; models no route can serve get their own Unserved card |
-| Configuration page · 编辑 | the pill button in a card head: expands the next level inside that card. A route card expands the model list; a model row expands its own parameter panel — display name, catalog alias, capacities, modalities, reasoning, protocol, each source next to the field it describes |
-| Configuration page · 保存 / 取消 | write that row only, or throw that row's edits away; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
-| Configuration page · 恢复默认 | sits next to whatever is overridden: clear only the fields the report says really were overridden, falling back to discovery and the catalog right away |
+| Configuration page · Instance address | edits `baseUrl` (written through the settings seam; when it says "Overridden", the "Reset to default" beside it falls back to the default) |
+| Configuration page · Sync toggle | edits `sync`: off discovers without writing `llm-pi-ai` and withdraws whatever this plugin had published in that same round; carries the same "Overridden / Reset to default" pair |
+| Configuration page · Save | below the form: writes the address and toggle drafts into the settings document; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
+| Configuration page · Models | one row per model; collapsed, a row is one line of facts — route, protocol, capacities, modalities, reasoning and which fields are overridden |
+| Configuration page · Expanding a row | that row's override editor: display name, protocol, context window, max output, catalog alias, two modality checkboxes and the reasoning switch; a caption under each field names where its current value comes from |
+| Configuration page · Save row / Clear overrides / Cancel | write that row only, clear only the fields the report says really were overridden, or drop that row's draft; Save row likewise waits for a round of re-discovery, so what you see afterwards is the new value |
+| Configuration page · Refresh now | the action at the top right of the Models block: discover and republish now, then show that round's report |
+| Configuration page · Discovery report | the routes (`provider`, protocol, model count, whether this round wrote it into `llm-pi-ai`) above the facts of the last refresh: trigger, time, duration, result, catalog, endpoint, sync |
 
 In-place edits are configuration: capacities and modalities land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. Capacities accept the `1M` / `100K` spelling (decimal suffixes, the same vocabulary as the official Models page: `1M` is 1000000, not 1048576); what gets stored is still a plain token count, and the field spells it back in the shortest form that survives a round trip (`384000` → `384K`, while `1048576` is not a whole thousand and stays written out). The protocol field is the only way out for an unserved model: filling it in publishes a model that only answers on its native endpoint under the matching route.
 
@@ -262,17 +248,24 @@ Design notes — why two routes, where each fact comes from, lifecycle and depen
 npm install                # if the machine-level npm cache is not writable: npm install --cache ./.npm-cache --ignore-scripts
 npm run build              # tsc -> lib/
 npm run typecheck          # includes test/, and parses the browser half with node --check
-npm test                   # offline unit tests (172; devDependencies must be installed)
+npm test                   # unit tests + end-to-end (229; offline, devDependencies must be installed)
 
-DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live   # end-to-end: real harness stack + real gateway
+DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live   # end-to-end only, against a real instance
 DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run inspect     # manual walkthrough: the written patch document and the LLM resolutions (build first)
 ```
 
-Away from the Tailscale network with no real instance, both of those can run against a fake gateway (payload described in the file header):
+The end-to-end half inside `npm test` (`test/live.test.ts`) needs no network: it starts a fake gateway on
+the loopback interface (`test/fake-gateway.ts`, on a kernel-chosen port), mounts the plugin into a real
+Cordis Loader, and asserts that what landed in the profile patch document resolves through the real
+`llm-pi-ai`. That is why CI can run it. To point it at a real instance, or to run that file alone, use
+`npm run test:live` with `DSH_APERTURE_LIVE_URL`.
+
+Away from the Tailscale network, to eyeball the generated config section by hand, put that fake gateway on
+a fixed port:
 
 ```sh
 node scripts/fake-aperture-gateway.mjs 54117
-DSH_APERTURE_LIVE_URL=http://127.0.0.1:54117 npm run test:live
+DSH_APERTURE_LIVE_URL=http://127.0.0.1:54117 npm run inspect
 ```
 
 The two halves are built differently, which is easy to trip over: the browser half (`client/aperture.js`) is hand-written CJS that DSH serves straight from the file, so a page refresh is enough; the host half (`src/*.ts`) runs the compiled `lib/`, so a change needs `npm run build` **and a host restart** — otherwise the previous build keeps running. If `lib/` is older than `src/`, it has not been rebuilt.
