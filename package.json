@@ -1,7 +1,7 @@
 {
   "name": "dsh-aperture",
   "version": "0.2.0",
-  "description": "探测 Aperture 实例通告的模型，发布成 DSH 的 llm-pi-ai provider 路由。",
+  "description": "自动发现 Aperture 网关上的模型，并加进 DSH 的模型选择器。",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

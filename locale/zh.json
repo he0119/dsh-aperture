@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Aperture",
-    "description": "把实例通告的模型发布成 llm-pi-ai 的 provider 路由。"
+    "description": "自动发现 Aperture 网关上的模型，并加进模型选择器。"
   }
 }

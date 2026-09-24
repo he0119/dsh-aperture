@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Aperture",
-    "description": "Publish the models your instance advertises as llm-pi-ai provider routes."
+    "description": "Discover the models an Aperture gateway serves and add them to the model picker."
   }
 }
