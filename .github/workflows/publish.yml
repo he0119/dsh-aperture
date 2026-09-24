@@ -61,9 +61,13 @@ jobs:
           tag="${GITHUB_REF#refs/tags/}"
           version="${tag#v}"
 
-          # 按名字取远程的标签，而不是用 runner 本地那份。
-          git fetch --no-tags origin "refs/tags/${tag}:refs/tags/${tag}"
-          tag_sha="$(git rev-parse "${tag}^{commit}")"
+          # 取远程那个标签来核对，但**不能**取进 refs/tags/ 里：checkout 在标签上检出的，
+          # 本地已经有同名标签，写进去会被 git 的防覆盖保护拒绝
+          # （`! [rejected] v0.3.1 -> v0.3.1 (would clobber existing tag)`，工作流就此失败）。
+          # 取进一个只用一次的临时命名空间，既不撞本地标签，也只认远程那一份。
+          remote_tag_ref="refs/dsh-remote-tags/${tag}-${GITHUB_RUN_ID}"
+          git fetch --no-tags origin "refs/tags/${tag}:${remote_tag_ref}"
+          tag_sha="$(git rev-parse "${remote_tag_ref}^{commit}")"
           main_sha="$(git rev-parse origin/main)"
 
           if ! git merge-base --is-ancestor "$tag_sha" origin/main; then
@@ -146,4 +150,13 @@ jobs:
           else
             note="\`dsh-aperture@${version}\` 已发布到 npm（[npm](https://www.npmjs.com/package/dsh-aperture/v/${version})）。"
           fi
-          gh release create "$tag" --title "$tag" --verify-tag --latest --generate-notes --notes "$note"
+
+          # 显式给出区间的起点：以发布提交的**父提交**为基准，从那里往上找最近的标签。
+          # 这样版本号提交（chore(release): X.Y.Z）不会出现在自己的变更列表里——
+          # 标签本来就打在版本号提交上，交给 GitHub 自动推断就可能把它算成一项改动。
+          args=(--title "$tag" --verify-tag --latest --generate-notes --notes "$note")
+          prev_tag="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+          if [ -n "$prev_tag" ]; then
+            args+=(--notes-start-tag "$prev_tag")
+          fi
+          gh release create "$tag" "${args[@]}"
