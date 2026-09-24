@@ -13,11 +13,14 @@
  * 把这一行挂在 Loader 上，`ctx.settings.mutate()` 的写入才有「就地换热引用还是重建 entry」
  * 这个区别可以断言 —— 那正是本测试盯着的性质。
  *
- * 它是唯一能证明该*写入*合法而非看似合理的测试，因此是选择性启用的：它需要网络、
- * 一个网关以及 harness 软件包。
+ * 它是唯一能证明该*写入*合法而非看似合理的测试，因此它连的是一个**真的**网关：`baseUrl` 指向
+ * 哪里，`llm-pi-ai` 就真的去那里取清单、真的把模型解出来。网关默认由它自己起
+ * （`test/fake-gateway.ts`，由内核给一个空闲端口），因此 CI 与不在 Tailscale 网里的机器也能跑；
+ * 想对着真实实例跑就给它一个地址：
  *
  * ```sh
- * DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live
+ * npm run test:live                                                   # 自己起假网关
+ * DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live    # 真实实例
  * ```
  *
  * @module dsh-aperture/test/live
@@ -43,6 +46,7 @@ import {
   readProfilePatches,
   type ProfileContext,
 } from '@deepseek-ai/dsh-app-boot';
+import { startFakeGateway, type FakeGateway } from './fake-gateway.ts';
 
 /** 本仓库根；本插件那一行按 `file://` URL 从这里拼出来。 */
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -56,17 +60,29 @@ const APERTURE = 'aperture';
 /** 承载已发布路由的适配器设置段。 */
 const PI_AI = 'llm-pi-ai';
 
-const INSTANCE = process.env.DSH_APERTURE_LIVE_URL;
+/** 真实实例地址；没给就自己起一个假网关（`before` 里决定）。 */
+const INSTANCE = process.env.DSH_APERTURE_LIVE_URL?.trim();
 
-describe('live Aperture discovery', { skip: INSTANCE === undefined ? 'set DSH_APERTURE_LIVE_URL' : false }, () => {
+describe('live Aperture discovery', () => {
   let directory: string;
   let patchPath: string;
   let ctx: Context;
+  /** 这一轮实际连的那个网关：给定地址，或自己起的那个。 */
+  let instance: string;
+  /** 自己起的假网关；给了 `DSH_APERTURE_LIVE_URL` 时它不存在。 */
+  let gateway: FakeGateway | undefined;
   /** 插件自己的日志；探针超时时用来解释它卡在哪里。 */
   const logs: string[] = [];
 
   before(async () => {
-    const instance = INSTANCE!;
+    // 没给地址就自己起一个：CI 与不在 Tailscale 网里的机器因此也能跑这一份。端口交给内核挑，
+    // 于是并行跑两份用例也不会互相打断。
+    if (INSTANCE === undefined || INSTANCE === '') {
+      gateway = await startFakeGateway();
+      instance = gateway.url;
+    } else {
+      instance = INSTANCE;
+    }
 
     directory = await mkdtemp(join(tmpdir(), 'dsh-aperture-live-'));
     const home = join(directory, 'home');
@@ -164,6 +180,7 @@ describe('live Aperture discovery', { skip: INSTANCE === undefined ? 'set DSH_AP
   after(async () => {
     // 失败路径下 `before` 可能没走到最后一步，清理各自容错，别盖住真正的失败。
     await ctx?.fiber.dispose().catch(() => undefined);
+    await gateway?.close().catch(() => undefined);
     if (directory !== undefined) {
       await rm(directory, { recursive: true, force: true }).catch(() => undefined);
     }
@@ -174,7 +191,7 @@ describe('live Aperture discovery', { skip: INSTANCE === undefined ? 'set DSH_AP
     assert.match(text, /^- id: llm-pi-ai$/mu, 'expected the profile patch document to carry a llm-pi-ai row');
     assert.match(text, /^ +providers:$/mu);
     assert.match(text, /^ +aperture:$/mu);
-    const base = INSTANCE!.trim().replace(/\/+$/u, '').replace(/\/v1$/u, '');
+    const base = instance.replace(/\/+$/u, '').replace(/\/v1$/u, '');
     assert.match(
       text,
       new RegExp(`^ +baseURL: ${base.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}/v1`, 'mu'),
