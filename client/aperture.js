@@ -52,8 +52,7 @@ window.__ModuleLoader__.load({
      *
      * 端点名不能与命名空间服务自己的成员重名：api-gateway 为每个命名空间建一个
      * `RemoteNamespaceService`，端点会成为它的属性，撞上 `remove` / `has` / `install` /
-     * `name` / `ctx` 这类预置名字时校验会拒绝**整份**贡献。「撤下路由」叫 `withdraw` 就是这个
-     * 原因。
+     * `name` / `ctx` 这类预置名字时校验会拒绝**整份**贡献，新端点起名时先对一遍名单。
      */
     const SCHEMA = Object.freeze({ parse: (value) => value });
     /** 每个参数与结果共用的直通编解码器。 */
@@ -97,7 +96,6 @@ window.__ModuleLoader__.load({
       descriptors: Object.freeze([
         descriptor('status'),
         descriptor('refresh'),
-        descriptor('withdraw'),
         descriptor('configuration'),
         descriptor('save', ['baseUrl', 'sync']),
         descriptor('edit', ['id', 'patch']),
@@ -305,8 +303,6 @@ window.__ModuleLoader__.load({
       cancel: '取消',
       refresh: '立即刷新',
       refreshing: '正在发现…',
-      withdraw: '撤掉已发布的路由',
-      withdrawing: '正在撤下…',
       readOnly: '当前设置文档不接受写入，表单只读。',
 
       statusHeading: '最近一次刷新',
@@ -407,8 +403,6 @@ window.__ModuleLoader__.load({
       cancel: 'Cancel',
       refresh: 'Refresh now',
       refreshing: 'Discovering…',
-      withdraw: 'Withdraw published routes',
-      withdrawing: 'Withdrawing…',
       readOnly: 'This deployment does not accept settings writes, so the form is read-only.',
 
       statusHeading: 'Last refresh',
@@ -568,7 +562,7 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Aperture 面板：实例卡（地址、同步开关、立刻刷新、撤下路由）与模型清单。
+     * Aperture 面板：实例卡（地址、同步开关、立刻刷新）与模型清单。
      *
      * 只持有视图状态：配置与报告分别由一个 effect 拉取，动作按下后再拉一次。**effect 的
      * 依赖里刻意不放注入面**——`inject` 面由渲染器每次渲染重新组装，把它的身份放进依赖会
@@ -1428,10 +1422,11 @@ window.__ModuleLoader__.load({
               draft.sync ? null : h('span', { className: 'dap-tag' }, t('syncOffTag')),
               dot(headState, headTitle),
             ],
-            // 「立即刷新」与「撤下路由」是这张卡的动作，因此留在卡头、折叠开关**外面**：卡折着也
-            // 按得到。表单自己的「取消 / 保存」在卡体里，因为它改的就是卡体里的那两个字段。
+            // 「立即刷新」是这张卡的动作，因此留在卡头、折叠开关**外面**：卡折着也按得到。
+            // 表单自己的「取消 / 保存」在卡体里，因为它改的就是卡体里的那两个字段。
             // 卡头上不挂「已覆盖」与「恢复默认」：它们各自跟着自己描述的那个字段走（见两处
-            // `overrideBadges`），卡头只留身份。
+            // `overrideBadges`），卡头只留身份。想让已发布的路由消失就关掉同步开关——那一轮
+            // 刷新会把它们撤下来，不需要第二个按钮。
             [
               h('button', {
                 type: 'button',
@@ -1439,13 +1434,6 @@ window.__ModuleLoader__.load({
                 disabled,
                 onClick: () => run('refresh', () => panel.refresh(), () => setReportRevision((value) => value + 1)),
               }, busy === 'refresh' ? t('refreshing') : t('refresh')),
-              h('button', {
-                type: 'button',
-                className: 'dap-button',
-                'data-danger': 'true',
-                disabled,
-                onClick: () => run('withdraw', () => panel.withdraw(), () => setReportRevision((value) => value + 1)),
-              }, busy === 'withdraw' ? t('withdrawing') : t('withdraw')),
             ],
             { key: 'instance', open: sectionOpen('instance') },
           ),
@@ -1626,7 +1614,6 @@ window.__ModuleLoader__.load({
         const panel = {
           status: async () => unwrap(await namespace().status()),
           refresh: async () => unwrap(await namespace().refresh()),
-          withdraw: async () => unwrap(await namespace().withdraw()),
           configuration: async () => unwrap(await namespace().configuration()),
           save: async (baseUrl, sync) => unwrap(await namespace().save(baseUrl, sync)),
           edit: async (id, patch) => unwrap(await namespace().edit(id, patch)),

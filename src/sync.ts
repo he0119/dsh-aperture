@@ -160,39 +160,6 @@ export async function applySync(
   return { applied: true, ops: ops.length, routes: routes.map((route) => route.provider) };
 }
 
-/**
- * 从配置段中撤出本插件拥有的每条路由。
- * @param settings - 设置服务。
- * @param ownedRoutes - 要移除的路由键。
- * @returns 发生了什么。
- */
-export async function clearRoutes(settings: SettingsForms, ownedRoutes: readonly string[]): Promise<SyncOutcome> {
-  const current = sectionValue(settings, PI_AI_NAMESPACE);
-  if (current === undefined) {
-    return {
-      applied: false,
-      ops: 0,
-      routes: [],
-      reason: `设置命名空间 "${PI_AI_NAMESPACE}" 未注册`,
-    };
-  }
-  const providers = readProviders(current);
-  if (providers === undefined) {
-    return { applied: false, ops: 0, routes: [], reason: `"${PI_AI_NAMESPACE}" 配置段不是 provider 字典` };
-  }
-  const ops: SettingsPathOp[] = [];
-  for (const provider of ownedRoutes) {
-    if (provider in providers) {
-      ops.push({ op: 'unset', path: ['providers', provider] });
-    }
-  }
-  if (ops.length === 0) {
-    return { applied: false, ops: 0, routes: [], reason: '没有需要移除的路由' };
-  }
-  await settings.mutate(PI_AI_NAMESPACE, ops, currentRevision(settings));
-  return { applied: true, ops: ops.length, routes: [] };
-}
-
 /** 从已解析的配置段值中读出 provider 字典。 */
 function readProviders(current: unknown): Record<string, unknown> | undefined {
   if (current === null || typeof current !== 'object') {

@@ -72,7 +72,6 @@ interface Registration {
 interface PanelFace {
   status: () => Promise<Report>;
   refresh: () => Promise<{ ok: boolean; summary: string }>;
-  withdraw: () => Promise<{ ok: boolean; summary: string }>;
   configuration: () => Promise<Configuration>;
   save: (baseUrl?: string | null, sync?: boolean) => Promise<{ ok: boolean; summary: string }>;
   edit: (id: string, patch: ModelPatch | null) => Promise<{ ok: boolean; summary: string }>;
@@ -240,10 +239,6 @@ function fakeNamespace(harness: Harness, options: FakePanelOptions = {}) {
     },
     refresh: async () => {
       harness.panelCalls.push('refresh');
-      return { ok: true, value: action };
-    },
-    withdraw: async () => {
-      harness.panelCalls.push('withdraw');
       return { ok: true, value: action };
     },
     save: async (baseUrl?: string | null, sync?: boolean) => {
@@ -496,7 +491,7 @@ describe('浏览器半边', () => {
     const { harness } = driveClient();
     await new Promise((resolve) => setImmediate(resolve));
     const descriptors = harness.mounted?.descriptors ?? [];
-    assert.equal(descriptors.length, 6);
+    assert.equal(descriptors.length, 5);
     for (const descriptor of descriptors) {
       // 注册表（@deepseek-ai/dsh-typert-registry）只认这三样：`mode: 'strict'`、非空
       // `typeSymbol`、以及一个返回 `{ parse }` 的 `create` 工厂。拿一个 `schema` 字段顶替会
@@ -768,7 +763,10 @@ describe('浏览器半边', () => {
 
     const off = driveClient({
       report: report({
-        refresh: { ...refresh, sync: { applied: false, ops: 0, routes: [], reason: '同步已禁用' } },
+        refresh: {
+          ...refresh,
+          sync: { applied: false, ops: 0, routes: [], reason: '同步已关闭，本插件没有发布过路由' },
+        },
       }),
     });
     off.mini.mount(off.element);
@@ -777,7 +775,7 @@ describe('浏览器半边', () => {
     assert.deepEqual(dots.map((node) => node.props['data-state']), ['ok', 'bad', 'bad']);
     assert.equal(
       dots[1]!.props.title,
-      '这一轮没有写入 llm-pi-ai：同步已禁用',
+      '这一轮没有写入 llm-pi-ai：同步已关闭，本插件没有发布过路由',
       '没写进去时把原因一起说出来，而不是让人去别处找',
     );
 
@@ -819,7 +817,7 @@ describe('浏览器半边', () => {
     );
   });
 
-  it('刷新与撤下路由是实例卡头上的动作，报告没回来时也还在', async () => {
+  it('立即刷新是实例卡头上的动作，报告没回来时也还在', async () => {
     const { mini, element } = driveClient({ fails: 'status' });
     mini.mount(element);
     await mini.flush();
@@ -830,7 +828,7 @@ describe('浏览器半边', () => {
     const actions = findAll(heads[0]!, (node) => node.props.className === 'dap-row-actions')[0]!;
     assert.deepEqual(
       findAll(actions, (node) => node.type === 'button').map((node) => text(node)),
-      ['立即刷新', '撤掉已发布的路由'],
+      ['立即刷新'],
     );
     assert.match(text(tree), /尚未完成任何刷新/u);
     // 卡头那颗点说的是地址与刷新两件事；地址填着、只是还没刷新过，因此是绿的，标题只说地址。
@@ -947,7 +945,7 @@ describe('浏览器半边', () => {
     assert.deepEqual(harness.saveCalls[1], [undefined, null], '开关那颗只撤开关');
   });
 
-  it('同步开关与两个动作按钮各自打到对应端点', async () => {
+  it('同步开关与立即刷新各自打到对应端点', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
@@ -960,10 +958,7 @@ describe('浏览器半边', () => {
 
     click(findButton(mini.tree(), '立即刷新'));
     await mini.flush();
-    click(findButton(mini.tree(), '撤掉已发布的路由'));
-    await mini.flush();
     assert.ok(harness.panelCalls.includes('refresh'));
-    assert.ok(harness.panelCalls.includes('withdraw'));
   });
 
   it('设置文档只读时表单禁用并说明原因', async () => {

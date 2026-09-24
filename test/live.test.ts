@@ -246,6 +246,21 @@ describe('live Aperture discovery', { skip: INSTANCE === undefined ? 'set DSH_AP
     assert.deepEqual(inPlace, [[]], `expected an in-place volatile update (paths [[]]), saw ${JSON.stringify(updates)}`);
     assert.equal(apertureEntry(ctx)?.fiber?.uid, uid, 'the aperture entry was re-created instead of updated in place');
   });
+
+  // 放在最后：它把同步关掉，之前的用例都假定路由在服务。
+  it('关掉同步就把已发布的路由撤下来，而不是留在原地', async () => {
+    // 「不同步」的语义是撤下，而不是什么都不做：留着一份不再由配置决定的清单，界面看不出还有
+    // 谁在服务，用户只能自己去翻 `llm-pi-ai` 段。
+    await ctx.settings.mutate(APERTURE, [{ op: 'set', path: ['sync'], value: false }]);
+
+    const providers = (): Record<string, unknown> | undefined =>
+      (sectionValue(ctx, PI_AI) as { providers?: Record<string, unknown> } | undefined)?.providers;
+    await waitFor(
+      () => providers()?.[APERTURE] === undefined && providers()?.[`${APERTURE}-anthropic`] === undefined,
+      '两条路由都从 llm-pi-ai 段撤下来',
+    );
+    assert.deepEqual(Object.keys(providers() ?? {}), [], '除了本插件的路由，这个配置段里本来就没有别的 provider');
+  });
 });
 
 /** 本插件在 Loader 里的那一行。 */

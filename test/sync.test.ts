@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
 import type { RoutePlan } from '../src/profile.ts';
-import { applySync, clearRoutes, deepEqualJson, planSync } from '../src/sync.ts';
+import { applySync, deepEqualJson, planSync } from '../src/sync.ts';
 
 /** 一条计划中的路由，其 profile 可被轻易识别。 */
 function routePlan(provider: string, marker: string): RoutePlan {
@@ -131,21 +131,22 @@ describe('applySync', () => {
   });
 });
 
-describe('clearRoutes', () => {
+describe('撤下（同步关掉时的空方案）', () => {
   it('只移除它拥有的路由', async () => {
     const { service, writes } = fakeSettings({ providers: { aperture: {}, workbuddy: {}, 'aperture-anthropic': {} } });
-    const outcome = await clearRoutes(service, OWNED);
+    const outcome = await applySync(service, [], OWNED);
     assert.equal(outcome.applied, true);
     assert.deepEqual(writes[0], [
       { op: 'unset', path: ['providers', 'aperture'] },
       { op: 'unset', path: ['providers', 'aperture-anthropic'] },
     ]);
+    assert.deepEqual(outcome.routes, []);
   });
 
   it('当路由已不存在时报告无事可做', async () => {
     const { service } = fakeSettings({ providers: { workbuddy: {} } });
-    const outcome = await clearRoutes(service, OWNED);
+    const outcome = await applySync(service, [], OWNED);
     assert.equal(outcome.applied, false);
-    assert.equal(outcome.reason, '没有需要移除的路由');
+    assert.equal(outcome.reason, '已处于同步状态');
   });
 });

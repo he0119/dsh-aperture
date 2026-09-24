@@ -21,10 +21,9 @@
 
 import type { SettingsDescriptor, SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
 import type { ResolvedConfig } from './config.ts';
-import { APERTURE_NAMESPACE, PI_AI_NAMESPACE } from './namespaces.ts';
+import { APERTURE_NAMESPACE } from './namespaces.ts';
 import { buildReport, type DeclaredOverrides, type PanelReport } from './report.ts';
 import { message, type ApertureRuntime } from './runtime.ts';
-import { clearRoutes } from './sync.ts';
 import type { Modality } from './types.ts';
 
 /**
@@ -89,8 +88,6 @@ export interface PanelOps {
   status(): PanelReport;
   /** 立刻重新发现并发布。 */
   refresh(): Promise<PanelAction>;
-  /** 把本插件拥有的路由从 `llm-pi-ai` 段撤下来。 */
-  withdraw(): Promise<PanelAction>;
   /** 表单要显示的配置与「是否被覆盖」。 */
   configuration(): PanelConfiguration;
   /**
@@ -266,7 +263,7 @@ function overridden(user: Record<string, unknown>, field: string): boolean {
  * 组装端点。
  *
  * @param deps - 运行时、配置活引用与设置服务。
- * @returns 五个端点；`status` 与 `configuration` 是同步的，读一份已经算好的结果不该等待。
+ * @returns 四个端点；`status` 与 `configuration` 是同步的，读一份已经算好的结果不该等待。
  */
 export function createPanelOps(deps: PanelDeps): PanelOps {
   // 报告每次都按当前配置现组装：覆盖与别名本身是配置，改完必须立刻能在列表里看到。
@@ -281,23 +278,6 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
       return outcome.ok
         ? { ok: true, summary: '已重新发现并发布。' }
         : { ok: false, summary: `刷新没有成功：${outcome.error ?? '原因未知'}` };
-    },
-
-    async withdraw(): Promise<PanelAction> {
-      const owned = [deps.config().route, deps.config().anthropicRoute];
-      try {
-        const outcome = await clearRoutes(deps.settings, owned);
-        // 「已经没有了」与「刚撤下来」都是想要的状态，因此都算成功。
-        return outcome.applied
-          ? {
-            ok: true,
-            summary: `已从 "${PI_AI_NAMESPACE}" 撤下 ${outcome.ops} 条路由：${owned.join('、')}。`
-              + '下一次刷新会按当前配置重新发布；要让撤下长期生效，请关掉同步开关。',
-          }
-          : { ok: true, summary: `没有需要撤下的路由：${outcome.reason ?? '原因未知'}` };
-      } catch (error) {
-        return { ok: false, summary: `撤下路由失败：${message(error)}` };
-      }
     },
 
     configuration(): PanelConfiguration {
@@ -323,7 +303,7 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
       if (ops.length === 0) return { ok: true, summary: '没有要保存的改动。' };
 
       // 恢复默认是唯一一种「只移除、不写入」的保存，值得单独说一句。
-      const withdrawOnly = ops.every((op) => op.op === 'unset');
+      const unsetOnly = ops.every((op) => op.op === 'unset');
       try {
         // 带着刚读到的版本号写入：期间有别人改过就拒绝，而不是覆盖他的改动。
         await deps.settings.mutate(APERTURE_NAMESPACE, ops, readSection(deps.settings).revision);
@@ -333,7 +313,7 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
         // 并进那一轮，而不是另跑一轮。
         const outcome = await deps.runtime.refresh('配置变更');
         // 写入成功了，但重新发现可能失败——两件事不能混成一句话说。
-        const wrote = withdrawOnly ? '已恢复默认，回落到缺省值' : '已写入设置';
+        const wrote = unsetOnly ? '已恢复默认，回落到缺省值' : '已写入设置';
         return {
           ok: true,
           summary: outcome.ok

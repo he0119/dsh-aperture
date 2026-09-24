@@ -68,7 +68,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # should show a "# == dsh-ape
 The models appear in the selector under the route `Aperture`. To see what the last refresh did, look at **Plugins → dsh-aperture → Configure**: the status block lays every fact out on its own row, and the models are listed per route underneath.
 
 ```
-▾ Aperture  ●                        [Refresh now] [Withdraw published routes]
+▾ Aperture  ●                                  [Refresh now]
   Aperture  aperture.baseUrl
   Instance address  Overridden  Reset to default
   [https://ai.example.ts.net             ]
@@ -117,11 +117,10 @@ The interface is at **Plugins → dsh-aperture → Configure** (press Configure 
 | --- | --- |
 | Configuration page · 实例卡 | the instance address, sync toggle and last refresh; the head's dot says whether the address is usable and whether the last round succeeded, naming which one on hover |
 | Configuration page · 实例地址 | edits `baseUrl` (written through the settings seam; when it says "Overridden", the "Reset to default" beside it falls back to the default) |
-| Configuration page · 同步开关 | edits `sync`: off discovers without writing `llm-pi-ai`; carries the same "Overridden / Reset to default" pair |
+| Configuration page · 同步开关 | edits `sync`: off discovers without writing `llm-pi-ai` and withdraws whatever this plugin had published in that same round; carries the same "Overridden / Reset to default" pair |
 | Configuration page · 保存 | bottom right of the editor (Cancel sits to its left): writes the address and toggle drafts into the settings document; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
 | Configuration page · 最近一次刷新 | the read-only diagnosis in the lower half of the card body: what the last refresh did, what triggered it, and the catalog, endpoint and settings-write results |
 | Configuration page · 立即刷新 | an action on the Instance card head: discover and republish now, then show that round's report |
-| Configuration page · 撤掉已发布的路由 | an action on the Instance card head: withdraw this plugin's two routes from the `llm-pi-ai` section |
 | Configuration page · 模型与路由 | one page-level section: an expandable card per route (its head carrying `provider · api`, the model count and a dot saying whether this round wrote it into `llm-pi-ai`), whose body holds the address and the model list; models no route can serve get their own Unserved card |
 | Configuration page · 编辑 | the pill button in a card head: expands the next level inside that card. A route card expands the model list; a model row expands its own parameter panel — display name, catalog alias, capacities, modalities, reasoning, protocol, each source next to the field it describes |
 | Configuration page · 保存 / 取消 | write that row only, or throw that row's edits away; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
@@ -129,7 +128,7 @@ The interface is at **Plugins → dsh-aperture → Configure** (press Configure 
 
 In-place edits are configuration: capacities and modalities land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. Capacities accept the `1M` / `100K` spelling (decimal suffixes, the same vocabulary as the official Models page: `1M` is 1000000, not 1048576); what gets stored is still a plain token count, and the field spells it back in the shortest form that survives a round trip (`384000` → `384K`, while `1048576` is not a whole thousand and stays written out). The protocol field is the only way out for an unserved model: filling it in publishes a model that only answers on its native endpoint under the matching route.
 
-> "撤掉已发布的路由" withdraws once: the next refresh republishes according to the current configuration. To make it stick, turn the sync toggle off first (equivalent to `sync: false`).
+> To make the routes this plugin published disappear, turn the sync toggle off: that round of refresh withdraws them from the `llm-pi-ai` section (only the two keys this plugin owns; every other provider in the section is left alone).
 
 ## Configuration
 

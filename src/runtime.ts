@@ -254,11 +254,15 @@ export class ApertureRuntime {
 
   /** 写入方案，或说明为什么没有写入任何内容。 */
   private async publish(config: ResolvedConfig, plan: ProfilePlan): Promise<SyncOutcome> {
-    if (!config.sync) {
-      return { applied: false, ops: 0, routes: [], reason: '同步已禁用' };
-    }
+    // 关掉同步是「撤下本插件的路由」，不是「什么都不做」：留着一份不再由配置决定的清单，
+    // 界面看不出还有谁在服务，用户只能自己去翻 `llm-pi-ai` 段。空方案正好表达撤下——
+    // `planSync` 会把每个拥有但不再需要的路由键 unset 掉。
+    const routes = config.sync ? plan.routes : [];
     try {
-      return await applySync(this.deps.settings, plan.routes, plan.ownedRoutes);
+      const outcome = await applySync(this.deps.settings, routes, plan.ownedRoutes);
+      return config.sync || outcome.applied
+        ? outcome
+        : { ...outcome, reason: '同步已关闭，本插件没有发布过路由' };
     } catch (error) {
       this.deps.logger.warn('发布发现的清单失败：%s', message(error));
       return { applied: false, ops: 0, routes: [], reason: message(error) };

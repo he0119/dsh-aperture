@@ -1,11 +1,10 @@
 /**
- * 配置页背后的六个端点。
+ * 配置页背后的五个端点。
  *
  * 配置页本身在浏览器里，无法在这里执行；能在这里钉住的是它依赖的那份契约：报告是结构化数据
  * （哪个模型属于哪条路由、每条事实来自哪里、用户写了哪些覆盖），刷新用界面这个来源触发，
- * 撤下路由只动本插件拥有的键，配置读写落在 `aperture` 段并带上版本号，模型的参数按字段合并
- * 且非法值在写入前就被挡下来，并且六个端点都不抛异常——失败是要显示的结果，不是要分辨的
- * rejection。
+ * 配置读写落在 `aperture` 段并带上版本号，模型的参数按字段合并且非法值在写入前就被挡下来，
+ * 并且五个端点都不抛异常——失败是要显示的结果，不是要分辨的 rejection。
  *
  * @module dsh-aperture/test/panel
  */
@@ -653,52 +652,6 @@ describe('panel.refresh', () => {
     const action = await ops.refresh();
     assert.equal(action.ok, false);
     assert.match(action.summary, /ECONNREFUSED/u);
-  });
-});
-
-describe('panel.withdraw', () => {
-  it('撤下本插件拥有的两条路由', async () => {
-    const { ops, writes } = panel({ first: outcome(), settingsValue: { providers: { aperture: {}, 'aperture-anthropic': {}, workbuddy: {} } } });
-    const action = await ops.withdraw();
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /撤下 2 条路由/u);
-    assert.deepEqual(writes[0]?.ops, [
-      { op: 'unset', path: ['providers', 'aperture'] },
-      { op: 'unset', path: ['providers', 'aperture-anthropic'] },
-    ]);
-  });
-
-  it('跟随配置里的路由名，而不是写死的默认名', async () => {
-    const { ops, writes } = panel({
-      first: outcome(),
-      config: () => resolveConfig({ baseUrl: 'https://ai.example.ts.net', route: 'team', anthropicRoute: 'team-anthropic' }),
-      settingsValue: { providers: { team: {}, 'team-anthropic': {} } },
-    });
-    await ops.withdraw();
-    assert.deepEqual(writes[0]?.ops, [
-      { op: 'unset', path: ['providers', 'team'] },
-      { op: 'unset', path: ['providers', 'team-anthropic'] },
-    ]);
-  });
-
-  it('当路由本来就不在时报告无事可做，但仍算成功', async () => {
-    const { ops } = panel({ first: outcome(), settingsValue: { providers: { workbuddy: {} } } });
-    const action = await ops.withdraw();
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /没有需要撤下的路由/u);
-  });
-
-  it('写入被拒绝时返回失败原因，而现状仍然读得到', async () => {
-    const { ops } = panel({
-      first: outcome(),
-      settingsValue: { providers: { aperture: {} } },
-      settingsFail: '设置文档拒绝这次写入',
-    });
-    const action = await ops.withdraw();
-    assert.equal(action.ok, false);
-    assert.match(action.summary, /设置文档拒绝这次写入/u);
-    // 报告仍然读得到：失败时界面更应该显示现状。
-    assert.equal(ops.status().place, 'https://ai.example.ts.net');
   });
 });
 

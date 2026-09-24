@@ -51,12 +51,11 @@ function panelDescriptor(method: string, parameters: readonly string[] = []): In
  * `validateContribution` 拒绝，**整份贡献一起撤回**（浏览器里只剩一行 console.error，
  * 界面安静地什么都不出现）。它预置的名字是 `ctx` / `empty` / `invokeRemote` / `methods`
  * / `name` / `namespace` 与 `has` / `install` / `installDirect` / `installScoped` /
- * `assertMethodAvailable` / `remove` —— 「撤下路由」因此叫 `withdraw` 而不是 `remove`。
+ * `assertMethodAvailable` / `remove` —— 新端点起名时先对一遍这份名单。
  */
 export const PANEL_INVOCATIONS: readonly InvocationDescriptor[] = [
   panelDescriptor('status'),
   panelDescriptor('refresh'),
-  panelDescriptor('withdraw'),
   panelDescriptor('configuration'),
   panelDescriptor('save', ['baseUrl', 'sync']),
   panelDescriptor('edit', ['id', 'patch']),
@@ -103,11 +102,6 @@ export class AperturePanelService extends TypertRemoteService {
   /** 立刻重新发现并发布。 */
   refresh(): Promise<PanelAction> {
     return this.ops.refresh();
-  }
-
-  /** 撤下本插件发布的路由。方法名受端点名约束，见 {@link PANEL_INVOCATIONS}。 */
-  withdraw(): Promise<PanelAction> {
-    return this.ops.withdraw();
   }
 
   /** 配置页表单要显示的配置。 */

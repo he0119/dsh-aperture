@@ -18,7 +18,7 @@
  *
  * 界面在「插件」页里：浏览器半边（`client/aperture.js`）注册进插件管理页的
  * `plugins.row.config` 槽位，于是本插件那一行多出一个「配置」入口，用来改实例地址与
- * 同步开关、立刻刷新、以及把已经发布的路由撤下来。除此之外没有别的界面——发现本身发生
+ * 同步开关（关掉即撤下已发布的路由）、立刻刷新。除此之外没有别的界面——发现本身发生
  * 在插件加载、配置变更与刷新间隔到点上。
  *
  * ```yaml
@@ -68,7 +68,7 @@ export type { ProfilePlan, ProfileOptions, RoutePlan } from './profile.ts';
 export { buildRegistry, classifyProtocol, isDeepSeekFamily } from './registry.ts';
 export type { RegistryResult } from './registry.ts';
 export { AperturePanelService, PANEL_CONTRIBUTION, PANEL_INVOCATIONS, PANEL_NAMESPACE, PANEL_PACKAGE } from './remote.ts';
-export { applySync, clearRoutes, planSync } from './sync.ts';
+export { applySync, planSync } from './sync.ts';
 export type { SyncOutcome } from './sync.ts';
 export type { ConfiguredModel, DiscoveredModel, FactSource, Modality, ModelProvenance } from './types.ts';
 export { buildModelsEndpoint, buildRouteBaseUrl, normalizeBaseUrl } from './url.ts';
@@ -168,7 +168,7 @@ export function apply(ctx: Context, config: ConfigRef): void {
   // 值全部补齐），所以第一轮刷新看到的就是生效配置，不必先按组合层跑一遍再补一遍去对齐。
   void runtime.refresh('插件加载');
 
-  // 配置页需要宿主半边的 Remote 面（报告、配置读写、立刻刷新、撤下路由），而
+  // 配置页需要宿主半边的 Remote 面（报告、配置读写、立刻刷新），而
   // Typert 注册表只有 Web 这类装配了网关的 profile 才有。其余 profile 里这一整块被跳过：
   // 发现照常运行，只是没有可点按的界面。
   ctx.inject(['typert'], (panelCtx) => {
