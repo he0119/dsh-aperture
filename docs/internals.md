@@ -85,7 +85,7 @@ Anthropic 路由**默认不给推理档位**：Anthropic 的 thinking 是另一�
 ## 生命周期与依赖
 
 - `settings` 是**硬依赖**（`inject = ['settings']`）。本插件的职责就是往设置里写，没有它发布对象都不存在，所以宁可让框架把插件挂在 `PENDING`，provider 被替换时自动卸载、恢复后重新加载，而不是留着一个无处发布的实例。（`settings` 本身要求 `configEditor` 与 `profileContext`，因此这一层依赖等于说「这个部署得有一个可管理的 profile」。）
-- `typert` **不声明**，也只用于界面：配置页需要的四个端点（报告、配置读写、立刻刷新）经 Typert Remote 暴露，而 Typert 注册表只有 Web 这类装配了网关的 profile 才有。headless profile 里这一整块被跳过，发现照常运行，只是没有可点按的界面。
+- `typert` **不声明**，也只用于界面：配置页需要的五个端点（报告、配置读写、立刻刷新、按行编辑）经 Typert Remote 暴露，而 Typert 注册表只有 Web 这类装配了网关的 profile 才有。headless profile 里这一整块被跳过，发现照常运行，只是没有可点按的界面。
 - 定时刷新用 `ctx.effect` 注册，卸载自动清理。
 - **配置段的第一次发现不靠注册动作触发**：`aperture:` 这一段由 profile 的补丁层给出（本包组合层 + 用户层），插件挂载时读到的就已经是叠加后的结果，不需要为了对齐两份配置再刷一遍。配置变化经 Loader 的 `loader/volatile-update` 事件通知（`index.ts` 里那一个 `ctx.on`），据此重算定时刷新间隔并唤起一轮刷新。
 - 配置是**活引用**（`Volatile`）而不是快照：改 profile 补丁文档里的 `aperture:` 段，下一次刷新立刻用新值，不必重启、也不必重载插件。
