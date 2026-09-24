@@ -135,25 +135,19 @@ aperture  openai-completions  11 个模型  ●                 [▾ 收起]
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture 实例地址。末尾 `/v1` 会被容忍并去掉；空值表示休眠（不探测、不写入） |
-| `route` | `aperture` | OpenAI 兼容模型的路由名 |
-| `anthropicRoute` | `aperture-anthropic` | Anthropic Messages 模型的路由名 |
-| `displayName` | `Aperture` | 选择器里的名字 |
-| `anthropicDisplayName` | `Aperture (Anthropic)` | 同上，Anthropic 路由 |
+| `route` | `aperture` | OpenAI 兼容模型的路由名；Anthropic 那条是它加 `-anthropic`，两个选择器名称也由它推出来（`aperture` → `Aperture` / `Aperture (Anthropic)`） |
 | `apiKeyEnv` | `''` | 凭据 seam 里的引用名；非空时不再写占位头 |
-| `placeholderCredential` | `dsh-aperture` | 占位凭据的值；设成 `''` 就完全不写占位头 |
 | `headers` | `{}` | 每条请求额外带的头，**优先于**占位头 |
 | `enabledModelIds` | `[]` | 非空时只保留这些 id（`models` 里显式列出的不受限） |
 | `modelAliases` | `{}` | 网关 id → models.dev id |
 | `models` | `[]` | 逐模型覆盖或补充：`id`、`name`、`api`、`contextWindow`、`maxTokens`、`input`、`thinking`、`reasoningEfforts` |
 | `modelMetadataUrl` | `https://models.dev/models.json` | 目录地址；设成 `''` 关闭补全 |
-| `defaultContextWindow` | `128000` | 谁都没说容量时的上下文 |
 | `images` | `ignore` | `metadata` = 采用 models.dev 的输入模态（图片） |
 | `reasoning` | `auto` | `off` = 所有模型都当不会推理 |
 | `sync` | `true` | `false` = 只探测不写设置（配置页仍可查看） |
 | `refreshIntervalMinutes` | `0` | 定时刷新间隔；`0` = 只在启动和配置变化时刷新 |
-| `timeoutMs` | `20000` | 网关与目录的单次请求超时 |
 
-容量与推理档位缺失时，按 Aperture 字段 → [models.dev](https://models.dev) → 保守默认值补全；`maxTokens` 没人声明时**故意不写**（在 `llm-pi-ai` 里它同时是每次请求的 `max_tokens` 上限，凭空编一个值会把请求截断）。
+容量与推理档位缺失时，按 Aperture 字段 → [models.dev](https://models.dev) → 保守默认值补全（兜底容量 128000、单次请求超时 20s 是代码里的常量，不是配置项）；`maxTokens` 没人声明时**故意不写**（在 `llm-pi-ai` 里它同时是每次请求的 `max_tokens` 上限，凭空编一个值会把请求截断）。
 
 ## 常见问题
 
@@ -237,8 +231,8 @@ DSH 的补丁层是叠加的：profile 的补丁文档之上还有 `$DSH_HOME/co
 **需要真密钥而不是占位头？**
 Aperture 靠网络身份（Tailscale）认证，本不需要密钥；插件默认写入 `authorization: Bearer dsh-aperture` / `x-api-key: dsh-aperture`，只是让适配器愿意发请求，**不是密钥**。真要密钥时把 `apiKeyEnv` 指向凭据 seam 里的记录，占位头就不会写入。
 
-**改了 `route` / `anthropicRoute` 之后旧路由还在？**
-插件只认自己当前拥有的两个键，不知道历史上用过哪些名字，所以旧键会留在 `llm-pi-ai.providers` 里。它不报错、只是不再刷新；要清理就手动删掉那一行。
+**改了 `route` 之后旧路由还在？**
+插件只认自己当前拥有的两个键（`route` 与 `route` + `-anthropic`），不知道历史上用过哪些名字，所以旧键会留在 `llm-pi-ai.providers` 里。它不报错、只是不再刷新；要清理就手动删掉那一行。
 
 ## 它做了什么
 
@@ -246,8 +240,8 @@ Aperture 靠网络身份（Tailscale）认证，本不需要密钥；插件默�
 GET {baseUrl}/v1/models
         │
         ├─ 每个模型：supported_endpoints ──► 分流
-        │     /v1/chat/completions        ──► route            （openai-completions）
-        │     /v1/messages                ──► anthropicRoute   （anthropic-messages）
+        │     /v1/chat/completions        ──► route                     （openai-completions）
+        │     /v1/messages                ──► route + -anthropic        （anthropic-messages）
         │     只有原生 generateContent     ──► 不发布（列进「未服务」）
         │
         ├─ 容量：Aperture 字段 ─► models.dev ─► 默认值

@@ -17,7 +17,6 @@ function plan(overrides: Partial<ProfileOptions> = {}, build = options()) {
     displayName: 'Aperture',
     anthropicDisplayName: 'Aperture (Anthropic)',
     headers: {},
-    placeholderCredential: 'dsh-aperture',
     configured: build.models,
     ...overrides,
   });
@@ -55,13 +54,13 @@ describe('buildProfilePlan', () => {
   });
 
   it('配置了凭据引用之后就去掉占位凭据', () => {
-    const result = plan({ apiKeyEnv: 'APERTURE_API_KEY', placeholderCredential: '' });
+    const result = plan({ apiKeyEnv: 'APERTURE_API_KEY' });
     assert.equal(route(result, 'aperture')?.profile.apiKeyEnv, 'APERTURE_API_KEY');
     assert.equal(route(result, 'aperture')?.profile.headers, undefined);
   });
 
   it('允许配置的请求头替换占位凭据', () => {
-    const result = plan({ headers: { authorization: 'Bearer real-token' }, placeholderCredential: '' });
+    const result = plan({ headers: { authorization: 'Bearer real-token' } });
     assert.deepEqual(route(result, 'aperture')?.profile.headers, { authorization: 'Bearer real-token' });
   });
 
@@ -130,7 +129,6 @@ describe('buildProfilePlan', () => {
       displayName: 'Aperture',
       anthropicDisplayName: 'Aperture (Anthropic)',
       headers: {},
-      placeholderCredential: 'dsh-aperture',
       configured: [],
     });
     assert.deepEqual(

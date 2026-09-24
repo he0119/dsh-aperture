@@ -1,9 +1,9 @@
 /**
  * 配置 schema 与解析测试。
  *
- * harness 的约定是：部署可能需要改动的任何内容都是配置字段，且非法配置必须在加载时
- * 失败，而不是静默降级。这两半只有在被钉死时才成立，因此本文件检验 schema 的默认值
- * 与拒绝行为，以及 `resolveConfig` 在其之上添加的跨字段规则。
+ * 写在这里的两半：schema 只留部署真的要改的东西（能推出来的、只该是常量的都不在
+ * 里面），且非法配置必须在加载时失败，而不是静默降级。因此本文件检验 schema 的
+ * 键集、默认值与拒绝行为，以及 `resolveConfig` 在其之上添加的推导与跨字段规则。
  *
  * 根级 volatile 把 schema 的返回值变成活引用，但**没有**把校验挪走：非法值仍然在
  * `Config(raw)` 当场抛出。因此这里读值统一走 `configValue`（`get()` 加空值兜底），而
@@ -18,6 +18,7 @@ import {
   Config,
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MODEL_METADATA_URL,
+  DEFAULT_TIMEOUT_MS,
   configValue,
   memoizedConfig,
   resolveConfig,
@@ -57,24 +58,39 @@ function accepts(value: Record<string, unknown>): boolean {
 describe('配置 schema', () => {
   it('为裸行填充每一项默认值', () => {
     const value = defaults();
+    // 键集本身就是一条承诺：能推出来的（另一条路由、两个显示名）、只该是常量的
+    // （容量、超时、占位凭据）都不在这里，加回来得是一次刻意的决定。
+    assert.deepEqual(Object.keys(value).sort(), [
+      'apiKeyEnv',
+      'baseUrl',
+      'enabledModelIds',
+      'headers',
+      'images',
+      'modelAliases',
+      'modelMetadataUrl',
+      'models',
+      'reasoning',
+      'refreshIntervalMinutes',
+      'route',
+      'sync',
+    ]);
     assert.equal(value.baseUrl, '');
     assert.equal(value.route, 'aperture');
-    assert.equal(value.anthropicRoute, 'aperture-anthropic');
-    assert.equal(value.displayName, 'Aperture');
-    assert.equal(value.anthropicDisplayName, 'Aperture (Anthropic)');
     assert.equal(value.apiKeyEnv, '');
-    assert.equal(value.placeholderCredential, 'dsh-aperture');
     assert.deepEqual(value.headers, {});
     assert.deepEqual(value.enabledModelIds, []);
     assert.deepEqual(value.modelAliases, {});
     assert.deepEqual(value.models, []);
     assert.equal(value.modelMetadataUrl, DEFAULT_MODEL_METADATA_URL);
-    assert.equal(value.defaultContextWindow, DEFAULT_CONTEXT_WINDOW);
     assert.equal(value.images, 'ignore');
     assert.equal(value.reasoning, 'auto');
     assert.equal(value.sync, true);
     assert.equal(value.refreshIntervalMinutes, 0);
-    assert.equal(value.timeoutMs, 20_000);
+  });
+
+  it('不再是配置项的那两个数字仍然钉着值', () => {
+    assert.equal(DEFAULT_CONTEXT_WINDOW, 128_000);
+    assert.equal(DEFAULT_TIMEOUT_MS, 20_000);
   });
 
   it('保留部署所设置的内容', () => {
@@ -102,7 +118,7 @@ describe('配置 schema', () => {
   });
 
   it('拒绝类型错误的原始值', () => {
-    assert.equal(accepts({ timeoutMs: 'soon' }), false);
+    assert.equal(accepts({ refreshIntervalMinutes: 'soon' }), false);
     assert.equal(accepts({ sync: 'no' }), false);
     assert.equal(accepts({ models: 'deepseek-flash' }), false);
   });
@@ -113,12 +129,24 @@ describe('配置 schema', () => {
 });
 
 describe('resolveConfig', () => {
-  it('规范化实例根地址并拆分两个路由', () => {
+  it('规范化实例根地址', () => {
     const resolved = resolveConfig(configured({ baseUrl: 'https://ai.example.ts.net/v1/' }));
     assert.equal(resolved.instanceRoot, 'https://ai.example.ts.net');
     assert.equal(resolved.rawBaseUrl, 'https://ai.example.ts.net/v1/');
     assert.equal(resolved.route, 'aperture');
-    assert.equal(resolved.anthropicRoute, 'aperture-anthropic');
+  });
+
+  it('另一条路由与两个显示名都从路由键推出来', () => {
+    // 一个部署要换的只是前缀：换成 `my-gateway` 之后四处名字必须一起换，而不是各写各的。
+    const derived = resolveConfig(configured({ route: 'my-gateway' }));
+    assert.equal(derived.anthropicRoute, 'my-gateway-anthropic');
+    assert.equal(derived.displayName, 'My Gateway');
+    assert.equal(derived.anthropicDisplayName, 'My Gateway (Anthropic)');
+
+    const bare = resolveConfig(defaults());
+    assert.equal(bare.anthropicRoute, 'aperture-anthropic');
+    assert.equal(bare.displayName, 'Aperture');
+    assert.equal(bare.anthropicDisplayName, 'Aperture (Anthropic)');
   });
 
   it('在 baseUrl 缺失时让插件保持休眠，而不是失败', () => {
@@ -129,11 +157,7 @@ describe('resolveConfig', () => {
 
   it('拒绝永远无法匹配 provider 语法的路由键', () => {
     assert.throws(() => resolveConfig(configured({ route: 'Aperture Route' })), /必须是小写连字符形式的 provider 路由名/);
-    assert.throws(() => resolveConfig(configured({ anthropicRoute: '-x' })), /anthropicRoute/);
-  });
-
-  it('拒绝两个路由使用同一个键', () => {
-    assert.throws(() => resolveConfig(configured({ anthropicRoute: 'aperture' })), /不能相同/);
+    assert.throws(() => resolveConfig(configured({ route: '-x' })), /必须是小写连字符形式的 provider 路由名/);
   });
 
   it('拒绝重复或为空的模型 id', () => {
@@ -151,20 +175,12 @@ describe('resolveConfig', () => {
     );
   });
 
-  it('把空白的 apiKeyEnv 与空白显示名视为未设置', () => {
-    const resolved = resolveConfig(configured({ apiKeyEnv: '   ', displayName: '  ', anthropicDisplayName: '' }));
-    assert.equal(resolved.apiKeyEnv, undefined);
-    assert.equal(resolved.displayName, 'Aperture');
-    assert.equal(resolved.anthropicDisplayName, 'Aperture (Anthropic)');
+  it('把空白的 apiKeyEnv 视为未配置', () => {
+    assert.equal(resolveConfig(configured({ apiKeyEnv: '   ' })).apiKeyEnv, undefined);
   });
 
-  it('保留真实凭据引用并修剪传入的名称', () => {
-    const resolved = resolveConfig(
-      configured({ apiKeyEnv: ' APERTURE_API_KEY ', displayName: ' Aperture ', anthropicDisplayName: 'Aperture (A)' }),
-    );
-    assert.equal(resolved.apiKeyEnv, 'APERTURE_API_KEY');
-    assert.equal(resolved.displayName, 'Aperture');
-    assert.equal(resolved.anthropicDisplayName, 'Aperture (A)');
+  it('修剪传入的凭据引用', () => {
+    assert.equal(resolveConfig(configured({ apiKeyEnv: ' APERTURE_API_KEY ' })).apiKeyEnv, 'APERTURE_API_KEY');
   });
 
   it('把已禁用的清单 URL 默认为空值，而非内置值', () => {

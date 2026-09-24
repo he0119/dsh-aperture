@@ -55,8 +55,6 @@ export interface ProfileOptions {
   readonly apiKeyEnv?: string;
   /** 额外的路由头；它们优先于占位头。 */
   readonly headers: Readonly<Record<string, string>>;
-  /** 占位凭据值；为空则不发布占位头。 */
-  readonly placeholderCredential: string;
   /** 已配置的逐模型覆盖项，用于查询显式的推理档位。 */
   readonly configured: readonly ConfiguredModel[];
 }
@@ -154,11 +152,11 @@ function routeHeaders(
       return lower === 'authorization' || lower === 'x-api-key' || lower === 'cf-aig-authorization';
     });
 
-  if (!hasCredential && options.placeholderCredential.length > 0) {
+  if (!hasCredential) {
     if (protocol === 'openai-completions') {
-      headers.authorization = `Bearer ${options.placeholderCredential}`;
+      headers.authorization = `Bearer ${DEFAULT_PLACEHOLDER_CREDENTIAL}`;
     } else {
-      headers['x-api-key'] = options.placeholderCredential;
+      headers['x-api-key'] = DEFAULT_PLACEHOLDER_CREDENTIAL;
     }
   }
 

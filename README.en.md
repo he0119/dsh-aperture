@@ -137,25 +137,19 @@ Every key lives under that row's `config:` in the profile patch document (user l
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture instance root. A trailing `/v1` is tolerated and stripped; empty leaves the plugin dormant |
-| `route` | `aperture` | Route key owning OpenAI-compatible models |
-| `anthropicRoute` | `aperture-anthropic` | Route key owning Anthropic Messages models |
-| `displayName` | `Aperture` | Selector label |
-| `anthropicDisplayName` | `Aperture (Anthropic)` | Selector label for the Anthropic route |
+| `route` | `aperture` | Route key owning OpenAI-compatible models; the Anthropic route is this key plus `-anthropic`, and both selector labels derive from it (`aperture` → `Aperture` / `Aperture (Anthropic)`) |
 | `apiKeyEnv` | `''` | Credential-seam reference; non-empty suppresses the placeholder header |
-| `placeholderCredential` | `dsh-aperture` | Placeholder value; `''` writes no placeholder header at all |
 | `headers` | `{}` | Extra request headers; they **win over** the placeholder |
 | `enabledModelIds` | `[]` | Non-empty restricts discovery to these ids (explicit `models` entries are exempt) |
 | `modelAliases` | `{}` | Gateway id → models.dev id |
 | `models` | `[]` | Per-model overrides and extras: `id`, `name`, `api`, `contextWindow`, `maxTokens`, `input`, `thinking`, `reasoningEfforts` |
 | `modelMetadataUrl` | `https://models.dev/models.json` | Catalog URL; `''` disables enrichment |
-| `defaultContextWindow` | `128000` | Context capacity when nothing sizes a model |
 | `images` | `ignore` | `metadata` adopts models.dev input modalities (images) |
 | `reasoning` | `auto` | `off` declares every model non-reasoning |
 | `sync` | `true` | `false` discovers without writing (the configuration page still reports) |
 | `refreshIntervalMinutes` | `0` | Periodic refresh; `0` refreshes only at load and on change |
-| `timeoutMs` | `20000` | Per-request timeout for the gateway and the catalog |
 
-Missing capacity and reasoning levels are filled in from Aperture's own fields → [models.dev](https://models.dev) → a conservative default. An unstated `maxTokens` is deliberately **omitted**: in `llm-pi-ai` it is also the per-request `max_tokens` cap, so inventing a value would truncate every request.
+Missing capacity and reasoning levels are filled in from Aperture's own fields → [models.dev](https://models.dev) → a conservative default (the fallback capacity, 128000, and the 20s per-request timeout are constants in the code, not configuration). An unstated `maxTokens` is deliberately **omitted**: in `llm-pi-ai` it is also the per-request `max_tokens` cap, so inventing a value would truncate every request.
 
 ## Troubleshooting
 
@@ -239,8 +233,8 @@ The configuration page only exists in the Web GUI (it works over Typert Remote e
 **Need a real key instead of the placeholder header?**
 Aperture authenticates by network identity (Tailscale) and needs none; the plugin writes `authorization: Bearer dsh-aperture` / `x-api-key: dsh-aperture` only to make the adapter willing to send the request. It is **not a key**. When a real credential is needed, point `apiKeyEnv` at a credential-seam record and no placeholder is written.
 
-**The old route is still there after changing `route` / `anthropicRoute`?**
-The plugin only knows the two keys it currently owns, not the names it used before, so the old key stays in `llm-pi-ai.providers`. It does no harm and simply stops refreshing; delete the entry by hand to clean it up.
+**The old route is still there after changing `route`?**
+The plugin only knows the two keys it currently owns (`route` and `route` + `-anthropic`), not the names it used before, so the old key stays in `llm-pi-ai.providers`. It does no harm and simply stops refreshing; delete the entry by hand to clean it up.
 
 ## What it does
 
@@ -248,8 +242,8 @@ The plugin only knows the two keys it currently owns, not the names it used befo
 GET {baseUrl}/v1/models
         │
         ├─ per model: supported_endpoints ──► routing
-        │     /v1/chat/completions        ──► route            (openai-completions)
-        │     /v1/messages                ──► anthropicRoute   (anthropic-messages)
+        │     /v1/chat/completions        ──► route                (openai-completions)
+        │     /v1/messages                ──► route + -anthropic   (anthropic-messages)
         │     native generateContent only ──► not published (reported under 未服务)
         │
         ├─ capacity:  Aperture fields ─► models.dev ─► default

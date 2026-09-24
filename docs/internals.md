@@ -55,7 +55,7 @@ Aperture 是按**端点**网关的：同一个模型不是所有协议都收。�
 
 | 事实 | 优先级 |
 | --- | --- |
-| `contextWindow` | Aperture `context_window_tokens` / `max_input_tokens` / `limit.context` → models.dev → `defaultContextWindow` |
+| `contextWindow` | Aperture `context_window_tokens` / `max_input_tokens` / `limit.context` → models.dev → 代码里的兜底常量 128000 |
 | `maxTokens` | Aperture `max_output_tokens` / `limit.output` → models.dev → **不写** |
 | `input`（多模态） | `images: metadata` 时取 Aperture 能力字段 → models.dev → `["text"]`；`images: ignore` 时恒为 `["text"]` |
 | `reasoning` | Aperture 能力字段 → models.dev → 关闭 |
@@ -100,7 +100,7 @@ volatile 只改**配置怎么被持有**，不改校验：非法值仍然在 `Co
 
 ## 写入行为
 
-插件只碰 `llm-pi-ai.providers` 下的两个键（`route` / `anthropicRoute`），并且：
+插件只碰 `llm-pi-ai.providers` 下的两个键（`route` / `route` + `-anthropic`），并且：
 
 - **内容相同就不写**——每次刷新都对比解析后的段，避免无意义的重写和文件监听回环；
 - **用路径操作写**——你的其它 provider 一个字段都不会动；
@@ -360,7 +360,7 @@ state、按卡记（官方也是 `?? true`），因此每一轮刷新重渲染�
 - `supported_endpoints` 是唯一的协议依据。网关如果不报，就按 OpenAI 兼容处理。
 - models.dev 是尽力而为的补全：拉不到就是拉不到，发现本身照常成功。
 - 本插件不注册任何 provider 目录（`registerConfigurableProviders`）——`llm-pi-ai` 已经认领了那件事，重复注册会抛错。
-- **改了 `route` / `anthropicRoute` 的路由名之后，旧键会留在 `llm-pi-ai.providers` 里**（插件只认自己当前拥有的两个键，无法知道历史上用过哪些名字）。它不会报错，只是不再刷新；要清理就手动删掉那一行。
+- **改了 `route` 的路由名之后，旧键会留在 `llm-pi-ai.providers` 里**（插件只认自己当前拥有的两个键，无法知道历史上用过哪些名字）。它不会报错，只是不再刷新；要清理就手动删掉那一行。
 - **配置页只存在于 Web 界面**（插件页 + Typert 注册表）；没有它的部署里发现照常，只是没有可点按的界面。从非本机来源打开的页面拿不到宿主设置，配置页会把失败原因摆在页面上（而不是假装可编辑）；设置文档本身不接受写入时（`settings.writable === false`），表单会置灰并说明原因。
 - **更高优先级的补丁层能盖住写入**：profile 的补丁文档之上还有 `$DSH_HOME/cordis.patch.yml` 这类层。同一行在那里也被写过时，配置页上的保存会写进 profile 的补丁文档、却不生效（插件页的文案是「已保存，但被更高优先级的配置覆盖，当前未生效」）；此时得去那一层改。
 - **peer 范围收得很紧**（`^0.1.7-rc.1`）：0.1.7 之前的宿主会被 peer 预检挡下——这一版起 `installSection` / `SettingsProvider` 这套接缝已经不存在，本插件的界面代码在旧宿主上无法工作。`0.3.0` 因此是一个有意的破坏性版本。

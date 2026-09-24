@@ -30,6 +30,7 @@ import {
   extractModelId,
   extractProvider,
 } from './metadata/extract.ts';
+import { DEFAULT_CONTEXT_WINDOW } from './config.ts';
 import type {
   ApertureProtocol,
   BuildOptions,
@@ -131,7 +132,7 @@ function fromEndpoint(
     name: apertureName ?? catalog?.name ?? id,
     ...(protocol === undefined ? {} : { protocol }),
     endpoints,
-    contextWindow: apertureLimits?.contextWindow ?? catalog?.contextWindow ?? options.defaultContextWindow,
+    contextWindow: apertureLimits?.contextWindow ?? catalog?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     ...resolveOutputCap(apertureLimits?.maxTokens ?? catalog?.maxTokens),
     input: options.images === 'metadata' ? (capabilities?.input ?? catalog?.input ?? ['text']) : ['text'],
     reasoning: options.reasoning === 'auto' && (capabilities?.reasoning ?? catalog?.reasoning ?? false),
@@ -152,7 +153,7 @@ function fromConfiguration(id: string, options: BuildOptions, lookup: CatalogLoo
     id,
     name: catalog?.name ?? id,
     endpoints: [],
-    contextWindow: catalog?.contextWindow ?? options.defaultContextWindow,
+    contextWindow: catalog?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     ...resolveOutputCap(catalog?.maxTokens),
     input: options.images === 'metadata' ? (catalog?.input ?? ['text']) : ['text'],
     reasoning: options.reasoning === 'auto' && (catalog?.reasoning ?? false),
@@ -184,7 +185,7 @@ function applyConfigured(model: DiscoveredModel, configured: ConfiguredModel, op
     name,
     ...(protocol === undefined ? {} : { protocol }),
     endpoints: model.endpoints,
-    contextWindow: contextWindow ?? options.defaultContextWindow,
+    contextWindow: contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     ...resolveOutputCap(maxTokens),
     input: declaredInput !== undefined || options.images === 'metadata' ? input : ['text'],
     reasoning: configured.thinking ?? model.reasoning,

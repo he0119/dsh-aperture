@@ -23,7 +23,7 @@ const quiet: RuntimeLogger = { error() {}, info() {}, warn() {}, debug() {} };
 
 /** 一份能解析出 `instanceRoot` 的配置段。 */
 function section(baseUrl = 'https://ai.example.ts.net'): Config {
-  return { baseUrl, route: 'aperture', anthropicRoute: 'aperture-anthropic' };
+  return { baseUrl, route: 'aperture' };
 }
 
 /**

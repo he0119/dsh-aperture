@@ -203,7 +203,7 @@ function panel(overrides: Partial<PanelDeps> & {
   });
   const ops = createPanelOps({
     runtime: overrides.runtime ?? runtime,
-    config: overrides.config ?? (() => resolveConfig({ baseUrl: 'https://ai.example.ts.net', route: 'aperture', anthropicRoute: 'aperture-anthropic' })),
+    config: overrides.config ?? (() => resolveConfig({ baseUrl: 'https://ai.example.ts.net', route: 'aperture' })),
     settings: overrides.settings ?? service,
   });
   return { ops, triggers, writes };
@@ -264,7 +264,6 @@ describe('panel.status', () => {
       config: () => resolveConfig({
         baseUrl: 'https://ai.example.ts.net',
         route: 'aperture',
-        anthropicRoute: 'aperture-anthropic',
         models: [materialized],
         modelAliases: { 'deepseek-flash': 'deepseek/deepseek-v4-flash' },
       }),

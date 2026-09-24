@@ -22,10 +22,9 @@
 #
 #       # 本插件在 llm-pi-ai 的 `providers` 字典里拥有的两条路由。
 #       # Aperture 的 `supported_endpoints` 里列了 `/v1/chat/completions` 的模型
-#       # 走 `route`；列了 `/v1/messages` 的走 `anthropicRoute`；
+#       # 走 `route`；列了 `/v1/messages` 的走 `route` 加 `-anthropic` 后缀的那条；
 #       # 两者都不提供的模型被记为“没有可服务的端点”，不发布到任何地方。
 #       route: aperture
-#       anthropicRoute: aperture-anthropic
 #
 #       # 凭据引用，由凭据服务接缝按请求解析。网关靠网络身份认证（Tailscale）时留空：
 #       # 插件随后只会写入 pi-ai 要求的占位请求头，不保存任何密钥。

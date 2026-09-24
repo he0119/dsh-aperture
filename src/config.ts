@@ -16,7 +16,6 @@
  */
 
 import z from '@deepseek-ai/schemastery';
-import { DEFAULT_PLACEHOLDER_CREDENTIAL } from './profile.ts';
 import { normalizeBaseUrl } from './url.ts';
 
 export { APERTURE_NAMESPACE, PI_AI_NAMESPACE } from './namespaces.ts';
@@ -26,6 +25,9 @@ export const DEFAULT_MODEL_METADATA_URL = 'https://models.dev/models.json';
 
 /** 当 Aperture 与清单都没给出容量时，为模型假定的上下文容量。 */
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
+
+/** 访问网关与清单的单次请求超时。没有哪个部署需要为此改一次配置。 */
+export const DEFAULT_TIMEOUT_MS = 20_000;
 
 /** provider 路由键的文法，与 Models 页面自身的规则一致。 */
 const ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
@@ -54,18 +56,13 @@ const modelConfig = z.object({
 export interface Config {
   /** Aperture 实例根地址，例如 `https://ai.example.ts.net`。留空则关闭发现。 */
   baseUrl?: string;
-  /** 承载 OpenAI 兼容模型的路由键。 */
+  /**
+   * 承载 OpenAI 兼容模型的路由键；Anthropic 那条路由与两者的显示名都从它推出来
+   * （见 {@link derivedNames}），因为一个部署要换的从来只是前缀。
+   */
   route?: string;
-  /** 承载 Anthropic Messages 模型的路由键。 */
-  anthropicRoute?: string;
-  /** OpenAI 兼容路由在选择器里显示的名字。 */
-  displayName?: string;
-  /** Anthropic 路由在选择器里显示的名字。 */
-  anthropicDisplayName?: string;
   /** 按请求解析的凭据引用；留空则改为发布一个占位请求头。 */
   apiKeyEnv?: string;
-  /** 占位凭据的值；空串表示不发布占位请求头。 */
-  placeholderCredential?: string;
   /** 每条路由的请求都会带上的额外请求头；它们优先于占位凭据。 */
   headers?: Record<string, string>;
   /** 非空时，只发现这些模型 id。 */
@@ -88,8 +85,6 @@ export interface Config {
   }>;
   /** models.dev 清单地址；留空则关闭这次补齐。 */
   modelMetadataUrl?: string;
-  /** 没有任何来源给出容量时使用的上下文容量。 */
-  defaultContextWindow?: number;
   /** `metadata` 接受清单里的输入模态；`ignore` 声明为纯文本。 */
   images?: 'ignore' | 'metadata';
   /** `auto` 映射模型的推理能力；`off` 声明所有模型都不推理。 */
@@ -98,8 +93,6 @@ export interface Config {
   sync?: boolean;
   /** 自动刷新间隔（分钟）；`0` 表示只在加载时与配置变更时刷新。 */
   refreshIntervalMinutes?: number;
-  /** 访问网关与清单的单次请求超时。 */
-  timeoutMs?: number;
 }
 
 /**
@@ -113,22 +106,16 @@ export interface Config {
 export const Config = z.object({
   baseUrl: z.string().default(''),
   route: z.string().default('aperture'),
-  anthropicRoute: z.string().default('aperture-anthropic'),
-  displayName: z.string().default('Aperture'),
-  anthropicDisplayName: z.string().default('Aperture (Anthropic)'),
   apiKeyEnv: z.string().default(''),
-  placeholderCredential: z.string().default(DEFAULT_PLACEHOLDER_CREDENTIAL),
   headers: z.dict(z.string()).default({}),
   enabledModelIds: z.array(z.string()).default([]),
   modelAliases: z.dict(z.string()).default({}),
   models: z.array(modelConfig).default([]),
   modelMetadataUrl: z.string().default(DEFAULT_MODEL_METADATA_URL),
-  defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   images: z.union([z.const('ignore'), z.const('metadata')]).default('ignore'),
   reasoning: z.union([z.const('auto'), z.const('off')]).default('auto'),
   sync: z.boolean().default(true),
   refreshIntervalMinutes: z.number().min(0).max(24 * 60).default(0),
-  timeoutMs: z.number().step(1).min(1).default(20_000),
 }).volatile();
 
 /**
@@ -174,18 +161,33 @@ export interface ResolvedConfig {
   readonly anthropicDisplayName: string;
   /** 凭据引用；未配置时为 `undefined`。 */
   readonly apiKeyEnv: string | undefined;
-  readonly placeholderCredential: string;
   readonly headers: Readonly<Record<string, string>>;
   readonly enabledModelIds: readonly string[];
   readonly modelAliases: Readonly<Record<string, string>>;
   readonly models: NonNullable<Config['models']>;
   readonly modelMetadataUrl: string;
-  readonly defaultContextWindow: number;
   readonly images: 'ignore' | 'metadata';
   readonly reasoning: 'auto' | 'off';
   readonly sync: boolean;
   readonly refreshIntervalMinutes: number;
-  readonly timeoutMs: number;
+}
+
+/**
+ * 从一个路由键推出这一对路由的名字与显示名。
+ *
+ * 三条路由事实此前是三个可写字段，但一个部署要换的从来只是前缀：Anthropic 那条按惯例
+ * 加 `-anthropic` 后缀，显示名则是路由键的标题写法（`aperture` → `Aperture`）。让它们
+ * 互相矛盾（两条路由同名、显示名为空）因此变成不可能，而不是要校验出来的错误。
+ *
+ * @param route - 已经过文法校验的 OpenAI 兼容路由键。
+ * @returns 三条推导出来的名字。
+ */
+function derivedNames(route: string): { anthropicRoute: string; displayName: string; anthropicDisplayName: string } {
+  const displayName = route
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+  return { anthropicRoute: `${route}-anthropic`, displayName, anthropicDisplayName: `${displayName} (Anthropic)` };
 }
 
 /**
@@ -199,26 +201,15 @@ export interface ResolvedConfig {
  *
  * @param config - 解析好的 `aperture` 段。
  * @returns 校验过的配置。
- * @throws Error 当路由键不合文法、或两条路由相同时抛出，并在消息里点名字段。
+ * @throws Error 当路由键不合文法、或模型覆盖自身重复/无法服务时抛出，并在消息里点名字段。
  */
 export function resolveConfig(config: Config): ResolvedConfig {
   const rawBaseUrl = (config.baseUrl ?? '').trim();
   const instanceRoot = normalizeBaseUrl(rawBaseUrl);
 
   const route = (config.route ?? '').trim();
-  const anthropicRoute = (config.anthropicRoute ?? '').trim();
-  for (const [field, value] of [
-    ['route', route],
-    ['anthropicRoute', anthropicRoute],
-  ] as const) {
-    if (!ROUTE_PATTERN.test(value)) {
-      throw new Error(
-        `${field} "${value}" 必须是小写连字符形式的 provider 路由名（需匹配 ${String(ROUTE_PATTERN)}）`,
-      );
-    }
-  }
-  if (route === anthropicRoute) {
-    throw new Error(`route 与 anthropicRoute 不能相同，两者都是 "${route}"`);
+  if (!ROUTE_PATTERN.test(route)) {
+    throw new Error(`route "${route}" 必须是小写连字符形式的 provider 路由名（需匹配 ${String(ROUTE_PATTERN)}）`);
   }
 
   const models = config.models ?? [];
@@ -245,22 +236,17 @@ export function resolveConfig(config: Config): ResolvedConfig {
     instanceRoot,
     rawBaseUrl,
     route,
-    anthropicRoute,
-    displayName: (config.displayName ?? '').trim() || 'Aperture',
-    anthropicDisplayName: (config.anthropicDisplayName ?? '').trim() || 'Aperture (Anthropic)',
+    ...derivedNames(route),
     apiKeyEnv: apiKeyEnv.length === 0 ? undefined : apiKeyEnv,
-    placeholderCredential: config.placeholderCredential ?? DEFAULT_PLACEHOLDER_CREDENTIAL,
     headers: config.headers ?? {},
     enabledModelIds: config.enabledModelIds ?? [],
     modelAliases: config.modelAliases ?? {},
     models,
     modelMetadataUrl: (config.modelMetadataUrl ?? '').trim(),
-    defaultContextWindow: config.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
     images: config.images ?? 'ignore',
     reasoning: config.reasoning ?? 'auto',
     sync: config.sync ?? true,
     refreshIntervalMinutes: config.refreshIntervalMinutes ?? 0,
-    timeoutMs: config.timeoutMs ?? 20_000,
   };
 }
 

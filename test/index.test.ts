@@ -467,14 +467,14 @@ describe('apply 的两种配置边界', () => {
   it('配置自相矛盾时 apply 响亮抛出，而不是带着坏配置继续跑', () => {
     const record = harness();
     assert.throws(
-      () => apply(record.ctx, liveConfig({ route: 'same', anthropicRoute: 'same' }).ref),
-      /不能相同/u,
-      '两条路由撞在同一条键上：这是配置错误，不是可以继续的状态',
+      () => apply(record.ctx, liveConfig({ route: 'Bad_Route' }).ref),
+      /必须是小写连字符形式/u,
+      '路由键不合文法：这是配置错误，不是可以继续的状态',
     );
     assert.throws(
-      () => apply(harness().ctx, liveConfig({ route: 'Bad_Route' }).ref),
-      /必须是小写连字符形式/u,
-      '路由键不合文法时同样在加载这一轮就抛出来',
+      () => apply(harness().ctx, liveConfig({ models: [{ id: 'a' }, { id: 'a' }] }).ref),
+      /重复列出了/u,
+      '跨字段的错误同样在加载这一轮就抛出来',
     );
   });
 });

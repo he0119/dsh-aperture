@@ -16,7 +16,7 @@
 import type { SettingsForms } from '@deepseek-ai/dsh-settings';
 import { fetchModelsListing } from './aperture.ts';
 import { ModelCatalog, type CatalogLoad } from './catalog.ts';
-import { type ResolvedConfig } from './config.ts';
+import { DEFAULT_TIMEOUT_MS, type ResolvedConfig } from './config.ts';
 import { buildProfilePlan, type ProfilePlan, type RoutePlan } from './profile.ts';
 import { buildRegistry } from './registry.ts';
 import { applySync, type SyncOutcome } from './sync.ts';
@@ -173,12 +173,12 @@ export class ApertureRuntime {
       return outcome;
     }
 
-    const catalog = await this.deps.catalog.load(config.modelMetadataUrl, config.timeoutMs);
+    const catalog = await this.deps.catalog.load(config.modelMetadataUrl, DEFAULT_TIMEOUT_MS);
 
     let listed: readonly unknown[];
     let endpoint: string;
     try {
-      const listing = await fetchModelsListing(config.instanceRoot, { timeoutMs: config.timeoutMs });
+      const listing = await fetchModelsListing(config.instanceRoot, { timeoutMs: DEFAULT_TIMEOUT_MS });
       listed = listing.entries;
       endpoint = listing.endpoint;
     } catch (error) {
@@ -207,7 +207,6 @@ export class ApertureRuntime {
         models: config.models,
         enabledModelIds: config.enabledModelIds,
         modelAliases: config.modelAliases,
-        defaultContextWindow: config.defaultContextWindow,
         images: config.images,
         reasoning: config.reasoning,
       },
@@ -222,7 +221,6 @@ export class ApertureRuntime {
       anthropicDisplayName: config.anthropicDisplayName,
       ...(config.apiKeyEnv === undefined ? {} : { apiKeyEnv: config.apiKeyEnv }),
       headers: config.headers,
-      placeholderCredential: config.placeholderCredential,
       configured: config.models,
     });
 
