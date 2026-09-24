@@ -1,13 +1,21 @@
 /**
- * 浏览器半边的接线与行为。
+ * 客户端半边（`client/aperture.js`）的接线与页面行为。
  *
- * 这个文件不走打包器，因此没有编译器替它检查「握手 id 对不对」「端点与宿主是否同名」
- * 「字典是不是双语齐备」「标签页注册在哪个槽位上」。用例把这些逐个钉住，然后更进一步：
- * 用 `support/mini-react.ts` 真的把标签页渲染出来，走一遍
- * 挂载 → 拉配置 → 改地址 → 保存 → 读报告 的路径。
+ * 这一份测试对着两件事：
  *
- * 渲染次数也在被钉住的范围内：注入面每轮渲染都是新对象，effect 依赖一旦写到它上面就会
- * 自激循环——那正是「界面装上了但动不了」这类故障的常见形态。
+ * - **接缝**：上报的模块 id、`inject` 依赖、配置页注册到哪个槽位、注入面上的名字与形状、
+ *   effect 的标签、样式表与字典的注册与撤销。这些是宿主与渲染器看见的东西，改一个字都是破坏
+ *   性变更。
+ * - **页面**：挂载之后读设置、改输入、按保存会走哪个端点、写成什么补丁、失败时界面说不说
+ *   实话。页面逻辑几乎都在组件里，因此只能在能跑 effect 的渲染器里走一遍。
+ *
+ * 官方组件（`@deepseek-ai/dsh-client-ui-primitives`）在本仓库里没有装，也不该被测：这里只写
+ * 一个**替身模块**，钉住被测代码依赖的那个接缝——prop 的名字与含义、按钮该在什么时候出现、
+ * `SettingsFormModel` 的草稿与围栏语义。官方组件的观感与行为不在本仓库的测试范围内，这里只
+ * 保证被测代码依赖的那个接缝语义。
+ *
+ * 渲染走 `test/support/mini-react`：它实现 `createElement` + `useState` + `useEffect`，按提交
+ * 循环驱动到稳定，于是「挂载 → 拉设置 → 改输入 → 按保存」这条路径可以在纯 Node 里走完。
  *
  * @module dsh-aperture/test/client
  */
@@ -15,300 +23,791 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { describe, it } from 'node:test';
 import vm from 'node:vm';
+
+import { MiniReact, change, click, findAll, findById, findButton, text } from './support/mini-react.ts';
+import type { HostElement } from './support/mini-react.ts';
 import { PANEL_INVOCATIONS, PANEL_NAMESPACE, PANEL_PACKAGE } from '../src/remote.ts';
-import {
-  MiniReact,
-  change,
-  click,
-  findAll,
-  findById,
-  findButton,
-  text,
-  toggle,
-} from './support/mini-react.ts';
+import { APERTURE_NAMESPACE } from '../src/config.ts';
+import type { PanelModel, PanelRefresh, PanelReport } from '../src/report.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLIENT_FILE = join(HERE, '..', 'client', 'aperture.js');
 
-/** 浏览器那一侧的一个端点描述符。 */
+/** 浏览半边上报的模块 id。 */
+const PACKAGE = 'dsh-aperture';
+/** 官方 UI 原语包名（本仓库里只有替身）。 */
+const PRIMITIVES = '@deepseek-ai/dsh-client-ui-primitives';
+/** 配置页注册的槽位。 */
+const CONFIG_SLOT = 'plugins.bundle.config';
+/** 字典命名空间。 */
+const NS = 'settings.aperturePanel';
+/** 设置命名空间。 */
+const SETTINGS_NS = 'aperture';
+/** 设置里这一页编辑的字段。 */
+const FIELDS = ['baseUrl', 'sync'];
+/** 样式表元素认领自己用的名字，与 `client/aperture.js` 里的常量一致。 */
+const STYLE_OWNER = 'aperture/client.js';
+
+/** 上报给 `window.__ModuleLoader__` 的一份模块。 */
+interface LoadedEntry {
+  readonly id: string;
+  readonly factory: (require: (id: string) => unknown) => unknown;
+}
+
+/** Remote 贡献里的一个端点描述符。 */
 interface ClientDescriptor {
-  id: string;
-  service: string;
-  namespace: string;
-  method: string;
-  invocation: { kind: string };
-  parameters: ReadonlyArray<{ name: string; wire: string; source: string; acceptsUndefined?: boolean; codec: Codec }>;
-  result: Codec;
+  readonly id: string;
+  readonly service: string;
+  readonly namespace: string;
+  readonly method: string;
+  readonly invocation: { readonly kind: string };
+  readonly parameters: ReadonlyArray<{
+    readonly name: string;
+    readonly wire: string;
+    readonly source: string;
+    readonly codec: Codec;
+  }>;
+  readonly result: unknown;
 }
 
-/** 一个编解码器。 */
+/** 端点描述符上的编解码器（直通：原样过线）。 */
 interface Codec {
-  mode: string;
-  typeSymbol?: string;
-  schema?: { parse: (value: unknown) => unknown };
+  readonly mode: string;
+  readonly typeSymbol: string;
+  readonly create: () => { readonly parse: (value: unknown) => unknown };
 }
 
-/** 一次 `slots.register` 的登记。 */
-interface Registration {
-  options: {
-    name: string;
-    id: string;
-    order: number;
-    label: () => string;
-    locale: string;
-    inject: () => { panel: PanelFace };
-  };
-  component: (props: Record<string, unknown>) => unknown;
-}
+/** 一个设置项的一次写入。 */
+type SettingsOp =
+  | { readonly op: 'set'; readonly path: readonly string[]; readonly value: unknown }
+  | { readonly op: 'unset'; readonly path: readonly string[] };
 
-/** `inject` 面交给标签页的端点集合。 */
-interface PanelFace {
-  status: () => Promise<Report>;
-  refresh: () => Promise<{ ok: boolean; summary: string }>;
-  withdraw: () => Promise<{ ok: boolean; summary: string }>;
-  configuration: () => Promise<Configuration>;
-  save: (baseUrl?: string | null, sync?: boolean) => Promise<{ ok: boolean; summary: string }>;
-  edit: (id: string, patch: ModelPatch | null) => Promise<{ ok: boolean; summary: string }>;
-}
-
-/** 界面为单个模型发出去的补丁。 */
+/** 一行模型的覆盖补丁；`null` 表示整条撤掉。 */
 interface ModelPatch {
-  name?: string | null;
-  api?: string | null;
-  contextWindow?: number | null;
-  maxTokens?: number | null;
-  input?: readonly string[] | null;
-  thinking?: boolean | null;
-  alias?: string | null;
+  readonly name?: string | null;
+  readonly api?: string | null;
+  readonly contextWindow?: number | null;
+  readonly maxTokens?: number | null;
+  readonly input?: readonly string[] | null;
+  readonly thinking?: boolean | null;
+  readonly alias?: string | null;
 }
 
-/** 报告里的一个模型。 */
-interface ModelView {
-  id: string;
-  name: string;
-  route?: string;
-  protocol?: string;
-  endpoints: readonly string[];
-  contextWindow?: number;
-  maxTokens?: number;
-  input: readonly string[];
-  reasoning: boolean;
-  provenance: { limits: string; reasoning: string; input: string; name: string };
-  override?: ModelPatch;
-  alias?: string;
+/**
+ * 夹具的三种形状直接用宿主那份报告类型，不再照抄一遍。
+ *
+ * 抄过的那一份已经飘过一次：它多出一个 `PanelReport` 从来没有过的 `summary`，而页面根本不读
+ * 这个字段，于是谁也没发现。改成别名之后，宿主删一个字段、改一个名字，这里当场编译不过。
+ */
+type ModelView = PanelModel;
+type RefreshView = PanelRefresh;
+type Report = PanelReport;
+
+/** 设置接缝那一份快照（真实快照上还有别的字段，这一页只读这几个）。 */
+interface SectionState {
+  readonly status: 'loading' | 'ready' | 'unavailable';
+  readonly value?: { readonly baseUrl?: unknown; readonly sync?: unknown } | undefined;
+  /** 用户层：这一项**覆盖过**没有，看它在这里在不在，不看值跟谁相等。 */
+  readonly user?: Record<string, unknown> | undefined;
+  /** 用户层之下的合成值；官方那一份拿它当「恢复默认」之后该显示的东西。 */
+  readonly base?: { readonly baseUrl?: unknown; readonly sync?: unknown } | undefined;
+  readonly revision?: number | undefined;
+  readonly writable?: boolean | undefined;
 }
 
-/** 宿主半边返回的整份报告。 */
-interface Report {
-  place: string;
-  refresh?: {
-    trigger: string;
-    at: string;
-    durationMs: number;
-    ok: boolean;
-    error?: string;
-    catalog: { available: boolean; entries: number; reason?: string };
-    endpoint?: { url: string; listed: number };
-    sync?: { applied: boolean; ops: number; routes: readonly string[]; reason?: string };
+/** 设置表单模型要看到的那一份控制器（官方 `SettingsFormScope` 的替身）。 */
+interface FormFace {
+  getSnapshot: () => SectionState;
+  subscribe: (listener: () => void) => () => void;
+  mutate: (ops: readonly SettingsOp[], revision?: number | undefined) => Promise<boolean>;
+}
+
+/** 替身控制器另外给测试用的那点东西。 */
+interface FakeForm extends FormFace {
+  /** 从宿主那边推一份新快照过来（订阅者应当被叫醒）。 */
+  publish(overrides: Partial<SectionState>): void;
+}
+
+/** 一次动作的结果（`PanelAction`）：落地了没有，加一句人话。 */
+interface PanelAction {
+  readonly ok: boolean;
+  readonly summary: string;
+}
+
+/** 半边要挂到 Remote 服务上的那份贡献。 */
+interface RemoteContribution {
+  readonly package: string;
+  readonly descriptors: readonly ClientDescriptor[];
+}
+
+/** 注入面：官方设置表单与报告端点。 */
+interface InjectFace {
+  readonly hooks: { readonly apertureCard: { getSnapshot: () => unknown; subscribe: (l: () => void) => () => void } };
+  readonly panel: {
+    status: () => Promise<Report>;
+    /** 跑一轮发现：回来的是一句结果，不是报告。 */
+    refresh: () => Promise<PanelAction>;
+    /** 写一行模型；`null` 是整条撤回。 */
+    writeModel: (id: string, patch: ModelPatch | null) => Promise<PanelAction>;
   };
-  routes: Array<{ provider: string; api?: string; baseURL?: string; models: number }>;
-  models: ModelView[];
+  readonly edit: (field: string, text: string) => void;
+  /** 「恢复默认」：官方那一份只**落草稿**，落笔要等保存。 */
+  readonly resetField: (field: string) => void;
+  readonly discard: () => void;
+  /** 保存：官方那一份回的是 `Promise<void>`，成没成看 `failed()`。 */
+  readonly save: () => Promise<void>;
+  readonly failed: () => boolean;
 }
 
-/** 假宿主返回的报告：一条路由一个模型，外加一个未服务的模型。 */
-function report(overrides: Partial<Report> = {}): Report {
-  return {
-    place: 'https://ai.example.ts.net',
-    refresh: {
-      trigger: '配置变更',
-      at: '2026-09-23T04:32:36.802Z',
-      durationMs: 286,
-      ok: true,
-      catalog: { available: true, entries: 422 },
-      endpoint: { url: 'https://ai.example.ts.net/v1/models', listed: 16 },
-      sync: { applied: true, ops: 2, routes: ['aperture', 'aperture-anthropic'] },
-    },
-    routes: [{
-      provider: 'aperture',
-      api: 'openai-completions',
-      baseURL: 'https://ai.example.ts.net/v1',
-      models: 1,
-    }],
-    models: [
-      {
-        id: 'deepseek-flash',
-        name: 'DeepSeek Flash',
-        route: 'aperture',
-        protocol: 'openai-completions',
-        endpoints: ['/v1/chat/completions'],
-        contextWindow: 1_048_576,
-        maxTokens: 384_000,
-        input: ['text', 'image'],
-        reasoning: true,
-        provenance: { limits: 'aperture', reasoning: 'models.dev', input: 'config', name: 'models.dev' },
-        override: { thinking: true },
-        alias: 'deepseek/deepseek-v4-flash',
-      },
-      {
-        id: 'gemini-2.5-flash',
-        name: 'gemini-2.5-flash',
-        endpoints: ['/v1beta/models/gemini-2.5-flash:generateContent'],
-        input: ['text'],
-        reasoning: false,
-        provenance: { limits: 'default', reasoning: 'default', input: 'default', name: 'default' },
-      },
-    ],
-    ...overrides,
+/** 注册到槽位上的那一份贡献。 */
+interface Registration {
+  readonly options: {
+    readonly name: string;
+    readonly key: string;
+    readonly locale: string;
+    readonly inject: () => InjectFace;
   };
+  readonly component: unknown;
 }
 
-/** 配置端点返回的形状。 */
-interface Configuration {
-  baseUrl: string;
-  sync: boolean;
-  baseUrlOverridden: boolean;
-  syncOverridden: boolean;
-  writable: boolean;
+/** 假 DOM 里的一张样式表。 */
+interface FakeStyle {
+  readonly dataset: Record<string, string>;
+  textContent: string;
+  parentNode: { removeChild(node: unknown): void } | null;
+  removed: boolean;
 }
 
-/** 假宿主返回的配置。 */
-function configuration(overrides: Partial<Configuration> = {}): Configuration {
-  return {
-    baseUrl: 'https://ai.example.ts.net',
-    sync: true,
-    baseUrlOverridden: true,
-    syncOverridden: false,
-    writable: true,
-    ...overrides,
-  };
+/** 半边导出的那点成员。 */
+interface ClientExports {
+  readonly name: string;
+  readonly inject: readonly string[];
+  readonly apply: (ctx: unknown) => void;
+  readonly NS: string;
+  readonly SETTINGS_NS: string;
+  readonly FIELDS: readonly string[];
+  readonly REMOTE: RemoteContribution;
 }
 
-/** 一次加载与驱动留下的全部证据。 */
+/** 一次加载攒下来的观测面。 */
 interface Harness {
-  readonly exports: {
-    name: string;
-    inject: readonly string[];
-    apply: (ctx: unknown) => void;
-    NS: string;
-    REMOTE: { package: string; descriptors: readonly ClientDescriptor[] };
-  };
-  mounted?: { package: string; descriptors: readonly ClientDescriptor[] };
+  readonly exports: ClientExports;
+  /** `$mount` 收到的那份贡献；挂载是异步的，flush 之后才有。 */
+  mounted?: RemoteContribution;
   readonly mini: MiniReact;
   readonly effectLabels: string[];
   readonly disposers: Record<string, () => void>;
   readonly localeNamespaces: string[];
   readonly dictionaries: Record<string, { zh: Record<string, string>; en: Record<string, string> }>;
   readonly registrations: Registration[];
+  /** `ctx.inject` 声明的依赖。 */
+  readonly dependencies: string[];
+  /** `slots.inject` 要过的槽位。 */
   readonly slotInjections: string[];
-  readonly styles: Array<{ mark: string | null; css: string; removed: boolean }>;
+  readonly styles: FakeStyle[];
   readonly panelCalls: string[];
-  readonly saveCalls: Array<[string | null | undefined, boolean | undefined]>;
+  readonly writes: Array<{ readonly ops: readonly SettingsOp[]; readonly revision: number | undefined }>;
   readonly editCalls: Array<[string, ModelPatch | null]>;
+  readonly configNamespaces: string[];
+  readonly formReads: string[];
+  readonly consoleErrors: unknown[];
+  /** 控制器上挂着的订阅者数量；`dispose()` 之后必须回到 0。 */
+  subscriptions: number;
 }
 
-/** 一份可调的假端点集合。 */
+/** 造端点的行为开关。 */
 interface FakePanelOptions {
-  configuration?: Partial<Configuration>;
-  summary?: string;
-  fails?: string;
-  report?: Report;
+  readonly report?: Report;
+  readonly section?: Partial<SectionState>;
+  /** 控制器回绝写入。 */
+  readonly refused?: boolean;
+  /**
+   * 让某一个端点出错：
+   *
+   * - `'status'`：面板整个连不上（调用失败，页面拿到的是「连不上」那句话）。
+   * - `'refresh'`：面板在，但这一轮发现没成功（`ok: false` 加一句原因）。
+   * - `'edit'`：写这一行的时候面板连不上（调用失败）。
+   */
+  readonly fails?: 'status' | 'refresh' | 'edit';
 }
 
-/** 建一个假 `aperturePanel` 命名空间，并记录调用。 */
-function fakeNamespace(harness: Harness, options: FakePanelOptions = {}) {
-  const config = configuration(options.configuration);
-  const summary = options.summary ?? '已重新发现并发布。';
-  const action = { ok: true, summary };
+/** 一次 `driveClient` 交出来的东西。 */
+interface Driven {
+  readonly harness: Harness;
+  readonly mini: MiniReact;
+  readonly controller: FakeForm;
+  readonly props: Record<string, unknown>;
+  readonly element: unknown;
+  readonly t: (key: string, params?: Record<string, unknown>) => string;
+}
+
+// ---------------------------------------------------------------------- 夹具
+
+/** 报告里那个已经发布在路由上的模型。 */
+function deepseek(overrides: Partial<ModelView> = {}): ModelView {
   return {
-    status: async () => {
-      harness.panelCalls.push('status');
-      if (options.fails === 'status') {
-        return { ok: false, error: { code: 'gateway/internal', message: '面板暂时连不上后台' } };
-      }
-      return { ok: true, value: options.report ?? report() };
+    id: 'deepseek-flash',
+    name: 'DeepSeek Flash',
+    route: 'aperture',
+    protocol: 'openai-completions',
+    endpoints: ['/v1/chat/completions'],
+    contextWindow: 1_048_576,
+    maxTokens: 384_000,
+    input: ['text', 'image'],
+    reasoning: true,
+    provenance: { limits: 'aperture', reasoning: 'models.dev', input: 'config', name: 'models.dev' },
+    overrideKeys: ['thinking'],
+    alias: 'deepseek/deepseek-v4-flash',
+    ...overrides,
+  };
+}
+
+/** 报告里那个还没有路由可服务的模型。 */
+function gemini(overrides: Partial<ModelView> = {}): ModelView {
+  return {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    endpoints: [],
+    contextWindow: 1_000_000,
+    maxTokens: 65_536,
+    input: ['text'],
+    reasoning: false,
+    provenance: { limits: 'models.dev', reasoning: 'default', input: 'models.dev', name: 'models.dev' },
+    overrideKeys: [],
+    ...overrides,
+  };
+}
+
+/** 默认那份报告。 */
+function report(overrides: Partial<Report> = {}): Report {
+  return {
+    place: 'https://ai.example.ts.net',
+    refresh: {
+      trigger: '配置变更',
+      at: '2026-09-24T08:00:00.000Z',
+      durationMs: 286,
+      ok: true,
+      catalog: { available: true, entries: 422 },
+      endpoint: { url: 'https://ai.example.ts.net/v1/models', listed: 16 },
+      sync: { applied: true, ops: 2, routes: ['aperture', 'aperture-anthropic'] },
     },
-    configuration: async () => {
-      harness.panelCalls.push('configuration');
-      return { ok: true, value: config };
-    },
-    refresh: async () => {
-      harness.panelCalls.push('refresh');
-      return { ok: true, value: action };
-    },
-    withdraw: async () => {
-      harness.panelCalls.push('withdraw');
-      return { ok: true, value: action };
-    },
-    save: async (baseUrl?: string | null, sync?: boolean) => {
-      harness.panelCalls.push('save');
-      harness.saveCalls.push([baseUrl, sync]);
-      return { ok: true, value: action };
-    },
-    edit: async (id: string, patch: ModelPatch | null) => {
-      harness.panelCalls.push('edit');
-      harness.editCalls.push([id, patch]);
-      return { ok: true, value: action };
-    },
+    routes: [
+      { provider: 'aperture', api: 'openai-completions', baseURL: 'https://ai.example.ts.net/v1', models: 1 },
+    ],
+    models: [deepseek(), gemini()],
+    ...overrides,
+  };
+}
+
+/** 默认那份设置快照。 */
+function section(overrides: Partial<SectionState> = {}): SectionState {
+  return {
+    status: 'ready',
+    value: { baseUrl: 'https://ai.example.ts.net', sync: true },
+    // 用户层里只有 baseUrl：于是「已覆盖」与「恢复默认」只在地址那一项上。
+    user: { baseUrl: 'https://ai.example.ts.net' },
+    // 用户层之下的合成值：sync 的缺省是开，baseUrl 没有缺省（于是「恢复默认」把输入框清空）。
+    base: { sync: true },
+    revision: 4,
+    writable: true,
+    ...overrides,
+  };
+}
+
+// ------------------------------------------------------------ 官方组件的替身
+
+/** 官方设置表单交给页面的那份状态。 */
+interface ShellState {
+  readonly available: boolean;
+  readonly writable: boolean;
+  readonly dirty: boolean;
+  readonly invalid: boolean;
+  readonly saving: boolean;
+  readonly failed: boolean;
+}
+
+/** 官方设置表单里一个字段此刻的样子。 */
+interface FieldState {
+  readonly text: string;
+  readonly overridden: boolean;
+  readonly invalid: boolean;
+}
+
+/** 一个字段的读写规格（`SettingsFieldSpec`）。 */
+interface FieldSpec {
+  readonly field: string;
+  readonly format: (value: unknown) => string;
+  readonly parse: (text: string) =>
+    | { readonly kind: 'clear' }
+    | { readonly kind: 'set'; readonly value: unknown }
+    | undefined;
+}
+
+/** 文本字段：原样读写，空串是「这一项不覆盖」。被测代码只从这个包里要这一种字段规格。 */
+function settingsTextField(field: string): FieldSpec {
+  return {
+    field,
+    format: (value) => (typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value)),
+    parse: (text) => (text === '' ? { kind: 'clear' } : { kind: 'set', value: text }),
   };
 }
 
 /**
- * 按客户端的加载方式加载浏览器半边。
+ * `SettingsFormModel` 的替身：官方那一份的**语义**，不是它的实现。
  *
- * @returns 模块导出与记账容器；`react` 由替身充当。
+ * 被测代码只经手它这四件事，因此这四件必须像真的：
+ *
+ * - `shell()`：`available` 来自快照的 `status`；`dirty` / `invalid` 由草稿算出来；
+ *   `saving` / `failed` 是这一份模型自己的状态。
+ * - `field(name)` 的 `overridden` 是「这一刻这一项算不算覆盖」：没动过的时候看**用户层里在不在**
+ *   （`stored`），落过草稿就按草稿会不会写成 `set` 算。于是文档里早就写过 baseUrl 时，页面一挂载
+ *   就该挂着「已覆盖」，而把输入框清空又会让这个标签当场消失。
+ * - `resetField` 与 `edit` 都只**落草稿**，落笔全在 `save()`；`save()` 只把改动过的字段拼成 op，
+ *   带上**第一次落草稿时读到的那个 `revision`**（不是保存那一刻的）交给控制器；回绝时 `failed`
+ *   亮起、草稿留着（用户写的东西不该因为一次冲突没写成就消失）。没有可写的改动、只读、或草稿
+ *   非法时，`save()` 连端点都不碰。
+ * - `bind(project)`：返回官方的选择器 store；草稿或快照一变就重新投影并叫醒订阅者。
  */
-function loadClient(): Harness {
-  const reported: Array<{ id: string; factory: (require: (id: string) => unknown) => unknown }> = [];
-  const styles: Harness['styles'] = [];
-  const mini = new MiniReact();
+class FakeSettingsFormModel {
+  private readonly scope: FormFace;
+  private readonly specs: readonly FieldSpec[];
+  /** 落下的草稿：`clear` 是「恢复默认」那一路（真模型把两者存在同一个 `staged` 里）。 */
+  private readonly staged = new Map<string, { readonly text: string; readonly clear: boolean }>();
+  private readonly listeners = new Set<() => void>();
+  private readonly stop: () => void;
+  /** 第一次落草稿时读到的快照；写入的 `revision` 围栏取自它。 */
+  private baseline: SectionState | undefined;
+  private saving = false;
+  private failed = false;
+  private projected: unknown = null;
 
-  const document = {
-    head: {
-      append: (node: { mark: string | null; css: string; removed: boolean }): void => {
-        styles.push(node);
+  constructor(scope: FormFace, specs: readonly FieldSpec[]) {
+    this.scope = scope;
+    this.specs = specs;
+    this.stop = scope.subscribe(() => this.invalidate());
+  }
+
+  /** 官方表单要的那份状态。 */
+  shell(): ShellState {
+    const snapshot = this.scope.getSnapshot();
+    const plan = this.plan();
+    return {
+      available: snapshot.status === 'ready',
+      writable: snapshot.writable === true,
+      // 非法草稿也是一条计划（它挡下保存），因此同样算「有改动」。
+      dirty: plan.ops.length > 0 || plan.invalid,
+      invalid: plan.invalid,
+      saving: this.saving,
+      failed: this.failed,
+    };
+  }
+
+  /** 一个字段在输入框里的样子。 */
+  field(name: string): FieldState {
+    const spec = this.specOf(name);
+    const staged = this.staged.get(name);
+    if (staged === undefined) {
+      return { text: spec.format(this.sectionValue(name)), overridden: this.stored(name), invalid: false };
+    }
+    const write = staged.clear ? { kind: 'clear' as const } : spec.parse(staged.text);
+    return { text: staged.text, overridden: write?.kind === 'set', invalid: write === undefined };
+  }
+
+  /** 页面拿得到的动作面。 */
+  actions(): {
+    edit: (field: string, text: string) => void;
+    resetField: (field: string) => void;
+    save: () => void;
+    discard: () => void;
+  } {
+    return {
+      edit: (field, text) => {
+        this.stage(field, { text, clear: false });
       },
+      resetField: (field) => {
+        // 官方那一份把「恢复默认」也落成草稿：输入框回到用户层之下的值，写入要等保存那一下。
+        this.stage(field, { text: this.specOf(field).format(this.baseValue(field)), clear: true });
+      },
+      save: () => {
+        void this.save();
+      },
+      discard: () => {
+        if (this.staged.size === 0 && !this.failed) return;
+        this.staged.clear();
+        this.baseline = undefined;
+        this.failed = false;
+        this.invalidate();
+      },
+    };
+  }
+
+  /** 官方表单那颗保存按钮走的路：把改动过的那几项拼成一次带版本围栏的写入。 */
+  async save(): Promise<void> {
+    const plan = this.plan();
+    // 官方的围栏：没有可写的改动、正在保存、文档只读、草稿非法，四样里占一样就直接返回。
+    if (plan.ops.length === 0 || this.saving || this.scope.getSnapshot().writable !== true || plan.invalid) return;
+    this.saving = true;
+    this.failed = false;
+    this.invalidate();
+    try {
+      if (!(await this.scope.mutate(plan.ops, this.baseline?.revision))) {
+        this.failed = true;
+        return;
+      }
+      this.staged.clear();
+      this.baseline = undefined;
+    } catch {
+      this.failed = true;
+    } finally {
+      this.saving = false;
+      this.invalidate();
+    }
+  }
+
+  /** 给渲染器的选择器 store（投影缓存到下一次通知为止）。 */
+  bind(project: () => unknown): { getSnapshot: () => unknown; subscribe: (listener: () => void) => () => void } {
+    return {
+      getSnapshot: () => {
+        if (this.projected === null) this.projected = project();
+        return this.projected;
+      },
+      subscribe: (listener: () => void) => {
+        this.listeners.add(listener);
+        return () => {
+          this.listeners.delete(listener);
+        };
+      },
+    };
+  }
+
+  /** 卸载：断开对控制器的订阅。 */
+  dispose(): void {
+    this.stop();
+    this.listeners.clear();
+  }
+
+  private specOf(name: string): FieldSpec {
+    const spec = this.specs.find((candidate) => candidate.field === name);
+    if (spec === undefined) throw new Error(`没有这个字段：${name}`);
+    return spec;
+  }
+
+  /** 生效值：用户层盖过之后这一页实际读到的那个。 */
+  private sectionValue(name: string): unknown {
+    return this.scope.getSnapshot().value?.[name as 'baseUrl' | 'sync'];
+  }
+
+  /** 用户层之下的合成值；「恢复默认」把输入框摆回这里。 */
+  private baseValue(name: string): unknown {
+    return this.scope.getSnapshot().base?.[name as 'baseUrl' | 'sync'];
+  }
+
+  /** 这一项在不在用户层里——真模型就是这么判「覆盖过没有」的，不比值。 */
+  private stored(field: string): boolean {
+    const user = this.scope.getSnapshot().user;
+    return user !== undefined && Object.hasOwn(user, field);
+  }
+
+  /** 落一份草稿；第一次落的时候记住基线快照（写入的 `revision` 围栏取自它）。 */
+  private stage(field: string, edit: { readonly text: string; readonly clear: boolean }): void {
+    this.baseline ??= this.scope.getSnapshot();
+    this.staged.set(field, edit);
+    this.failed = false;
+    this.invalidate();
+  }
+
+  /** 一次保存会写什么：按落草稿的顺序，逐项算出 op 或「这一项不合法」。 */
+  private plan(): { ops: SettingsOp[]; invalid: boolean } {
+    const ops: SettingsOp[] = [];
+    let invalid = false;
+    for (const [field, staged] of this.staged) {
+      const spec = this.specOf(field);
+      // 「恢复默认」只有在这一项**确实覆盖过**时才有东西可撤。（真模型的 `stored`。）
+      if (staged.clear) {
+        if (this.stored(field)) ops.push({ op: 'unset', path: [field] });
+        continue;
+      }
+      // 与生效值字面相同的草稿不算改动（真模型比的是解析后的值）。
+      if (staged.text === spec.format(this.sectionValue(field))) continue;
+      const write = spec.parse(staged.text);
+      if (write === undefined) {
+        invalid = true;
+        continue;
+      }
+      ops.push(write.kind === 'clear'
+        ? { op: 'unset', path: [field] }
+        : { op: 'set', path: [field], value: write.value });
+    }
+    return { ops, invalid };
+  }
+
+  private invalidate(): void {
+    this.projected = null;
+    for (const listener of this.listeners) listener();
+  }
+}
+
+/** 造出官方原语替身：只有被测代码用到的那些组件与那一个模型。 */
+function createPrimitives(renderer: MiniReact): Record<string, unknown> {
+  /** `React.createElement`；替身渲染出来的全是宿主标签（`form` / `input` / `button`…）。 */
+  const h = renderer.createElement;
+
+  const SettingsForm = (raw: Record<string, unknown>): unknown => {
+    const props = raw as {
+      labels: { unavailable: string; readOnly: string; saveFailed: string; save: string; saving: string };
+      state: ShellState;
+      onSave: () => void;
+      children?: unknown;
+    };
+    const { labels, state } = props;
+    if (!state.available) return h('form', null, labels.unavailable);
+    return h(
+      'form',
+      null,
+      state.writable ? null : h('p', { className: 'sf-readOnly' }, labels.readOnly),
+      state.failed ? h('p', { className: 'sf-saveFailed' }, labels.saveFailed) : null,
+      h(
+        'button',
+        { type: 'button', disabled: !state.writable || state.saving, onClick: props.onSave },
+        state.saving ? labels.saving : labels.save,
+      ),
+      props.children,
+    );
+  };
+
+  const SettingsValueField = (raw: Record<string, unknown>): unknown => {
+    const props = raw as {
+      id: string;
+      label: string;
+      hint: string;
+      placeholder?: string;
+      text: string;
+      overridden: boolean;
+      invalid: boolean;
+      disabled: boolean;
+      overriddenLabel: string;
+      resetLabel: string;
+      invalidLabel: string;
+      onEdit: (text: string) => void;
+      onReset: () => void;
+    };
+    return h(
+      'label',
+      null,
+      props.label,
+      h('span', { className: 'sf-hint' }, props.hint),
+      h('input', {
+        id: props.id,
+        ...(props.placeholder === undefined ? {} : { placeholder: props.placeholder }),
+        value: props.text,
+        disabled: props.disabled,
+        onChange: (event: { target: { value: string } }) => props.onEdit(event.target.value),
+      }),
+      props.overridden ? h('span', { className: 'sf-badges' }, props.overriddenLabel) : null,
+      props.overridden
+        ? h(
+          'button',
+          { type: 'button', id: `${props.id}-reset`, onClick: props.onReset, disabled: props.disabled },
+          props.resetLabel,
+        )
+        : null,
+      props.invalid ? h('span', { className: 'sf-invalid' }, props.invalidLabel) : null,
+    );
+  };
+
+  const Switch = (raw: Record<string, unknown>): unknown => {
+    const props = raw as {
+      checked: boolean;
+      label?: string;
+      disabled?: boolean;
+      onChange: (checked: boolean) => void;
+    };
+    return h(
+      'button',
+      {
+        type: 'button',
+        role: 'switch',
+        'aria-checked': props.checked ? 'true' : 'false',
+        disabled: props.disabled === true,
+        onClick: () => props.onChange(!props.checked),
+      },
+      props.label ?? null,
+    );
+  };
+
+  const Checkbox = (raw: Record<string, unknown>): unknown => {
+    const props = raw as { checked: boolean; label?: string; disabled?: boolean; onChange: (checked: boolean) => void };
+    return h(
+      'button',
+      {
+        type: 'button',
+        role: 'checkbox',
+        'aria-checked': props.checked ? 'true' : 'false',
+        disabled: props.disabled === true,
+        onClick: () => props.onChange(!props.checked),
+      },
+      props.label ?? null,
+    );
+  };
+
+  const Button = (raw: Record<string, unknown>): unknown => {
+    const props = raw as { onClick?: () => void; disabled?: boolean; title?: string; children?: unknown };
+    return h(
+      'button',
+      {
+        type: 'button',
+        onClick: props.onClick,
+        disabled: props.disabled === true,
+        ...(props.title === undefined ? {} : { title: props.title }),
+      },
+      props.children,
+    );
+  };
+
+  const Tag = (raw: Record<string, unknown>): unknown => {
+    const props = raw as { tone?: string; children?: unknown };
+    return h('span', { tone: props.tone ?? 'neutral' }, props.children);
+  };
+
+  const StateDot = (raw: Record<string, unknown>): unknown => {
+    const props = raw as { state?: string; size?: number };
+    return h('span', { state: props.state ?? 'idle', size: props.size ?? 8 });
+  };
+
+  const DisclosureRow = (raw: Record<string, unknown>): unknown => {
+    const props = raw as {
+      icon?: unknown;
+      title?: unknown;
+      open: boolean;
+      expandable?: boolean;
+      onToggle?: () => void;
+      collapsedContent?: unknown;
+      children?: unknown;
+    };
+    return h(
+      'div',
+      { className: 'sf-disclosure', 'aria-expanded': props.open ? 'true' : 'false' },
+      props.icon ?? null,
+      h('span', { className: 'sf-title' }, props.title),
+      // 真的折叠按钮里是一枚图标；替身拿一个字符顶着，好让渲染出来的树看得懂。
+      h(
+        'button',
+        { type: 'button', 'aria-expanded': props.open ? 'true' : 'false', onClick: props.onToggle },
+        props.open ? '▾' : '▸',
+      ),
+      props.open ? props.children : props.collapsedContent,
+    );
+  };
+
+  const SegmentedControl = (raw: Record<string, unknown>): unknown => {
+    const props = raw as {
+      id: string;
+      label?: string;
+      value: string;
+      options: ReadonlyArray<{ value: string; label: string }>;
+      onChange: (value: string) => void;
+      disabled?: boolean;
+    };
+    return h(
+      'div',
+      { className: 'sf-segmented' },
+      props.options.map((option) => h(
+        'button',
+        {
+          type: 'button',
+          id: `${props.id}-${option.value}`,
+          disabled: props.disabled === true,
+          // 选中的那一项同时挂上两个标记，替身之外的两个方向都能认出来。
+          ...(option.value === props.value
+            ? { 'aria-pressed': 'true', 'data-active': '' }
+            : { 'aria-pressed': 'false' }),
+          onClick: () => props.onChange(option.value),
+        },
+        option.label,
+      )),
+    );
+  };
+
+  return {
+    SettingsForm,
+    SettingsValueField,
+    Switch,
+    Checkbox,
+    Button,
+    Tag,
+    StateDot,
+    DisclosureRow,
+    SegmentedControl,
+    SettingsFormModel: FakeSettingsFormModel,
+    settingsTextField,
+  };
+}
+
+// ------------------------------------------------------------------ 假 DOM
+
+/** 一张样式表要像的那点样子：`dataset`、`textContent`、`parentNode.removeChild`。 */
+function fakeDocument(styles: FakeStyle[]): Record<string, unknown> {
+  const head = {
+    appendChild(node: FakeStyle) {
+      styles.push(node);
+      node.parentNode = { removeChild: (child: unknown) => { if (child === node) node.removed = true; } };
+      return node;
     },
-    querySelector: (selector: string): unknown => {
-      const wanted = /\[([^\]]+)\]/u.exec(selector)?.[1];
-      return styles.find((style) => !style.removed && style.mark === wanted) ?? null;
-    },
-    createElement: () => {
-      const node = {
-        mark: null as string | null,
-        css: '',
-        removed: false,
-        setAttribute: (name: string): void => {
-          node.mark = name;
-        },
-        set textContent(value: string) {
-          node.css = value;
-        },
-        remove: (): void => {
-          node.removed = true;
-        },
-      };
+    removeChild(node: FakeStyle) {
+      node.removed = true;
       return node;
     },
   };
+  return {
+    head,
+    createElement: (tag: string) => (tag === 'style'
+      ? { dataset: {}, textContent: '', parentNode: null, removed: false }
+      : { dataset: {}, parentNode: null }),
+    // `installStyles` 拿这个把上一次自己插进去的那张删掉（热替换）。
+    querySelector: (selector: string) => {
+      const match = /^style\[data-plugin-css="(.+)"\]$/u.exec(selector);
+      if (match === null) return null;
+      return styles.find((style) => style.dataset.pluginCss === match[1] && style.removed !== true) ?? null;
+    },
+  };
+}
 
+// --------------------------------------------------------------- 加载半边
+
+/** 把半边加载起来：给它一个 `window` 与一个假的 `document`，`react` 与官方原语给替身。 */
+function loadClient(): Harness {
+  const reported: LoadedEntry[] = [];
+  const styles: FakeStyle[] = [];
+  const consoleErrors: unknown[] = [];
+  const mini = new MiniReact();
+  const primitives = createPrimitives(mini);
   const sandbox = {
-    window: { __ModuleLoader__: { load: (entry: unknown) => reported.push(entry as never) } },
-    document,
+    window: {
+      __ModuleLoader__: {
+        load: (entry: LoadedEntry) => {
+          reported.push(entry);
+        },
+      },
+    },
+    document: fakeDocument(styles),
+    console: {
+      error: (...args: unknown[]) => consoleErrors.push(args),
+      warn: () => {},
+      log: () => {},
+    },
   };
   vm.runInNewContext(readFileSync(CLIENT_FILE, 'utf8'), sandbox, { filename: CLIENT_FILE });
-
-  assert.equal(reported.length, 1, '客户端 bundle 必须恰好上报一次');
+  assert.equal(reported.length, 1, '半边应当只上报一份模块');
   const entry = reported[0]!;
-  assert.equal(entry.id, 'dsh-aperture', '握手 id 必须是包名');
-
+  assert.equal(entry.id, PACKAGE);
   const exports = entry.factory((id: string) => {
     if (id === 'react') return mini;
+    if (id === PRIMITIVES) return primitives;
     throw new Error(`客户端半边不应在运行时 require "${id}"：平台基线之外没有模块可解析`);
-  }) as Harness['exports'];
-
+  }) as ClientExports;
   return {
     exports,
     mini,
@@ -317,591 +816,1057 @@ function loadClient(): Harness {
     localeNamespaces: [],
     dictionaries: {},
     registrations: [],
+    dependencies: [],
     slotInjections: [],
     styles,
     panelCalls: [],
-    saveCalls: [],
+    writes: [],
     editCalls: [],
+    configNamespaces: [],
+    formReads: [],
+    consoleErrors,
+    subscriptions: 0,
   };
 }
 
+// --------------------------------------------------------------- 假控制器
+
+/** 造一个设置控制器：记下每次写入，还能从「宿主那边」推一份新快照过来。 */
+function fakeForm(harness: Harness, options: FakePanelOptions): FakeForm {
+  let state = section(options.section);
+  const listeners = new Set<() => void>();
+  return {
+    getSnapshot: () => {
+      harness.formReads.push(state.status);
+      return state;
+    },
+    subscribe: (listener) => {
+      harness.subscriptions += 1;
+      listeners.add(listener);
+      return () => {
+        harness.subscriptions -= 1;
+        listeners.delete(listener);
+      };
+    },
+    mutate: async (ops, revision) => {
+      harness.writes.push({ ops, revision });
+      // 只记账，不把写入回灌进快照：真宿主会让 `user` 跟着变，这一份替身故意留简单。因此用例
+      // 不该断言「保存之后快照长什么样」——那是宿主那一半的实现。
+      return options.refused !== true;
+    },
+    publish: (overrides) => {
+      state = section({ ...options.section, ...overrides });
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+/** 造一个报告端点命名空间：`{ok: true, value}` 或 `{ok: false, error}`。 */
+function fakeNamespace(harness: Harness, options: FakePanelOptions): Record<string, unknown> {
+  const payload = options.report ?? report();
+  /** 一次动作的结果（`PanelAction`）：宿主那边已经跑完了一轮发现。 */
+  const action = { ok: true as const, summary: '已重新发现并发布。' };
+  return {
+    status: async () => {
+      harness.panelCalls.push('status');
+      // 面板整个连不上：这一层失败是「调用」失败，抛给页面的是那句连不上的话。
+      return options.fails === 'status'
+        ? { ok: false as const, error: { code: 'unavailable', message: '后台还没起来' } }
+        : { ok: true as const, value: payload };
+    },
+    refresh: async () => {
+      harness.panelCalls.push('refresh');
+      // 面板在，但这轮发现没成功：端点照样按契约回话，只是 ok 是 false。
+      return options.fails === 'refresh'
+        ? { ok: true as const, value: { ok: false as const, summary: '刷新没有成功：网关没回应' } }
+        : { ok: true as const, value: action };
+    },
+    edit: async (id: string, patch: ModelPatch | null) => {
+      harness.panelCalls.push('edit');
+      harness.editCalls.push([id, patch]);
+      // 写这一行的时候面板连不上：调用失败，原因要出现在界面上。
+      return options.fails === 'edit'
+        ? { ok: false as const, error: { code: 'unavailable', message: '写这一行的时候后台断了' } }
+        : { ok: true as const, value: action };
+    },
+  };
+}
+
+// ------------------------------------------------------------ 注入面与挂载
+
 /**
- * 驱动一次 `apply`，并把作用域回调也走完。
- *
- * @param options - 假端点选项。
- * @returns 记账容器、注入面、替身与标签页元素工厂。
+ * 槽位渲染器把注入面里的 `hooks` 变成 `useXxx` 选择器钩子：`useState` 存当前投影，
+ * `useEffect` 订阅 store、变了就重渲染。依赖数组是空的（只订阅一次）——这是渲染器那一侧的
+ * 钩子，不参与「组件自己的 effect 依赖里不能有对象」那条守卫。
  */
-function driveClient(options: FakePanelOptions = {}): {
-  harness: Harness;
-  face: PanelFace;
-  mini: MiniReact;
-  element: unknown;
-  t: (key: string, params?: Record<string, unknown>) => string;
-} {
+function slotHooks(mini: MiniReact, hooks: Record<string, { getSnapshot: () => unknown; subscribe: (l: () => void) => () => void }>): Record<string, unknown> {
+  const built: Record<string, unknown> = {};
+  for (const [name, store] of Object.entries(hooks)) {
+    const hookName = `use${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+    built[hookName] = (selector: (snapshot: unknown) => unknown): unknown => {
+      const [snapshot, setSnapshot] = mini.useState<unknown>(() => store.getSnapshot());
+      mini.useEffect(() => store.subscribe(() => setSnapshot(store.getSnapshot())), []);
+      return selector(snapshot);
+    };
+  }
+  return built;
+}
+
+/** 把半边 apply 起来，再把配置页当成渲染器那样挂上去。 */
+function driveClient(options: FakePanelOptions = {}, withoutService = false): Driven {
   const harness = loadClient();
-  const mini = harness.mini;
+
+  /** locale 服务给的那支 `t`：字典里没有就原样漏出键名，占位符由这里填。 */
+  const translate = (namespace: string, key: string, params?: Record<string, unknown>): string => {
+    const template = harness.dictionaries[namespace]?.zh[key] ?? key;
+    if (params === undefined) return template;
+    return template.replace(/\{(\w+)\}/gu, (match, name: string) => (
+      Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+    ));
+  };
+  const t = (key: string, params?: Record<string, unknown>): string => translate(NS, key, params);
+
+  const controller = fakeForm(harness, options);
+  const namespace = fakeNamespace(harness, options);
+
+  const effect = (fn: () => unknown, label: string): unknown => {
+    harness.effectLabels.push(label);
+    const disposer = fn();
+    if (typeof disposer === 'function') harness.disposers[label] = disposer as () => void;
+    return disposer;
+  };
+
+  const scope = {
+    locale: { bind: (namespace0: string) => (key: string, params?: Record<string, unknown>) => translate(namespace0, key, params) },
+    remote: { [PANEL_NAMESPACE]: namespace },
+    slots: {
+      inject: (name: string, run: () => void) => {
+        harness.slotInjections.push(name);
+        run();
+      },
+      register: (options0: Registration['options'], component: unknown) => {
+        harness.registrations.push({ options: options0, component });
+        return () => {};
+      },
+    },
+    effect,
+  };
 
   const ctx = {
-    effect: (fn: () => unknown, label: string) => {
-      harness.effectLabels.push(label);
-      const disposer = fn();
-      if (typeof disposer === 'function') harness.disposers[label] = disposer as () => void;
-      return disposer;
-    },
-    inject: (names: readonly string[], run: (scope: unknown) => void) => {
-      if (!names.includes('remote.aperturePanel')) return;
-      run({
-        locale: { bind: (ns: string) => (key: string) => harness.dictionaries[ns]?.zh[key] ?? key },
-        remote: { aperturePanel: fakeNamespace(harness, options) },
-        slots: {
-          inject: (slot: string, callback: () => void) => {
-            harness.slotInjections.push(slot);
-            callback();
-          },
-          register: (registration: Registration['options'], component: unknown) => {
-            harness.registrations.push({ options: registration, component: component as Registration['component'] });
-          },
-        },
-      });
+    effect,
+    inject: (names: readonly string[], run: (scope0: unknown) => void) => {
+      harness.dependencies.push(...names);
+      run(scope);
     },
     locale: {
-      register: (ns: string, dictionaries: { zh: Record<string, string>; en: Record<string, string> }) => {
-        harness.localeNamespaces.push(ns);
-        harness.dictionaries[ns] = dictionaries;
+      register: (namespace0: string, dictionaries: { zh: Record<string, string>; en: Record<string, string> }) => {
+        harness.localeNamespaces.push(namespace0);
+        harness.dictionaries[namespace0] = dictionaries;
         return () => {};
       },
     },
     remote: {
-      $mount: async (contribution: unknown) => {
-        harness.mounted = contribution as Harness['mounted'];
+      $mount: async (contribution: { package: string; descriptors: readonly ClientDescriptor[] }) => {
+        harness.mounted = contribution;
         return async () => {};
       },
     },
+    configForms: withoutService
+      ? undefined
+      : {
+        get: (namespace0: string) => {
+          harness.configNamespaces.push(namespace0);
+          return controller;
+        },
+      },
   };
 
   harness.exports.apply(ctx);
 
   const registration = harness.registrations[0];
-  assert.ok(registration, 'apply 必须在 settings.plugins.tab 上注册标签页');
-  // 与 locale 服务同一套规则：`{name}` 插值；否则字典模板会原样漏进断言里。
-  const t = (key: string, params?: Record<string, unknown>): string =>
-    (harness.dictionaries['settings.aperturePanel']?.zh[key] ?? key)
-      .replace(/\{(\w+)\}/gu, (match, name: string) => (
-        params !== undefined && Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
-      ));
+  assert.ok(registration, '配置页应当注册到槽位上');
+
+  // 渲染器每轮渲染都会重新组装注入面。这里用一组 getter 把这件事还原：每读一次都是新的包装
+  // 对象（里面的函数与 store 仍是同一份）。因此「把注入面放进 effect 依赖」在真渲染器里会自
+  // 激，在这里却不会自己炸——那条守卫得靠 `hookDeps` 与渲染次数上限直接钉。
+  const props: Record<string, unknown> = {
+    t,
+    get useApertureCard() {
+      return slotHooks(harness.mini, registration.options.inject().hooks).useApertureCard;
+    },
+    get panel() {
+      return registration.options.inject().panel;
+    },
+    get edit() {
+      return registration.options.inject().edit;
+    },
+    get resetField() {
+      return registration.options.inject().resetField;
+    },
+    get discard() {
+      return registration.options.inject().discard;
+    },
+    get save() {
+      return registration.options.inject().save;
+    },
+    get failed() {
+      return registration.options.inject().failed;
+    },
+  };
+
   return {
     harness,
-    face: registration.options.inject().panel,
-    mini,
-    element: mini.createElement(registration.component, { panel: registration.options.inject().panel, t }),
+    mini: harness.mini,
+    controller,
+    props,
+    element: harness.mini.createElement(registration.component, props),
     t,
   };
 }
 
-/**
- * 把 vm 侧的值搬回本侧。
- *
- * 浏览器半边在 `node:vm` 的另一个 realm 里跑，它造出来的对象原型与本侧不同，`assert.deepEqual`
- * 会因为原型不等而失败——因此比较前先过一遍 JSON。
- *
- * @param value - vm 侧的值。
- * @returns 本侧的值。
- */
+// ------------------------------------------------------------------ 小工具
+
+/** 跨 realm 的东西（组件在 vm 里造的对象）没法直接 deepEqual，先过一遍 JSON。 */
 function plain(value: unknown): unknown {
-  return JSON.parse(JSON.stringify(value));
+  return JSON.parse(JSON.stringify(value)) as unknown;
 }
 
-describe('浏览器半边', () => {
-  it('以包名握手，只注入平台提供的三个服务', () => {
-    const harness = loadClient();
-    assert.equal(harness.exports.name, 'dsh-aperture');
-    assert.deepEqual([...harness.exports.inject], ['slots', 'locale', 'remote']);
-    assert.equal(harness.exports.NS, 'settings.aperturePanel');
+/** 页面上那句提示语。 */
+function bannerOf(mini: MiniReact): HostElement {
+  const [found] = findAll(mini.tree(), (node) => node.props.className === 'dap-banner');
+  assert.ok(found, '页面上应当有一句提示语');
+  return found;
+}
+
+/** 一个模型的 `li`。 */
+function rowOf(mini: MiniReact, id: string): HostElement {
+  const [found] = findAll(mini.tree(), (node) => node.type === 'li' && node.props.key === id);
+  assert.ok(found, `找不到模型行 ${id}`);
+  return found;
+}
+
+/** 一行里那个折叠按钮。 */
+function toggleOf(row: HostElement): HostElement {
+  const [found] = findAll(row, (node) => node.type === 'button' && node.props['aria-expanded'] !== undefined);
+  assert.ok(found, '这一行应当有一个折叠按钮');
+  return found;
+}
+
+/** 展开一行模型。 */
+async function openRow(mini: MiniReact, id: string): Promise<void> {
+  click(toggleOf(rowOf(mini, id)));
+  await mini.flush();
+}
+
+/** 一行里的一颗按钮。 */
+function rowButton(mini: MiniReact, id: string, label: string): HostElement {
+  return findButton(rowOf(mini, id), label);
+}
+
+/** 设置表单那颗保存按钮：文案随 `state.saving` 变，因此按「在 form 里」定位。 */
+function settingsSave(mini: MiniReact): HostElement {
+  const [form] = findAll(mini.tree(), (node) => node.type === 'form');
+  assert.ok(form, '页面里应当有官方设置表单');
+  const [save] = findAll(form, (node) => node.type === 'button' && (text(node) === '保存' || text(node) === '保存中…'));
+  assert.ok(save, '设置表单应当有一颗保存按钮');
+  return save;
+}
+
+/** 设置表单那两行：`baseUrl` 的输入框与 `sync` 的开关。 */
+function addressInput(mini: MiniReact): HostElement {
+  return findById(mini.tree(), 'dap-base-url');
+}
+
+function syncSwitch(mini: MiniReact): HostElement {
+  const [found] = findAll(mini.tree(), (node) => node.props.role === 'switch');
+  assert.ok(found, '页面里应当有一个同步开关');
+  return found;
+}
+
+/** 页面上的标签（替身把官方 `Tag` 渲染成带 `tone` 的 `span`）。 */
+function tags(node: unknown): HostElement[] {
+  return findAll(node, (element) => element.type === 'span' && element.props.tone !== undefined);
+}
+
+/** 报告那一张 `dl`，摊成「标签 → 值」；没有标签的那种只有值。 */
+function facts(mini: MiniReact): Array<[string | null, string]> {
+  const [dl] = findAll(mini.tree(), (node) => node.type === 'dl');
+  assert.ok(dl, '报告那一块应当是一张 dl');
+  return findAll(dl, (node) => node.type === 'div' && node.props.className === 'dap-fact').map((row) => {
+    const [dt] = findAll(row, (node) => node.type === 'dt');
+    const [dd] = findAll(row, (node) => node.type === 'dd');
+    assert.ok(dd, '每一行事实都应当有一个值');
+    return [dt === undefined ? null : text(dt), text(dd)];
+  });
+}
+
+/** 分段控件此刻选中的那一项（替身把选中项写成 `aria-pressed="true"` 加 `data-active`）。 */
+function activeSegment(node: unknown): string {
+  const [pressed] = findAll(node, (element) => element.props['aria-pressed'] === 'true');
+  assert.ok(pressed, '分段控件应当有一项是选中的');
+  const marked = findAll(node, (element) => element.props['data-active'] !== undefined);
+  assert.deepEqual(marked, [pressed], '选中的标记只该有一处');
+  return text(pressed);
+}
+
+/** 千位分隔符跟随语言环境，跟着被测代码一起算就不会跟 locale 打架。 */
+function count(value: number): string {
+  return value.toLocaleString();
+}
+
+// -------------------------------------------------------------------- 用例
+
+describe('客户端半边', () => {
+  it('上报的模块 id 与依赖都是接缝的一部分', () => {
+    const { harness } = driveClient();
+    assert.equal(harness.exports.name, PACKAGE);
+    assert.equal(harness.exports.NS, NS);
+    assert.equal(harness.exports.SETTINGS_NS, SETTINGS_NS);
+    assert.equal(harness.exports.SETTINGS_NS, APERTURE_NAMESPACE, '设置命名空间必须与宿主那一半一致');
+    assert.deepEqual([...harness.exports.FIELDS], FIELDS);
+    // 声明的服务清单与真正去要的那一份必须对得上。
+    assert.deepEqual(plain(harness.exports.inject), ['slots', 'locale', 'remote', 'configForms']);
+    assert.deepEqual([...harness.dependencies], ['remote.aperturePanel']);
+    assert.deepEqual([...harness.slotInjections], [CONFIG_SLOT]);
   });
 
-  it('端点与宿主半边一一对应', async () => {
+  it('把 aperturePanel 贡献挂到 Remote 服务上', async () => {
     const { harness } = driveClient();
     await new Promise((resolve) => setImmediate(resolve));
-    const mounted = harness.mounted;
-    assert.ok(mounted, '$mount 必须收到贡献');
-    assert.equal(mounted.package, PANEL_PACKAGE);
-    assert.equal(PANEL_NAMESPACE, 'aperturePanel');
-    const clientEndpoints = Array.from(mounted.descriptors, (descriptor) => `${descriptor.namespace}/${descriptor.method}`).sort();
-    const hostEndpoints = PANEL_INVOCATIONS.map((descriptor) => `${descriptor.namespace}/${descriptor.method}`).sort();
-    assert.deepEqual(clientEndpoints, hostEndpoints, '两半边的端点集合必须一致');
+    assert.ok(harness.mounted, '应当调用 ctx.remote.$mount');
+    assert.equal(harness.mounted.package, PANEL_PACKAGE);
+    assert.equal(harness.mounted, harness.exports.REMOTE, '挂上去的就是导出的那一份贡献');
+    assert.equal(harness.mounted.descriptors.length, PANEL_INVOCATIONS.length);
     assert.deepEqual(
-      Array.from(mounted.descriptors, (descriptor) => descriptor.id).sort(),
-      PANEL_INVOCATIONS.map((descriptor) => descriptor.id).sort(),
-      '端点 id 也必须一致',
+      plain(harness.mounted.descriptors.map((descriptor) => descriptor.method)),
+      PANEL_INVOCATIONS.map((invocation) => invocation.method),
     );
   });
 
-  it('每个端点都带 strict 编解码器，可省略的参数才接受缺省', async () => {
+  it('端点一一对应：方法名、参数名、调用方式与编解码器', async () => {
     const { harness } = driveClient();
     await new Promise((resolve) => setImmediate(resolve));
-    const descriptors = harness.mounted?.descriptors ?? [];
-    assert.equal(descriptors.length, 6);
-    for (const descriptor of descriptors) {
-      assert.equal(descriptor.result.mode, 'strict');
-      assert.ok(descriptor.result.typeSymbol);
-      assert.equal(typeof descriptor.result.schema?.parse, 'function');
+    assert.ok(harness.mounted);
+    for (const [index, descriptor] of harness.mounted.descriptors.entries()) {
+      const expected = PANEL_INVOCATIONS[index]!;
+      assert.equal(descriptor.id, `${PACKAGE}#${PANEL_NAMESPACE}/${expected.method}`);
+      assert.equal(descriptor.service, PANEL_NAMESPACE);
+      assert.equal(descriptor.namespace, PANEL_NAMESPACE);
       assert.equal(descriptor.invocation.kind, 'direct');
+      assert.deepEqual(
+        plain(descriptor.parameters.map((parameter) => parameter.name)),
+        expected.parameters.map((parameter) => parameter.name),
+      );
+      const codec = descriptor.result as Codec;
       for (const parameter of descriptor.parameters) {
-        assert.equal(parameter.codec.mode, 'strict');
+        assert.equal(parameter.wire, parameter.name, '参数名与线名一致，宿主按同一次序读');
         assert.equal(parameter.source, 'json');
+        assert.equal(parameter.codec, descriptor.result, '参数的编解码器与结果同一份');
       }
+      // 直通编解码器：值原样过线，因此端点两边的类型就是同一份 JSON。
+      assert.equal(codec.mode, 'strict');
+      assert.equal(codec.typeSymbol, `${PACKAGE}/types#any`);
+      assert.equal(codec.create().parse('原样'), '原样');
+      assert.equal(codec.create().parse(undefined), undefined);
+      // 贡献要冻住：渲染器与注册表都会把它放进长期缓存。
+      assert.equal(Object.isFrozen(descriptor), true);
+      assert.equal(Object.isFrozen(descriptor.parameters), true);
+      assert.equal(Object.isFrozen(codec), true);
     }
-    // 缺省与否由参数自己说了算：`save` 的两个参数没提到就是「不碰」，`edit` 的补丁必须给出
-    // ——`null` 是「撤销覆盖」，缺省不能顺便也当成撤销。
-    for (const descriptor of descriptors) {
-      const optional = descriptor.method === 'save';
-      for (const parameter of descriptor.parameters) {
-        assert.equal(parameter.acceptsUndefined, optional, `${descriptor.method}.${parameter.name}`);
-      }
-    }
-    const save = descriptors.find((descriptor) => descriptor.method === 'save');
-    assert.ok(save);
-    assert.deepEqual(Array.from(save.parameters, (parameter) => parameter.name), ['baseUrl', 'sync']);
-    // `null` 是「撤销覆盖」的哨兵值，必须过得了参数校验。
-    assert.equal(save.parameters[0]?.codec.schema?.parse(null), null);
-    assert.equal(save.parameters[0]?.codec.schema?.parse(undefined), undefined);
-    assert.throws(() => save.parameters[0]?.codec.schema?.parse(7), /期望 string/u);
-    assert.equal(save.parameters[1]?.codec.schema?.parse(true), true);
-    assert.throws(() => save.parameters[1]?.codec.schema?.parse('yes'), /期望 boolean/u);
   });
 
-  it('报告的形状有一份 strict 契约，漂移当场炸掉', async () => {
+  it('端点名不与 Remote 服务的保留成员撞车', async () => {
     const { harness } = driveClient();
     await new Promise((resolve) => setImmediate(resolve));
-    const status = harness.mounted?.descriptors.find((descriptor) => descriptor.method === 'status');
-    assert.ok(status);
-    const parse = (value: unknown): unknown => status.result.schema?.parse(value);
-    const payload = report();
-
-    // 合法的报告能原样过去。
-    const parsed = parse(payload) as Report;
-    assert.equal(parsed.place, 'https://ai.example.ts.net');
-    assert.equal(parsed.models.length, 2);
-    assert.deepEqual(plain(parsed.models[1]?.provenance), {
-      limits: 'default',
-      reasoning: 'default',
-      input: 'default',
-      name: 'default',
-    });
-    // 嵌套对象与对象数组也要被真的校验到，而不是只看着像。
-    assert.throws(() => parse({ ...payload, models: [{ ...payload.models[0], input: 'text' }] }), /models\[0\]\.input/u);
-    assert.throws(() => parse({ ...payload, models: [{ ...payload.models[0], provenance: { limits: 1 } }] }), /provenance/u);
-    assert.throws(() => parse({ ...payload, routes: [{ provider: 'aperture' }] }), /routes\[0\]\.models/u);
-    assert.throws(() => parse({ ...payload, refresh: { trigger: 'x' } }), /refresh\.at/u);
-    // 老的两段文本形态已经不认了。
-    assert.throws(() => parse({ status: 'x', models: 'y' }), /place/u);
-    assert.throws(() => parse(null), /期望一个对象/u);
-  });
-
-  it('edit 收一个 id 加一份补丁，允许 null（撤销），但拒绝越界的类型', async () => {
-    const { harness } = driveClient();
-    await new Promise((resolve) => setImmediate(resolve));
-    const edit = harness.mounted?.descriptors.find((descriptor) => descriptor.method === 'edit');
-    assert.ok(edit);
-    assert.deepEqual(Array.from(edit.parameters, (parameter) => parameter.name), ['id', 'patch']);
-    const id = edit.parameters[0]?.codec.schema;
-    const patch = edit.parameters[1]?.codec.schema;
-    assert.ok(id);
-    assert.ok(patch);
-    // 一行一次写入：`null` 补丁表示撤销这个模型的全部覆盖。
-    assert.equal(id.parse('a'), 'a');
-    assert.equal(patch.parse(null), null);
-    assert.deepEqual(plain(patch.parse({ contextWindow: 8, alias: 'x' })), { contextWindow: 8, alias: 'x' });
-    assert.equal(patch.parse(undefined), undefined);
-    assert.throws(() => id.parse(7), /期望 string/u);
-    assert.throws(() => patch.parse({ contextWindow: '8192' }), /contextWindow/u);
-    assert.throws(() => patch.parse({ thinking: 'yes' }), /thinking/u);
-    assert.throws(() => patch.parse({ input: [7] }), /input\[0\]/u);
-    // 只有「可省略」的参数才接受缺省：补丁缺省不是「撤销」，撤销要用显式的 `null`。
-    assert.equal(edit.parameters[1]?.acceptsUndefined, false);
-    const save = harness.mounted?.descriptors.find((descriptor) => descriptor.method === 'save');
-    assert.equal(save?.parameters[0]?.acceptsUndefined, true);
-  });
-
-  it('端点名不碰命名空间服务的预置成员', () => {
-    // 这条规矩在浏览器里执行，本地跑不到：api-gateway 为每个命名空间建一个
-    // `RemoteNamespaceService`，端点会变成它的属性，重名会被 validateContribution 拒绝
-    // **整份**贡献——界面安静地什么都不出现，只在控制台留一行 console.error。这里把那份
-    // 保留名单抄下来当护栏（来源：@deepseek-ai/dsh-api-gateway 客户端 bundle 的
-    // `REMOTE_NAMESPACE_FIELDS` 与 `RemoteNamespaceService.prototype` 的成员）。
+    assert.ok(harness.mounted);
     const reserved = new Set([
       'ctx', 'empty', 'invokeRemote', 'methods', 'name', 'namespace',
       'assertMethodAvailable', 'has', 'install', 'installDirect', 'installScoped', 'remove',
     ]);
-    // 名单本身也要被钉住，免得日后有人靠删条目让用例变绿。
-    for (const trap of ['ctx', 'empty', 'methods', 'name', 'namespace', 'install', 'remove']) {
-      assert.ok(reserved.has(trap), `保留名单漏了 ${trap}`);
+    for (const descriptor of harness.mounted.descriptors) {
+      assert.equal(reserved.has(descriptor.method), false, `${descriptor.method} 撞上了保留成员`);
     }
-    for (const descriptor of PANEL_INVOCATIONS) {
-      assert.ok(!reserved.has(descriptor.method), `端点名 ${descriptor.method} 与命名空间服务重名`);
-    }
+    assert.deepEqual(
+      plain(harness.mounted.descriptors.map((descriptor) => descriptor.method).sort()),
+      ['edit', 'refresh', 'status'],
+    );
   });
 
-  it('注册双语字典与样式，并挂在 settings.plugins.tab 上', () => {
+  it('注入面上的名字与形状：hooks 与表单动作都在', () => {
     const { harness } = driveClient();
-    assert.deepEqual(harness.localeNamespaces, ['settings.aperturePanel']);
-    const dictionary = harness.dictionaries['settings.aperturePanel'];
-    assert.ok(dictionary);
-    assert.deepEqual(Object.keys(dictionary.zh).sort(), Object.keys(dictionary.en).sort(), '两种语言的键必须一致');
-    assert.equal(dictionary.zh.tab, 'Aperture');
-
-    assert.deepEqual(harness.slotInjections, ['settings.plugins.tab']);
     const registration = harness.registrations[0]!;
-    assert.equal(registration.options.name, 'settings.plugins.tab');
-    assert.equal(registration.options.id, 'aperture');
-    assert.equal(registration.options.locale, 'settings.aperturePanel');
-    assert.equal(typeof registration.options.order, 'number');
-    assert.equal(registration.options.label(), 'Aperture');
+    assert.equal(registration.options.name, CONFIG_SLOT);
+    assert.equal(registration.options.key, PACKAGE);
+    assert.equal(registration.options.locale, NS);
+    // 页主只递 view，标题取自包元数据，因此这里不该再声明 id / order / label / tab。
+    assert.deepEqual(Object.keys(registration.options).sort(), ['inject', 'key', 'locale', 'name']);
 
-    assert.equal(harness.styles.length, 1);
-    assert.equal(harness.styles[0]?.mark, 'data-dsh-aperture');
-    assert.match(harness.styles[0]?.css ?? '', /\.dap-section/u);
-    // 卸载时必须把样式表撤掉，否则重载会累积。
-    harness.disposers['dsh-aperture: stylesheet']?.();
-    assert.equal(harness.styles[0]?.removed, true);
-  });
-
-  it('主按钮自带对比文字色，不靠继承', () => {
-    // `--dsw-alias-brand-primary` 在浅色主题里近黑、深色主题里近白，而继承来的正文色与它
-    // 同色：只写 background 就是深底深字。这条用例钉住「填了底就必须自己给文字色」。
-    const { harness } = driveClient();
-    const css = harness.styles[0]?.css ?? '';
-    const rule = /\[data-dsh-aperture\] \.dap-button\[data-primary="true"\] \{([^}]*)\}/u.exec(css)?.[1] ?? '';
-    assert.match(rule, /background:\s*var\(--dsw-alias-button-primary-fill/u);
-    assert.match(rule, /color:\s*var\(--dsw-alias-label-primary-foreground/u);
-    // 禁用态换主题自己的 dimmed 填充，而不是把整颗按钮调透明。
-    assert.match(css, /\.dap-button\[data-primary="true"\]:disabled \{[^}]*opacity: 1/u);
-  });
-
-  it('标签页挂载后先显示加载态，再渲染出配置与报告', async () => {
-    const { harness, mini, element } = driveClient();
-    mini.mount(element);
-
-    assert.match(text(mini.tree()), /正在读取状态/u);
-    await mini.flush();
-    assert.deepEqual([...harness.panelCalls].sort(), ['configuration', 'status']);
-    const tree = mini.tree();
-    assert.equal(findById(tree, 'dap-base-url').props.value, 'https://ai.example.ts.net');
-    assert.equal(findById(tree, 'dap-sync').props.checked, true);
-    assert.match(text(tree), /deepseek-flash/u);
-    assert.equal(findButton(tree, '保存').props.disabled, true, '没有草稿差异时保存应禁用');
-    // 一次交互只该渲染很少几次；多到几十次就说明 effect 在自激。
-    assert.ok(mini.renders <= 6, `渲染次数 ${mini.renders} 太多：effect 依赖里多半放了注入面`);
-    // 更直接的一条：注入面由渲染器每轮重新组装，因此任何 effect 都不能依赖它（或别的对象）。
-    for (const deps of mini.hookDeps()) {
-      if (deps === undefined) continue;
-      for (const dep of deps) {
-        assert.equal(typeof dep, 'number', `effect 依赖里出现了非原始值：${String(dep)}`);
-      }
+    const face = registration.options.inject();
+    assert.equal(typeof face.hooks.apertureCard.getSnapshot, 'function');
+    assert.equal(typeof face.hooks.apertureCard.subscribe, 'function');
+    for (const name of ['status', 'refresh', 'writeModel'] as const) {
+      assert.equal(typeof face.panel[name], 'function', `panel.${name} 应当是函数`);
+    }
+    for (const name of ['edit', 'resetField', 'discard', 'save', 'failed'] as const) {
+      assert.equal(typeof face[name], 'function', `${name} 应当是函数`);
     }
   });
 
-  it('改地址后保存，把草稿原样交给端点', async () => {
+  it('设置那一份表单按命名空间去要，注册了字典与样式表，卸载时收回', () => {
+    const { harness } = driveClient();
+    assert.deepEqual([...harness.configNamespaces], [SETTINGS_NS]);
+    assert.deepEqual([...harness.localeNamespaces], [NS]);
+
+    assert.deepEqual([...harness.effectLabels], [
+      'dsh-aperture: dictionaries',
+      'dsh-aperture: stylesheet',
+      'dsh-aperture: remote contribution',
+      'dsh-aperture: settings form',
+    ]);
+
+    const zh = harness.dictionaries[NS]?.zh;
+    const en = harness.dictionaries[NS]?.en;
+    assert.ok(zh, '应当注册中文词典');
+    assert.ok(en, '应当注册英文词典');
+    assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort(), '两种语言的键必须一一对应');
+    assert.equal(zh.saveRow, '保存这一行');
+    assert.equal(en.saveRow, 'Save row');
+    assert.equal(zh.resetField, '恢复默认');
+    assert.equal(zh.tab, undefined, '标题来自包元数据，字典里不该再有 tab 这一项');
+
+    assert.equal(harness.styles.length, 1, '应当只注入一张样式表');
+    const style = harness.styles[0]!;
+    assert.equal(style.dataset.plugin, PACKAGE);
+    assert.equal(style.dataset.pluginCss, STYLE_OWNER);
+    assert.match(style.textContent, /\[data-dsh-aperture\]/u, '选择器必须收在根节点之下');
+    assert.match(style.textContent, /\.dap-rows/u);
+    assert.match(style.textContent, /\.dap-banner/u);
+    assert.equal(style.removed, false);
+
+    harness.disposers['dsh-aperture: stylesheet']?.();
+    assert.equal(style.removed, true, '卸载时样式表要摘掉');
+  });
+
+  it('表单订阅设置快照，dispose() 之后订阅者回到 0', () => {
+    const { harness } = driveClient();
+    assert.ok(harness.subscriptions >= 1, '表单模型要订阅控制器');
+    harness.disposers['dsh-aperture: settings form']?.();
+    assert.equal(harness.subscriptions, 0, '卸载之后不该还挂着一个订阅者');
+  });
+
+  it('挂载：读一次报告、读一次设置，页面上留下模型与路由', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
 
-    change(findById(mini.tree(), 'dap-base-url'), 'https://new.example.ts.net');
-    await mini.flush();
-    const save = findButton(mini.tree(), '保存');
-    assert.equal(save.props.disabled, false);
-    click(save);
-    await mini.flush();
-
-    assert.deepEqual(harness.saveCalls, [['https://new.example.ts.net', true]]);
-    assert.match(text(mini.tree()), /已重新发现并发布/u);
-    assert.ok(harness.panelCalls.filter((call) => call === 'configuration').length >= 2, '保存后应重读配置');
-  });
-
-  it('撤销覆盖时明确传 null', async () => {
-    const { mini, harness, element } = driveClient();
-    mini.mount(element);
-    await mini.flush();
-
-    assert.match(text(mini.tree()), /已覆盖/u);
-    click(findButton(mini.tree(), '撤销覆盖'));
-    await mini.flush();
-    assert.deepEqual(harness.saveCalls, [[null, undefined]]);
-  });
-
-  it('同步开关与两个动作按钮各自打到对应端点', async () => {
-    const { harness, mini, element } = driveClient();
-    mini.mount(element);
-    await mini.flush();
-
-    toggle(findById(mini.tree(), 'dap-sync'), false);
-    await mini.flush();
-    click(findButton(mini.tree(), '保存'));
-    await mini.flush();
-    assert.deepEqual(harness.saveCalls[0], ['https://ai.example.ts.net', false]);
-
-    click(findButton(mini.tree(), '立即刷新'));
-    await mini.flush();
-    click(findButton(mini.tree(), '撤掉已发布的路由'));
-    await mini.flush();
-    assert.ok(harness.panelCalls.includes('refresh'));
-    assert.ok(harness.panelCalls.includes('withdraw'));
-  });
-
-  it('设置文档只读时表单禁用并说明原因', async () => {
-    const { mini, element } = driveClient({ configuration: { writable: false } });
-    mini.mount(element);
-    await mini.flush();
-
+    assert.ok(harness.panelCalls.includes('status'), '挂载要先读一次报告');
+    assert.equal(harness.panelCalls.includes('refresh'), false, '读报告不该顺手刷新');
     const tree = mini.tree();
-    assert.equal(findById(tree, 'dap-base-url').props.disabled, true);
-    assert.match(text(tree), /不接受写入/u);
+    assert.match(text(tree), /发现报告/u);
+    // 设置表单那一段的输入框与提示语都在（报告那一段的断言各自另有用例）。
+    assert.match(text(tree), /Aperture 的地址/u);
+    assert.equal(findAll(tree, (node) => node.type === 'li' && node.props.className === 'dap-row').length, 2);
+    assert.equal(findById(tree, 'dap-base-url').props.value, 'https://ai.example.ts.net');
+    assert.equal(syncSwitch(mini).props['aria-checked'], 'true');
   });
 
-  it('报告渲染成状态行与按路由分组的模型清单', async () => {
+  it('设置投影跟着控制器变，不必重挂', async () => {
+    const { controller, mini, element, harness } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    const before = harness.formReads.length;
+
+    controller.publish({ value: { baseUrl: 'https://elsewhere.example.ts.net', sync: false } });
+    await mini.flush();
+
+    assert.equal(addressInput(mini).props.value, 'https://elsewhere.example.ts.net');
+    assert.equal(syncSwitch(mini).props['aria-checked'], 'false');
+    assert.ok(harness.formReads.length > before, '投影应当重新读一次快照');
+  });
+
+  it('改地址后保存：只写改过的那一项，带上读到的 revision，再等一轮重新发现', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    change(addressInput(mini), 'https://gateway.example.ts.net');
+    await mini.flush();
+    click(settingsSave(mini));
+    await mini.flush();
+
+    assert.deepEqual(plain(harness.writes), [{
+      ops: [{ op: 'set', path: ['baseUrl'], value: 'https://gateway.example.ts.net' }],
+      revision: 4,
+    }]);
+    assert.equal(harness.panelCalls.filter((call) => call === 'refresh').length, 1, '保存成功之后要重跑一轮');
+    const banner = bannerOf(mini);
+    assert.equal(banner.props['data-ok'], 'true');
+    assert.match(text(banner), /已保存：已重新发现并发布/u);
+  });
+
+  it('同步开关也是同一份表单里的一项', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    click(syncSwitch(mini));
+    await mini.flush();
+    assert.equal(syncSwitch(mini).props['aria-checked'], 'false');
+    click(settingsSave(mini));
+    await mini.flush();
+
+    assert.deepEqual(plain(harness.writes), [{
+      ops: [{ op: 'set', path: ['sync'], value: false }],
+      revision: 4,
+    }]);
+  });
+
+  it('「已覆盖」看的是用户层里在不在这一项，不看值跟谁一样', async () => {
     const { mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
-    const body = text(mini.tree());
 
-    // 状态段：一次刷新决定了什么，一项一行。
-    assert.match(body, /最近一次刷新/u);
-    assert.match(body, /配置变更/u);
-    assert.match(body, /286ms/u);
-    assert.match(body, /成功/u);
-    assert.match(body, /422 个条目/u);
-    assert.match(body, /列出了 16 行/u);
-    assert.match(body, /写入 2 个操作（aperture, aperture-anthropic）/u);
-
-    // 模型清单：先按路由分组，未服务的排在后面。
-    assert.match(body, /aperture · openai-completions/u);
-    assert.match(body, /→ https:\/\/ai\.example\.ts\.net\/v1 · 1 个模型/u);
-    assert.match(body, /deepseek-flash/u);
-    assert.match(body, /DeepSeek Flash/u);
-    assert.match(body, /1\D?048\D?576 上下文窗口/u);
-    assert.match(body, /384\D?000 输出/u);
-    assert.match(body, /文本\+图像/u);
-    assert.match(body, /推理/u);
-    assert.match(body, /清单别名 deepseek\/deepseek-v4-flash/u);
-    assert.match(body, /未服务：没有本插件可发布的端点/u);
-    assert.match(body, /gemini-2\.5-flash/u);
-    assert.match(body, /通告的端点：\/v1beta\/models\/gemini-2\.5-flash:generateContent/u);
-    // 来源不堆在行尾：收起时没有这一行，展开后每条来源跟着它描述的那个字段。
-    assert.doesNotMatch(body, /每项事实来自/u);
-    // 覆盖过的模型带标签，段头说明一共有几个被覆盖（官方模型卡片也是这句）。
-    assert.match(body, /已覆盖/u);
-    assert.match(body, /已覆盖 1 个模型，其余沿用发现值与清单/u);
-    // 收起时就是一条事实：输入框与来源都在面板里，点「编辑」才出现。
-    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-name').length, 0);
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
-    assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-name').props.value, 'DeepSeek Flash');
-    assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-alias').props.value, 'deepseek/deepseek-v4-flash');
-    const opened = text(mini.tree());
-    assert.match(opened, /生效 1[,\s]?048[,\s]?576 · 来自 aperture/u, '容量旁边写着它从哪儿来');
-    assert.match(opened, /生效 文本\+图像 · 来自 配置/u);
-    assert.match(opened, /生效 开 · 来自 models\.dev/u);
-    assert.match(opened, /来自 models\.dev/u, '显示名那格只说来源，值在输入框里');
-    // 再点一次收起，面板连输入框一起消失。
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
-    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-name').length, 0);
-    assert.doesNotMatch(text(mini.tree()), /来自 aperture/u);
+    // 默认快照的 `user` 里只有 baseUrl，因此只有地址那一项挂着标签与「恢复默认」——文档里写过
+    // 就算覆盖过，不必等用户先动一下手。
+    assert.match(text(mini.tree()), /已覆盖/u);
+    assert.equal(
+      findAll(mini.tree(), (node) => node.props.id === 'dap-base-url-reset').length,
+      1,
+      '用户层里覆盖过的项才给「恢复默认」',
+    );
+    const [toggleRow] = findAll(mini.tree(), (node) => node.props.className === 'dap-toggleRow');
+    assert.ok(toggleRow, '同步开关那一行');
+    assert.equal(
+      findAll(toggleRow, (node) => node.type === 'button' && text(node).includes('恢复默认')).length,
+      0,
+      '没覆盖过的那一项不给「恢复默认」',
+    );
   });
 
-  it('没有刷新过时不装作有报告', async () => {
-    const { mini, element } = driveClient({ report: report({ refresh: undefined, routes: [], models: [] }) });
-    mini.mount(element);
-    await mini.flush();
-    assert.match(text(mini.tree()), /尚未完成任何刷新/u);
-    assert.match(text(mini.tree()), /未发现任何模型/u);
-  });
-
-  it('就地编辑模型参数：表单预填生效值，只把改过的字段发出去', async () => {
+  it('恢复默认：落一份「撤掉这一项」的草稿，保存那一下才写 unset', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
 
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
+    click(findById(mini.tree(), 'dap-base-url-reset'));
     await mini.flush();
+
+    // 官方那一份把「恢复默认」也落成草稿：此刻一个 op 都还没写。输入框摆回用户层之下的值，
+    // 「已覆盖」当场消失——这一项不再覆盖了。
+    assert.deepEqual(harness.writes, [], '按一下「恢复默认」不落笔');
+    assert.equal(addressInput(mini).props.value, '', '输入框回到用户层之下的值');
+    assert.equal(
+      findAll(mini.tree(), (node) => node.props.id === 'dap-base-url-reset').length,
+      0,
+      '撤掉覆盖，「已覆盖」跟着消失',
+    );
+
+    click(settingsSave(mini));
+    await mini.flush();
+    assert.deepEqual(
+      plain(harness.writes),
+      [{ ops: [{ op: 'unset', path: ['baseUrl'] }], revision: 4 }],
+      '写的是 unset，不是一个默认值',
+    );
+
+    // 同步那一项用户层里本来就没有：改一下再「恢复默认」只是把草稿撤了，没有覆盖可撤，于是
+    // 保存连端点都不碰，而生效值仍是开。
+    click(syncSwitch(mini));
+    await mini.flush();
+    const [toggleRow] = findAll(mini.tree(), (node) => node.props.className === 'dap-toggleRow');
+    assert.ok(toggleRow, '同步开关那一行');
+    click(findButton(toggleRow, '恢复默认'));
+    await mini.flush();
+    click(settingsSave(mini));
+    await mini.flush();
+
+    assert.equal(harness.writes.length, 1, '没有覆盖可撤，就不写任何 op');
+    assert.equal(syncSwitch(mini).props['aria-checked'], 'true', '撤掉的是覆盖，不是生效值');
+  });
+
+  it('注入面上的 discard 就是官方表单那颗「放弃」：丢草稿，不写任何东西', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    change(addressInput(mini), 'https://typo.example.ts.net');
+    await mini.flush();
+    assert.equal(addressInput(mini).props.value, 'https://typo.example.ts.net');
+
+    // 替身没有画出「放弃」那颗按钮（官方表单长什么样不在这一份测试的范围里），这里直接按
+    // 渲染器会按的那条路走：拿注入面上的 discard。
+    harness.registrations[0]!.options.inject().discard();
+    await mini.flush();
+
+    assert.equal(addressInput(mini).props.value, 'https://ai.example.ts.net', '草稿丢掉，回到生效值');
+    assert.deepEqual(harness.writes, [], '放弃不该碰设置文档');
+  });
+
+  it('没有改动时一个 op 都不写，但保存这件事本身会重跑一轮发现', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    click(settingsSave(mini));
+    await mini.flush();
+
+    // 官方那份模型在没有可写的改动时直接返回：连 `mutate` 都不调用（不是「调用一次空计划」）。
+    assert.deepEqual(plain(harness.writes), [], '没有可写的改动，连端点都不碰');
+    assert.equal(harness.panelCalls.filter((call) => call === 'refresh').length, 1, '保存这一下本来就要等一轮发现落地');
+  });
+
+  it('写入被拒：界面说实话，不假装成功', async () => {
+    const { harness, mini, element } = driveClient({ refused: true });
+    mini.mount(element);
+    await mini.flush();
+
+    change(addressInput(mini), 'https://gateway.example.ts.net');
+    await mini.flush();
+    click(settingsSave(mini));
+    await mini.flush();
+
+    assert.equal(harness.writes.length, 1, '试过写入，但被回绝了');
+    assert.equal(harness.panelCalls.includes('refresh'), false, '没写成就没有「重新发现」这回事');
+    assert.match(text(mini.tree()), /没被接受/u, '表单要说清这一笔没落下去');
+    assert.match(text(bannerOf(mini)), /没有写入/u);
+    assert.equal(addressInput(mini).props.value, 'https://gateway.example.ts.net', '草稿留着，用户不必重打一遍');
+  });
+
+  it('文档只读时控件全部停用', async () => {
+    const { mini, element } = driveClient({ section: { writable: false } });
+    mini.mount(element);
+    await mini.flush();
+
+    assert.match(text(mini.tree()), /只读/u);
+    assert.equal(addressInput(mini).props.disabled, true);
+    assert.equal(syncSwitch(mini).props.disabled, true);
+    assert.equal(settingsSave(mini).props.disabled, true);
+  });
+
+  it('没有设置服务时页面照旧立得住，只是那份表单读不到', async () => {
+    const { harness, mini, element } = driveClient({}, true);
+    mini.mount(element);
+    await mini.flush();
+
+    assert.deepEqual([...harness.configNamespaces], [], '没有服务就不该去要命名空间');
+    assert.match(text(mini.tree()), /这一份设置现在读不到/u);
+    const [form] = findAll(mini.tree(), (node) => node.type === 'form');
+    assert.ok(form, '表单本身还要在');
+    assert.equal(findAll(form, (node) => node.type === 'button').length, 0, '读不到就没有可按的东西');
+    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-base-url').length, 0);
+    assert.match(text(mini.tree()), /发现报告/u, '报告那半块与设置服务无关');
+    assert.equal(findAll(mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-row').length, 2);
+  });
+});
+
+describe('报告那一块', () => {
+  it('模型行收起时只剩一行事实，展开才给编辑器', async () => {
+    const { mini, element, t } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    const row = rowOf(mini, 'deepseek-flash');
+    assert.equal(toggleOf(row).props['aria-expanded'], 'false');
+    const collapsed = text(row);
+    for (const fragment of [
+      'aperture',
+      'openai-completions',
+      t('factContextWindow', { count: count(1_048_576) }),
+      t('factMaxTokens', { count: count(384_000) }),
+      t('modalityText') + '+' + t('modalityImage'),
+      t('reasoningOn'),
+      t('factAlias', { alias: 'deepseek/deepseek-v4-flash' }),
+      t('overriddenKeys', { keys: t('editReasoning') }),
+    ]) {
+      assert.ok(collapsed.includes(fragment), `收起的一行应当写着 ${fragment}`);
+    }
+    assert.equal(findAll(row, (node) => node.props.id === 'dap-deepseek-flash-name').length, 0, '收起时不该有编辑器');
+
+    await openRow(mini, 'deepseek-flash');
+    assert.equal(toggleOf(rowOf(mini, 'deepseek-flash')).props['aria-expanded'], 'true');
+  });
+
+  it('状态点跟着「有没有路由可服务」', async () => {
+    const { mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    assert.deepEqual(
+      findAll(mini.tree(), (node) => node.type === 'span' && typeof node.props.state === 'string')
+        .map((node) => node.props.state),
+      ['idle', 'warning'],
+    );
+  });
+
+  it('展开一行：输入框预填的是此刻的生效值', async () => {
+    const { mini, element, t } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    await openRow(mini, 'deepseek-flash');
+
     const tree = mini.tree();
-    assert.equal(findById(tree, 'dap-model-deepseek-flash-name').props.value, 'DeepSeek Flash', '预填生效值');
-    assert.equal(findById(tree, 'dap-model-deepseek-flash-contextWindow').props.value, '1048576');
-    assert.equal(findById(tree, 'dap-model-deepseek-flash-alias').props.value, 'deepseek/deepseek-v4-flash');
-    assert.equal(findById(tree, 'dap-model-deepseek-flash-text').props.checked, true);
-    assert.equal(findById(tree, 'dap-model-deepseek-flash-image').props.checked, true);
-    assert.equal(findById(tree, 'dap-model-deepseek-flash-reasoning').props.value, 'on', '有 thinking 覆盖就是它');
-    // 面板是官方的参数栅格：每个格子有 12px 的小标签，容量旁边写着生效值与来源。
-    assert.match(text(tree), /生效 1[,\s]?048[,\s]?576 · 来自 aperture/u);
-
-    change(findById(tree, 'dap-model-deepseek-flash-contextWindow'), '32768');
-    await mini.flush();
-    // 草稿期间出现「待保存」标签，动手前不打端点。
-    assert.match(text(mini.tree()), /待保存/u);
-    assert.deepEqual(harness.editCalls, [], '按下保存之前不该写任何东西');
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-save'));
-    await mini.flush();
-
-    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { contextWindow: 32768 }]]);
-    assert.match(text(mini.tree()), /已重新发现并发布/u);
-    // 保存后收起面板、重读报告与配置，列表里马上能看到新的覆盖。
-    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-save').length, 0);
-    assert.equal(harness.panelCalls.filter((call) => call === 'edit').length, 1);
-    assert.ok(harness.panelCalls.filter((call) => call === 'status').length >= 2);
+    assert.equal(findById(tree, 'dap-deepseek-flash-name').props.value, 'DeepSeek Flash');
+    assert.equal(findById(tree, 'dap-deepseek-flash-contextWindow').props.value, '1048576');
+    assert.equal(findById(tree, 'dap-deepseek-flash-maxTokens').props.value, '384K');
+    assert.equal(findById(tree, 'dap-deepseek-flash-alias').props.value, 'deepseek/deepseek-v4-flash');
+    // 协议没写在用户层里，输入框留空、由占位符提示发现的协议。
+    assert.equal(findById(tree, 'dap-deepseek-flash-api').props.value, '');
+    assert.equal(findById(tree, 'dap-deepseek-flash-api').props.placeholder, 'openai-completions');
+    assert.deepEqual(
+      findAll(rowOf(mini, 'deepseek-flash'), (node) => node.props.role === 'checkbox').map((node) => node.props['aria-checked']),
+      ['true', 'true'],
+    );
+    assert.equal(activeSegment(rowOf(mini, 'deepseek-flash')), t('reasoningOn'));
+    assert.equal(findById(tree, 'dap-deepseek-flash-api').props.disabled, false);
+    assert.match(text(rowOf(mini, 'deepseek-flash')), /来源：/u, '每一项都要说得出这个值是谁定的');
   });
 
-  it('每行各自保存：只写这一行，另一行留在那儿', async () => {
+  it('改一个字段保存：补丁里只有那一个字段', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
+    await openRow(mini, 'deepseek-flash');
 
-    // 两行同时展开、都改了东西，这时按哪一行就只写哪一行。
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    click(findById(mini.tree(), 'dap-model-gemini-2.5-flash-toggle'));
+    change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '32768');
     await mini.flush();
-    change(findById(mini.tree(), 'dap-model-deepseek-flash-contextWindow'), '32768');
-    change(findById(mini.tree(), 'dap-model-gemini-2.5-flash-api'), 'anthropic-messages');
+    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
     await mini.flush();
 
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-save'));
-    await mini.flush();
-    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { contextWindow: 32768 }]]);
-    // 保存的那一行收起了，另一行还开着、草稿还在。
-    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-contextWindow').length, 0);
-    assert.equal(findById(mini.tree(), 'dap-model-gemini-2.5-flash-api').props.value, 'anthropic-messages');
-    assert.match(text(mini.tree()), /待保存/u);
+    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { contextWindow: 32_768 }]]);
+    assert.equal(harness.panelCalls.filter((call) => call === 'edit').length, 1);
+    assert.ok(harness.panelCalls.filter((call) => call === 'status').length >= 2, '写完要重新读一轮报告');
+    assert.equal(findAll(rowOf(mini, 'deepseek-flash'), (node) => node.props.id === 'dap-deepseek-flash-contextWindow').length, 0, '写完收起');
+    assert.match(text(mini.tree()), /已重新发现并发布/u);
+  });
 
-    click(findById(mini.tree(), 'dap-model-gemini-2.5-flash-save'));
+  it('两行各开各的：保存这一行不牵连那一行', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    await openRow(mini, 'deepseek-flash');
+    await openRow(mini, 'gemini-2.5-flash');
+
+    change(findById(mini.tree(), 'dap-deepseek-flash-maxTokens'), '8192');
+    change(findById(mini.tree(), 'dap-gemini-2.5-flash-name'), 'Gemini');
+    await mini.flush();
+    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+    await mini.flush();
+
+    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { maxTokens: 8192 }]]);
+    assert.equal(findById(mini.tree(), 'dap-gemini-2.5-flash-name').props.value, 'Gemini', '那一行的草稿还在');
+
+    click(rowButton(mini, 'gemini-2.5-flash', '保存这一行'));
     await mini.flush();
     assert.deepEqual(plain(harness.editCalls), [
-      ['deepseek-flash', { contextWindow: 32768 }],
-      ['gemini-2.5-flash', { api: 'anthropic-messages' }],
+      ['deepseek-flash', { maxTokens: 8192 }],
+      ['gemini-2.5-flash', { name: 'Gemini' }],
     ]);
   });
 
-  it('留空表示这一项不覆盖，清空的字段传 null', async () => {
+  it('留空表示这一项不覆盖：文本给 null、别名给空串', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
+    await openRow(mini, 'deepseek-flash');
+
+    change(findById(mini.tree(), 'dap-deepseek-flash-name'), '');
+    change(findById(mini.tree(), 'dap-deepseek-flash-alias'), '');
+    await mini.flush();
+    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
     await mini.flush();
 
-    change(findById(mini.tree(), 'dap-model-deepseek-flash-name'), '');
-    change(findById(mini.tree(), 'dap-model-deepseek-flash-contextWindow'), '');
-    toggle(findById(mini.tree(), 'dap-model-deepseek-flash-image'), false);
-    await mini.flush();
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-save'));
-    await mini.flush();
-
-    assert.deepEqual(plain(harness.editCalls), [[
-      'deepseek-flash',
-      { name: null, contextWindow: null, input: ['text'] },
-    ]]);
+    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { name: null, alias: '' }]]);
   });
 
-  it('「取消」丢掉草稿并收起，什么都不发', async () => {
+  it('取消：丢掉草稿、收起面板、什么都不写', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
+    await openRow(mini, 'deepseek-flash');
 
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
+    change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '1');
     await mini.flush();
-    change(findById(mini.tree(), 'dap-model-deepseek-flash-contextWindow'), '1');
+    click(rowButton(mini, 'deepseek-flash', '取消'));
     await mini.flush();
-    assert.match(text(mini.tree()), /待保存/u);
 
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-cancel'));
-    await mini.flush();
-    assert.deepEqual(harness.editCalls, [], '取消不该打端点');
-    assert.doesNotMatch(text(mini.tree()), /待保存/u);
-    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-name').length, 0);
-
-    // 再展开一次：输入框回到生效值，改动确实被丢掉了。
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
-    assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-contextWindow').props.value, '1048576');
+    assert.deepEqual(harness.editCalls, []);
+    assert.equal(toggleOf(rowOf(mini, 'deepseek-flash')).props['aria-expanded'], 'false');
+    await openRow(mini, 'deepseek-flash');
+    assert.equal(findById(mini.tree(), 'dap-deepseek-flash-contextWindow').props.value, '1048576');
   });
 
-  it('「撤销覆盖」只清掉报告里写着确实覆盖过的那几项，而且只动这一行', async () => {
-    const { harness, mini, element } = driveClient();
+  it('收起不动草稿，用标签说还有没保存的改动', async () => {
+    const { harness, mini, element, t } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    await openRow(mini, 'deepseek-flash');
+
+    change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '1');
+    await mini.flush();
+    click(toggleOf(rowOf(mini, 'deepseek-flash')));
+    await mini.flush();
+
+    assert.deepEqual(harness.editCalls, []);
+    assert.ok(text(rowOf(mini, 'deepseek-flash')).includes(t('dirtyTag')));
+    await openRow(mini, 'deepseek-flash');
+    assert.equal(findById(mini.tree(), 'dap-deepseek-flash-contextWindow').props.value, '1', '草稿没被收起来丢掉');
+  });
+
+  it('清空覆盖：只碰报告里确实覆盖过的键，逐项置空', async () => {
+    const custom = report({ models: [deepseek({ overrideKeys: ['thinking', 'alias'] }), gemini()] });
+    const { harness, mini, element } = driveClient({ report: custom });
+    mini.mount(element);
+    await mini.flush();
+    await openRow(mini, 'deepseek-flash');
+
+    click(rowButton(mini, 'deepseek-flash', '清空覆盖'));
+    await mini.flush();
+    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { thinking: null, alias: '' }]]);
+  });
+
+  it('清空覆盖遇到界面不认识的键：整行撤回才是唯一能回到发现值的做法', async () => {
+    const custom = report({ models: [deepseek({ overrideKeys: ['contextWindow', 'reasoningEfforts'] }), gemini()] });
+    const { harness, mini, element } = driveClient({ report: custom });
     mini.mount(element);
     await mini.flush();
 
-    // 这一行被覆盖的是 thinking；别名也被清了一遍——面板里的别名输入框显示的是生效别名，
-    // 清掉表示「不要再覆盖」，宿主看到用户层没有这个键就什么都不写。
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-revert'));
-    await mini.flush();
-
-    assert.deepEqual(plain(harness.editCalls), [[
-      'deepseek-flash',
-      { thinking: null, alias: '' },
-    ]]);
-    assert.match(text(mini.tree()), /已重新发现并发布/u);
-    // 写的是别的行？不可能：端点一次只收一个 id。
-    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-toggle').length, 1);
-  });
-
-  it('报告的覆盖里出现界面不认识的键时，整条撤销', async () => {
-    const base = report().models[0]!;
-    const { harness, mini, element } = driveClient({
-      report: report({
-        models: [
-          { ...base, override: { somethingNew: true } as never, alias: undefined },
-          report().models[1]!,
-        ],
-      }),
-    });
-    mini.mount(element);
-    await mini.flush();
-
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-revert'));
+    assert.ok(text(rowOf(mini, 'deepseek-flash')).includes('推理档位'), '不认识的键也要报出来');
+    await openRow(mini, 'deepseek-flash');
+    click(rowButton(mini, 'deepseek-flash', '清空覆盖'));
     await mini.flush();
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', null]]);
   });
 
-  it('非法的容量在本地就被挡下来，不打端点', async () => {
-    const { harness, mini, element } = driveClient();
+  it('没有覆盖过的一行不给「清空覆盖」', async () => {
+    const { mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-toggle'));
-    await mini.flush();
+    await openRow(mini, 'gemini-2.5-flash');
 
-    change(findById(mini.tree(), 'dap-model-deepseek-flash-maxTokens'), '0');
-    await mini.flush();
-    click(findById(mini.tree(), 'dap-model-deepseek-flash-save'));
-    await mini.flush();
-
-    assert.deepEqual(harness.editCalls, []);
-    assert.match(text(mini.tree()), /必须是不小于 1 的整数/u);
+    assert.equal(findAll(rowOf(mini, 'gemini-2.5-flash'), (node) => node.type === 'button' && text(node) === '清空覆盖').length, 0);
   });
 
-  it('未服务的模型可以就地指定协议，让它变得可服务', async () => {
+  it('容量认 1M / 100K 的写法，非法值在本地挡下来、不打端点', async () => {
+    const { harness, mini, element, t } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+    await openRow(mini, 'deepseek-flash');
+
+    for (const [illegal, field] of [['1G', '上下文容量'], ['1.5', '上下文容量'], ['0', '上下文容量']] as const) {
+      change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), illegal);
+      await mini.flush();
+      assert.ok(text(rowOf(mini, 'deepseek-flash')).includes(t('invalidField')), `${illegal} 应当在输入框上标出来`);
+      click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+      await mini.flush();
+      assert.deepEqual(harness.editCalls, [], `${illegal} 不该发端点`);
+      assert.equal(bannerOf(mini).props['data-ok'], 'false');
+      assert.match(text(bannerOf(mini)), new RegExp(`${field} 只能填不小于 1 的整数`, 'u'));
+    }
+
+    change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '64K');
+    await mini.flush();
+    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+    await mini.flush();
+    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { contextWindow: 64_000 }]]);
+  });
+
+  it('换一种写法写同一个数不算改动', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
+    await openRow(mini, 'deepseek-flash');
 
-    click(findById(mini.tree(), 'dap-model-gemini-2.5-flash-toggle'));
+    change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '1M');
+    change(findById(mini.tree(), 'dap-deepseek-flash-maxTokens'), '384k');
     await mini.flush();
-    const tree = mini.tree();
-    assert.equal(findById(tree, 'dap-model-gemini-2.5-flash-api').props.value, '', '没有覆盖时「跟随发现」');
-    assert.match(text(tree), /填上协议可以让它在对应路由上发布/u);
+    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+    await mini.flush();
 
-    change(findById(tree, 'dap-model-gemini-2.5-flash-api'), 'openai-completions');
+    assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { contextWindow: 1_000_000 }]], '384k 与 384K 是同一个数');
+  });
+
+  it('未服务的模型可以就地填上协议', async () => {
+    const { harness, mini, element } = driveClient();
+    mini.mount(element);
     await mini.flush();
-    click(findById(mini.tree(), 'dap-model-gemini-2.5-flash-save'));
+    await openRow(mini, 'gemini-2.5-flash');
+
+    assert.equal(findById(mini.tree(), 'dap-gemini-2.5-flash-api').props.value, '');
+    assert.match(text(rowOf(mini, 'gemini-2.5-flash')), /填上协议它才有路由/u);
+    change(findById(mini.tree(), 'dap-gemini-2.5-flash-api'), 'openai-completions');
     await mini.flush();
+    click(rowButton(mini, 'gemini-2.5-flash', '保存这一行'));
+    await mini.flush();
+
     assert.deepEqual(plain(harness.editCalls), [['gemini-2.5-flash', { api: 'openai-completions' }]]);
   });
 
-  it('端点失败时把原因摆在界面上，而不是留在控制台', async () => {
-    const { mini, element } = driveClient({ fails: 'status' });
+  it('报告把最近一次刷新的账摊开：触发、耗时、清单、端点、写入', async () => {
+    const { mini, element, t } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    const byLabel = new Map(facts(mini).map(([label, value]) => [label, value]));
+    assert.equal(byLabel.get(t('factTrigger')), '配置变更');
+    assert.equal(byLabel.get(t('factDuration')), '286ms');
+    assert.equal(byLabel.get(t('factResult')), t('refreshOk'));
+    assert.equal(byLabel.get(t('factCatalog')), t('catalogEntries', { count: count(422) }));
+    assert.equal(byLabel.get(t('factEndpoint')), t('endpointListed', { url: 'https://ai.example.ts.net/v1/models', count: 16 }));
+    assert.equal(byLabel.get(t('factSync')), t('syncApplied', { count: 2, routes: 'aperture、aperture-anthropic' }));
+    assert.ok((byLabel.get(t('factTime')) ?? '').length > 0, '时间要本地化地写出来');
+  });
+
+  it('路由行：协议、多少个模型、写没写进去、baseURL', async () => {
+    const { mini, element, t } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    const [route] = findAll(mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-route');
+    assert.ok(route, '应当有一条路由');
+    assert.deepEqual(tags(route).map((node) => [node.props.tone, text(node)]), [
+      ['outline', 'openai-completions'],
+      ['quiet', t('routeModels', { count: 1 })],
+      ['success', t('routePublished')],
+    ]);
+    assert.ok(text(route).includes('https://ai.example.ts.net/v1'));
+  });
+
+  it('没写进去的路由说「未写入」，没跑过同步就不说这句', async () => {
+    const skipped = report({
+      refresh: {
+        ...report().refresh!,
+        sync: { applied: false, ops: 0, routes: [], reason: '没有配置变更' },
+      },
+    });
+    const first = driveClient({ report: skipped });
+    first.mini.mount(first.element);
+    await first.mini.flush();
+    const [route] = findAll(first.mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-route');
+    assert.ok(route);
+    assert.deepEqual(tags(route).map((node) => text(node)), [
+      'openai-completions',
+      first.t('routeModels', { count: 1 }),
+      first.t('routeNotPublished'),
+    ]);
+    assert.equal(tags(route)[2]?.props.tone, 'neutral');
+    const byLabel = new Map(facts(first.mini).map(([label, value]) => [label, value]));
+    assert.equal(byLabel.get(first.t('factSync')), first.t('syncSkipped', { reason: '没有配置变更' }));
+
+    const noSync = report({ refresh: { ...report().refresh!, sync: undefined } });
+    const second = driveClient({ report: noSync });
+    second.mini.mount(second.element);
+    await second.mini.flush();
+    const [route2] = findAll(second.mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-route');
+    assert.ok(route2);
+    assert.deepEqual(tags(route2).map((node) => text(node)), [
+      'openai-completions',
+      second.t('routeModels', { count: 1 }),
+    ], '没跑过同步就不说「写没写进去」');
+  });
+
+  it('还没有跑过一轮就说清楚，而不是装作清单是空的', async () => {
+    const { mini, element } = driveClient({ report: report({ refresh: undefined }) });
+    mini.mount(element);
+    await mini.flush();
+
+    assert.match(text(mini.tree()), /这一轮还没跑过/u);
+    assert.equal(findAll(mini.tree(), (node) => node.type === 'dl').length, 0);
+    assert.equal(findAll(mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-row').length, 2, '模型清单照旧');
+  });
+
+  it('没有模型、没有路由时说的是「还没有」，不是空白', async () => {
+    const { mini, element } = driveClient({ report: report({ refresh: undefined, routes: [], models: [] }) });
+    mini.mount(element);
+    await mini.flush();
+
+    assert.match(text(mini.tree()), /还没有发现任何模型/u);
+    assert.match(text(mini.tree()), /还没有发布任何路由/u);
+  });
+
+  it('报告里没有实例地址时提示先填地址', async () => {
+    const { mini, element } = driveClient({ report: report({ place: '' }) });
+    mini.mount(element);
+    await mini.flush();
+    assert.match(text(mini.tree()), /还没有实例地址/u);
+  });
+
+  it('「立刻刷新」按一下就走一次 refresh，并把结果贴出来', async () => {
+    const { harness, mini, element, t } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    const refresh = findButton(mini.tree(), '立刻刷新');
+    assert.equal(refresh.props.title, t('refreshHint'), '按钮的说明是它自己的那一句，不是报告那一句');
+    click(refresh);
+    await mini.flush();
+
+    assert.equal(harness.panelCalls.filter((call) => call === 'refresh').length, 1);
+    assert.ok(harness.panelCalls.filter((call) => call === 'status').length >= 2, '刷新完要重读报告');
+    assert.match(text(bannerOf(mini)), /已重新发现并发布/u);
+    assert.equal(findButton(mini.tree(), '立刻刷新').props.disabled, false, '刷完按钮要还回来');
+  });
+
+  it('端点失败时把原因摆在界面上，不是只写到控制台', async () => {
+    const { harness, mini, element } = driveClient({ fails: 'status' });
     mini.mount(element);
     await mini.flush();
 
     assert.match(text(mini.tree()), /面板暂时连不上后台/u);
+    assert.match(text(mini.tree()), /后台还没起来/u);
+    assert.deepEqual(harness.consoleErrors, [], '失败要摆在界面上，控制台里不该是唯一一份');
+  });
+
+  it('刷新这一轮没成功时，端点的原话摆出来', async () => {
+    const { mini, element } = driveClient({ fails: 'refresh' });
+    mini.mount(element);
+    await mini.flush();
+
+    click(findButton(mini.tree(), '立刻刷新'));
+    await mini.flush();
+
+    assert.equal(bannerOf(mini).props['data-ok'], 'false');
+    assert.match(text(bannerOf(mini)), /刷新没有成功：网关没回应/u);
+  });
+
+  it('写这一行失败：端点的原因贴在界面上', async () => {
+    const { harness, mini, element } = driveClient({ fails: 'edit' });
+    mini.mount(element);
+    await mini.flush();
+    await openRow(mini, 'deepseek-flash');
+
+    change(findById(mini.tree(), 'dap-deepseek-flash-maxTokens'), '8192');
+    await mini.flush();
+    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+    await mini.flush();
+
+    assert.equal(harness.editCalls.length, 1);
+    const banner = bannerOf(mini);
+    assert.equal(banner.props['data-ok'], 'false');
+    assert.match(text(banner), /写这一行的时候后台断了/u);
+
+    // 看着像 bug（结论里列了）：写失败之后 `run()` 的收尾照样执行，草稿被丢掉、面板收起，
+    // 用户刚打的那几个字就这么没了。这一行钉住的是当下的行为，改掉之后改成断言草稿还在。
+    await openRow(mini, 'deepseek-flash');
+    assert.equal(findById(mini.tree(), 'dap-deepseek-flash-maxTokens').props.value, '384K', '失败之后草稿没了');
+  });
+
+  it('effect 的依赖里只有原始值，一轮交互只渲染少数几次', async () => {
+    const { mini, element } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    const primitive = (value: unknown): boolean => value === null || (typeof value !== 'object' && typeof value !== 'function');
+    const withDeps = mini.hookDeps().filter((deps): deps is unknown[] => deps !== undefined);
+    assert.ok(withDeps.length >= 2, '选择 store 与重读报告各有一个带依赖的 effect');
+    for (const deps of withDeps) {
+      for (const dep of deps) {
+        assert.ok(primitive(dep), `effect 依赖里出现了每轮都会重建的对象：${String(dep)}`);
+      }
+    }
+    // 组件自己那个重读报告的 effect 挂在 revision 这个数字上；注入面每轮重建，进不得依赖。
+    assert.ok(
+      withDeps.some((deps) => deps.length === 1 && deps[0] === 0),
+      '重读报告应当以挂载时的 revision（0）为依赖',
+    );
+    assert.ok(mini.renders <= 30, `挂载一轮渲染了 ${mini.renders} 次：effect 依赖里多半放了每轮都变的注入面`);
   });
 });

@@ -1,30 +1,28 @@
 /**
- * 设置界面标签页的宿主半边。
+ * 设置界面配置页的宿主半边。
  *
- * 标签页本身在浏览器里跑（`client/aperture.js`），它能读到的只有这里暴露的端点——与参考
- * 实现（`@xiaoyuyu6420/dsh-backup` 的 `backupPanel`）同一种做法：界面不直接碰宿主存储，
- * 所有读写都经自己的 Remote 命名空间往返，因此客户端半边不必注入设置传输，也不必知道设置
- * 文档长什么样。
+ * 配置页本身在浏览器里跑（`client/aperture.js`），这里只留下它读不到的那几样：最近一次刷新的
+ * 报告、立刻刷新，以及单个模型参数的写入。地址与同步开关**不在这里**——那两项就在页主递来的
+ * 设置表单快照里，配置页交给同一个 `form.mutate` 写，版本校验、冲突恢复都由设置接缝负责，
+ * 本文件不必再实现一遍；同一个命名空间上挂两条写路径，只会让「谁在什么时候写」说不清。
  *
- * 写入仍然是配置，所以它落在 `aperture` 命名空间的用户层：地址与同步开关用路径操作写，
- * 「撤销」是把字段从用户层移除、回落到组合层与默认值。单个模型的参数也走这里，只是它们更
- * 零碎——容量、模态、推理、协议落在 `models` 的对应条目上，清单别名落在 `modelAliases[id]`，
- * 而写入是按字段合并的：界面没提到的字段原样留着（`reasoningEfforts` 界面根本不编辑，也不该
- * 被顺手抹掉）。报告与两个动作则不是配置——把发现的模型塞进设置文档会让「用户写了什么」与
- * 「插件发现了什么」混成同一份账，而后者每轮刷新都会被重写。
+ * 留下的这个写入口是模型参数，因为它们零碎：容量、模态、推理、协议落在 `models` 的对应条目上，
+ * 清单别名落在 `modelAliases[id]`，写入按字段合并——界面没提到的字段原样留着
+ * （`reasoningEfforts` 界面根本不编辑，也不该被顺手抹掉）。合并与校验都在这里做，因为写进设置
+ * 文档的坏值会让下一轮刷新的 `resolveConfig` 直接抛异常，那时用户已经在别处改坏了配置。
+ * 报告则不是配置：把发现的模型塞进设置文档会让「用户写了什么」与「插件发现了什么」混成同一份账，
+ * 而后者每轮刷新都会被重写。
  *
- * 端点都不抛异常：失败是界面要显示的结果之一，因此它是返回值里的字段，而不是需要标签页
+ * 端点都不抛异常：失败是界面要显示的结果之一，因此它是返回值里的字段，而不是需要配置页
  * 去分辨的 rejected promise。
  *
  * @module dsh-aperture/panel
  */
 
-import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings';
-import type { ResolvedConfig } from './config.ts';
-import { APERTURE_NAMESPACE, PI_AI_NAMESPACE } from './namespaces.ts';
-import { buildReport, type PanelReport } from './report.ts';
+import type { SettingsDescriptor, SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
+import { APERTURE_NAMESPACE, type ResolvedConfig } from './config.ts';
+import { buildReport, type DeclaredOverrides, type PanelReport } from './report.ts';
 import { message, type ApertureRuntime } from './runtime.ts';
-import { clearRoutes } from './sync.ts';
 import type { Modality } from './types.ts';
 
 /**
@@ -59,18 +57,26 @@ export interface PanelAction {
   readonly summary: string;
 }
 
-/** 标签页表单要显示的东西。 */
-export interface PanelConfiguration {
-  /** 生效的实例地址（schema 默认值 → 组合层 → 用户层）。 */
-  readonly baseUrl: string;
-  /** 生效的同步开关。 */
-  readonly sync: boolean;
-  /** `baseUrl` 在用户层里有条目，也就是被覆盖了。 */
-  readonly baseUrlOverridden: boolean;
-  /** `sync` 在用户层里有条目。 */
-  readonly syncOverridden: boolean;
-  /** 设置文档是否接受写入；为假时表单只读。 */
-  readonly writable: boolean;
+/** 配置页可以调用的端点。 */
+export interface PanelOps {
+  /** 最近一次刷新做了什么；不触发任何工作。 */
+  status(): PanelReport;
+  /** 立刻重新发现并发布。 */
+  refresh(): Promise<PanelAction>;
+  /**
+   * 写入一个模型的参数。
+   *
+   * 一次只动一个模型：界面上一行一个「保存」，写下去的就只有那一行，版本校验也只管这一次
+   * 写入。没提到的字段原样留在设置文档里（界面根本不编辑的 `reasoningEfforts` 就不会被顺手
+   * 抹掉），空串与 `null` 都表示「这一项不覆盖」。写完等一轮重新发现落地才返回：报告里的
+   * 容量、模态、协议都是刷新算出来的事实，不等它就是「保存了却没变」。
+   *
+   * 地址与同步开关不走这里：那两项直接由配置页交给页主的设置表单（`form.mutate`）。
+   *
+   * @param id - 模型 id（Aperture 接受的那个）。
+   * @param patch - 要改的字段；`null` 表示撤销这个模型的全部覆盖（含别名）。
+   */
+  edit(id: string, patch: PanelModelPatch | null): Promise<PanelAction>;
 }
 
 /** 端点背后的东西。 */
@@ -80,37 +86,7 @@ export interface PanelDeps {
   /** 当前生效配置的活引用（thunk）。 */
   readonly config: () => ResolvedConfig;
   /** 设置服务：读 `aperture` 段的用户层，也写它。 */
-  readonly settings: SettingsProvider;
-}
-
-/** 标签页可以调用的端点。 */
-export interface PanelOps {
-  /** 最近一次刷新做了什么；不触发任何工作。 */
-  status(): PanelReport;
-  /** 立刻重新发现并发布。 */
-  refresh(): Promise<PanelAction>;
-  /** 把本插件拥有的路由从 `llm-pi-ai` 段撤下来。 */
-  withdraw(): Promise<PanelAction>;
-  /** 表单要显示的配置与「是否被覆盖」。 */
-  configuration(): PanelConfiguration;
-  /**
-   * 写入配置。
-   *
-   * @param baseUrl - 新地址；`null` 表示撤销覆盖（从用户层移除），`undefined` 表示不碰。
-   * @param sync - 新开关；`undefined` 表示不碰。
-   */
-  save(baseUrl: string | null | undefined, sync: boolean | undefined): Promise<PanelAction>;
-  /**
-   * 写入一个模型的参数。
-   *
-   * 一次只动一个模型：界面上一行一个「保存」，写下去的就只有那一行，版本校验也只管这一次
-   * 写入。没提到的字段原样留在设置文档里（界面根本不编辑的 `reasoningEfforts` 就不会被顺手
-   * 抹掉），空串与 `null` 都表示「这一项不覆盖」。
-   *
-   * @param id - 模型 id（Aperture 接受的那个）。
-   * @param patch - 要改的字段；`null` 表示撤销这个模型的全部覆盖（含别名）。
-   */
-  edit(id: string, patch: PanelModelPatch | null): Promise<PanelAction>;
+  readonly settings: SettingsForms;
 }
 
 /** `aperture` 段的解析视图：生效值、用户层、以及写入要带上的版本号。 */
@@ -118,7 +94,6 @@ interface ApertureSection {
   readonly value: Record<string, unknown>;
   readonly user: Record<string, unknown>;
   readonly revision: number | undefined;
-  readonly writable: boolean;
 }
 
 /** 把未知值当成一个普通对象；数组与 `null` 都不算。 */
@@ -126,6 +101,44 @@ function asRecord(input: unknown): Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input)
     ? (input as Record<string, unknown>)
     : {};
+}
+
+/** 一个值是不是「没写」：空串、空数组、空字典都算。 */
+function isEmpty(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'string') return value.trim().length === 0;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'object') return Object.keys(value).length === 0;
+  return false;
+}
+
+/**
+ * 剔掉一条覆盖里的空值，只留 `id` 与真正写下的内容。
+ *
+ * 生效值里混着 schema 补出来的默认值：没写的数组字段会变成 `[]`。把它原样写回用户层，就成了
+ * 用户从没写过的覆盖，界面上那颗「已覆盖」会一直挂着，而按「恢复默认」又撤不掉它。
+ *
+ * @param entry - 生效值里的一条。
+ * @returns 可以写进用户层的那几条键。
+ */
+function prune(entry: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(entry).filter(([key, value]) => key === 'id' || !isEmpty(value)));
+}
+
+/**
+ * 用户层里写下的覆盖。
+ *
+ * 「有没有覆盖」只能从用户层读：生效值里分不出用户写下的值与 schema 补出来的默认值。
+ *
+ * @param settings - 设置服务。
+ * @returns `aperture.models` 的原样条目，以及写过别名的模型 id。
+ */
+function declaredOverrides(settings: SettingsForms): DeclaredOverrides {
+  const user = readSection(settings).user;
+  return {
+    models: (Array.isArray(user.models) ? user.models : []).map(asRecord),
+    aliasIds: Object.keys(asRecord(user.modelAliases)),
+  };
 }
 
 /**
@@ -137,13 +150,19 @@ function asRecord(input: unknown): Record<string, unknown> {
  * @param settings - 设置服务。
  * @returns 解析视图；命名空间尚未注册或描述符读不到时给出空值。
  */
-function readSection(settings: SettingsProvider): ApertureSection {
-  const descriptor = settings.describe({ redactSecrets: true }).find((entry) => entry.ns === APERTURE_NAMESPACE);
+function readSection(settings: SettingsForms): ApertureSection {
+  let descriptor: SettingsDescriptor | undefined;
+  try {
+    descriptor = settings.describe({ redactSecrets: true }).find((entry) => entry.ns === APERTURE_NAMESPACE);
+  } catch {
+    // `describe()` 会为**每个** entry 跑一遍解析，所以某个不相干的 entry 自己坏掉也会让整次
+    // 读取抛异常。页面宁可显示「未注册」也不要整块打不开——写入路径另有它自己的报错。
+    descriptor = undefined;
+  }
   return {
     value: asRecord(descriptor?.value),
     user: asRecord(descriptor?.user),
     revision: descriptor?.revision,
-    writable: settings.writable !== false,
   };
 }
 
@@ -208,20 +227,15 @@ function mergeEntry(
   return Object.keys(entry).some((key) => key !== 'id') ? { entry } : {};
 }
 
-/** 一个字段在用户层里有没有条目。 */
-function overridden(user: Record<string, unknown>, field: string): boolean {
-  return Object.prototype.hasOwnProperty.call(user, field);
-}
-
 /**
  * 组装端点。
  *
  * @param deps - 运行时、配置活引用与设置服务。
- * @returns 五个端点；`status` 与 `configuration` 是同步的，读一份已经算好的结果不该等待。
+ * @returns 三个端点；`status` 是同步的，读一份已经算好的结果不该等待。
  */
 export function createPanelOps(deps: PanelDeps): PanelOps {
   // 报告每次都按当前配置现组装：覆盖与别名本身是配置，改完必须立刻能在列表里看到。
-  const report = (): PanelReport => buildReport(deps.runtime.last(), deps.config());
+  const report = (): PanelReport => buildReport(deps.runtime.last(), deps.config(), declaredOverrides(deps.settings));
 
   return {
     status: report,
@@ -234,60 +248,6 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
         : { ok: false, summary: `刷新没有成功：${outcome.error ?? '原因未知'}` };
     },
 
-    async withdraw(): Promise<PanelAction> {
-      const owned = [deps.config().route, deps.config().anthropicRoute];
-      try {
-        const outcome = await clearRoutes(deps.settings, owned);
-        // 「已经没有了」与「刚撤下来」都是想要的状态，因此都算成功。
-        return outcome.applied
-          ? {
-            ok: true,
-            summary: `已从 "${PI_AI_NAMESPACE}" 撤下 ${outcome.ops} 条路由：${owned.join('、')}。`
-              + '下一次刷新会按当前配置重新发布；要让撤下长期生效，请关掉同步开关。',
-          }
-          : { ok: true, summary: `没有需要撤下的路由：${outcome.reason ?? '原因未知'}` };
-      } catch (error) {
-        return { ok: false, summary: `撤下路由失败：${message(error)}` };
-      }
-    },
-
-    configuration(): PanelConfiguration {
-      const section = readSection(deps.settings);
-      const config = deps.config();
-      return {
-        // 表单显示的是用户写的那个值（`rawBaseUrl`），不是归一化后的 `instanceRoot`：
-        // 把归一化结果回填进输入框，会让人以为自己写的地址被悄悄改掉了。
-        baseUrl: typeof section.value.baseUrl === 'string' ? section.value.baseUrl : config.rawBaseUrl,
-        sync: typeof section.value.sync === 'boolean' ? section.value.sync : config.sync,
-        baseUrlOverridden: overridden(section.user, 'baseUrl'),
-        syncOverridden: overridden(section.user, 'sync'),
-        writable: section.writable,
-      };
-    },
-
-    async save(baseUrl, sync): Promise<PanelAction> {
-      const ops: SettingsPathOp[] = [];
-      if (baseUrl === null) ops.push({ op: 'unset', path: ['baseUrl'] });
-      else if (baseUrl !== undefined) ops.push({ op: 'set', path: ['baseUrl'], value: baseUrl.trim() });
-      if (sync !== undefined) ops.push({ op: 'set', path: ['sync'], value: sync });
-      if (ops.length === 0) return { ok: true, summary: '没有要保存的改动。' };
-
-      // 撤销覆盖是唯一一种「只移除、不写入」的保存，值得单独说一句。
-      const withdrawOnly = ops.every((op) => op.op === 'unset');
-      try {
-        // 带着刚读到的版本号写入：期间有别人改过就拒绝，而不是覆盖他的改动。
-        await deps.settings.mutate(APERTURE_NAMESPACE, ops, readSection(deps.settings).revision);
-        return {
-          ok: true,
-          summary: withdrawOnly
-            ? '已撤销覆盖，回落到组合层与默认值。'
-            : '已写入设置；插件会按新配置重新发现。',
-        };
-      } catch (error) {
-        return { ok: false, summary: `保存失败：${message(error)}` };
-      }
-    },
-
     async edit(id, patch): Promise<PanelAction> {
       const modelId = typeof id === 'string' ? id.trim() : '';
       if (modelId.length === 0) return { ok: false, summary: '缺少模型 id。' };
@@ -298,8 +258,9 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
 
       const section = readSection(deps.settings);
       // `models` 是数组，而路径操作只能整段替换它，因此每次都算出完整的新数组再写回去。
-      // 基础取自生效值：组合层若也写过 models，它在界面上本来就是看得见的那些条目。
-      const before = (Array.isArray(section.value.models) ? section.value.models : []).map(asRecord);
+      // 基础取自生效值（组合层若也写过 models，它在界面上本来就是看得见的那些条目），但空值要
+      // 剔掉：schema 补出来的 `[]` 不该被写进用户层（见 `prune`）。
+      const before = (Array.isArray(section.value.models) ? section.value.models : []).map((entry) => prune(asRecord(entry)));
       const aliases = asRecord(section.value.modelAliases);
       // 撤销别名只在**用户层确实有**这个键时才写：界面显示的是生效别名，它可能来自组合层或
       // 清单，而删一个不存在的键要么白写、要么被设置服务当成坏路径拒绝，两种都不该发生。
@@ -353,14 +314,23 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
 
       if (ops.length === 0) return { ok: true, summary: '没有要保存的改动。' };
 
-      const summary = revoked
-        ? `已撤销 "${modelId}" 的全部覆盖，回落到发现值与清单；插件会按新配置重新发现。`
-        : `已保存 "${modelId}" 的参数；插件会按新配置重新发现。`;
-
       try {
-        // 与 `save` 同一条路径：带着刚读到的版本号写入，期间别人改过就拒绝。
+        // 带着刚读到的版本号写入：期间别人改过就拒绝，而不是覆盖他的改动。
         await deps.settings.mutate(APERTURE_NAMESPACE, ops, section.revision);
-        return { ok: true, summary };
+        // 写完等这一轮刷新落地再回答：这一行的容量、模态、协议都是刷新算出来的事实，不等它，
+        // 配置页重读报告时看到的还是旧值——「保存了却没变」就是这么来的。配置变更自己也会唤起
+        // 同一轮刷新（Loader 的 `loader/volatile-update`），运行时的单飞判定按配置版本合并，
+        // 因此这里通常并进那一轮，而不是另跑一轮。
+        const outcome = await deps.runtime.refresh('配置变更');
+        const saved = revoked
+          ? `已撤销 "${modelId}" 的全部覆盖，回落到发现值与清单`
+          : `已保存 "${modelId}" 的参数`;
+        return {
+          ok: true,
+          summary: outcome.ok
+            ? `${saved}，并按新配置重新发现。`
+            : `${saved}，但重新发现没有成功：${outcome.error ?? '原因未知'}`,
+        };
       } catch (error) {
         return { ok: false, summary: `保存失败：${message(error)}` };
       }

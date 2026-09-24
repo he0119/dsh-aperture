@@ -96,18 +96,3 @@ export function slugKey(value: string | undefined): string {
 export function suffixAfterSlash(value: string): string {
   return value.includes('/') ? (value.split('/').pop() ?? value) : value;
 }
-
-/** 对去空白后非空的字符串去重，并保持顺序。 */
-export function uniqueStrings(values: readonly (string | undefined)[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    const trimmed = value?.trim();
-    if (!trimmed || seen.has(trimmed)) {
-      continue;
-    }
-    seen.add(trimmed);
-    result.push(trimmed);
-  }
-  return result;
-}

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { Config, configValue, resolveConfig } from '../src/config.ts';
 import { buildCatalogLookup } from '../src/metadata/modelsdev.ts';
 import { buildRegistry, classifyProtocol } from '../src/registry.ts';
 import { apertureEntries, catalogDocument, options } from './helpers.ts';
@@ -133,6 +134,24 @@ describe('buildRegistry 的配置行为', () => {
     // 未触及的字段保留网关自己的答案。
     assert.equal(flash?.contextWindow, 1_048_576);
     assert.equal(flash?.provenance.limits, 'aperture');
+  });
+
+  it('只写了 id 的配置条目不会把发现的模态清掉', () => {
+    // 运行时 schema 给 `models[].input` 的缺省值是空数组，于是「只写了个 id」的条目在
+    // buildRegistry 眼里就成了「声明这个模型不接受任何模态」，还会谎称来源是配置。这条用例
+    // 特意**先过一遍 schema**：单元测试里手写的选项对象没有这个缺省值，正是这一点让这个 bug
+    // 一直躲着。
+    const validated = configValue(Config({ models: [{ id: 'mimo-v2.6-flash' }] }));
+    assert.deepEqual(validated.models[0]?.input, [], '前提：schema 确实填了空数组');
+
+    const { models } = buildRegistry(
+      apertureEntries(),
+      options({ images: 'metadata', models: resolveConfig(validated).models }),
+      lookup,
+    );
+    const mimo = models.find((model) => model.id === 'mimo-v2.6-flash');
+    assert.deepEqual(mimo?.input, ['text', 'image'], '清单说它有视觉，条目没提就别抹掉');
+    assert.equal(mimo?.provenance.input, 'models.dev', '来源也不该谎称来自配置');
   });
 
   it('让配置为一个只在不可服务传输上提供的模型兜底', () => {

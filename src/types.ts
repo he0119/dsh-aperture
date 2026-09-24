@@ -97,8 +97,6 @@ export interface BuildOptions {
    * 的服务为 `k3`，任何评分规则都无法在不猜测的情况下弥合这一差异。
    */
   readonly modelAliases: Readonly<Record<string, string>>;
-  /** 没有任何来源设定容量的模型的兜底上下文容量。 */
-  readonly defaultContextWindow: number;
   /** 是否采纳 models.dev 的输入模态（图像）。 */
   readonly images: 'ignore' | 'metadata';
   /** `auto` 映射推理能力；`off` 把每个模型都声明为非推理。 */

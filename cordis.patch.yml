@@ -3,47 +3,51 @@
 # 这段 insert 负责加行。启动前可以先只看组合结果——`dsh --profile web
 # --dump-config` 会打印出 "# == dsh-aperture" 这一层。
 #
-# 下面是本插件 `aperture:` 设置命名空间的**组合层**。用户层是
-# `$DSH_HOME/settings.yaml` 里的 `aperture:` 段，它覆盖这一行。注意：更靠后的
-# patch 层会替换整行的 `config`，而不是与它深度合并，所以覆盖这一行的 profile
-# 必须把自己仍然想要的每个键重新写全。
+# 这一行**故意不写 `config`**。用户层是 profile 的补丁文档
+# （`$DSH_HOME/profiles/<profile>/cordis.patch.yml`，也就是「插件」页里这一行点
+# 「配置」之后编辑的那个文件），而更靠后的 patch 层会替换整行的 `config`、不与它
+# 深度合并。把缺省值摆在组合层，用户层里就会连带出现一堆没人写过的键——配置页上
+# 「已覆盖」的判据正是「键出现在用户层里」，它们会让标签凭空冒出来，也会在新版本
+# 改动某个缺省值时把它钉死在用户文件里。缺省值只有一处：`src/config.ts` 的 schema。
 #
-# 这里只有 `baseUrl` 值得设置，其余键存在的意义是让默认值可被发现。完整说明见 README.md。
+# 要改哪个键，就按下面注释的样子在用户层写 `config:`，没写的键回落缺省值。
+# 完整说明见 README.md。
+#
+#   - id: aperture
+#     config:
+#       # Aperture 实例根地址，例如 https://ai.example.ts.net——必填。
+#       # `/v1` 由插件追加；这里的值若自带结尾的 `/v1`，会被容忍并剥掉。
+#       # 留空则插件照常挂载但处于休眠：不发现任何模型，也不写任何东西。
+#       baseUrl: ''
+#
+#       # 本插件在 llm-pi-ai 的 `providers` 字典里拥有的两条路由。
+#       # Aperture 的 `supported_endpoints` 里列了 `/v1/chat/completions` 的模型
+#       # 走 `route`；列了 `/v1/messages` 的走 `route` 加 `-anthropic` 后缀的那条；
+#       # 两者都不提供的模型被记为“没有可服务的端点”，不发布到任何地方。
+#       route: aperture
+#
+#       # 凭据引用，由凭据服务接缝按请求解析。网关靠网络身份认证（Tailscale）时留空：
+#       # 插件随后只会写入 pi-ai 要求的占位请求头，不保存任何密钥。
+#       apiKeyEnv: ''
+#
+#       # `auto` 把模型的推理能力映射成 reasoningEfforts；
+#       # `off` 声明所有发现的模型都不推理。
+#       reasoning: auto
+#
+#       # `ignore` 声明纯文本；`metadata` 会接受 models.dev 为某些模型声明的输入模态（图片）。
+#       images: ignore
+#
+#       # 用于补齐 Aperture 没有说明的部分的 models.dev 清单。
+#       # 置为空串会关闭这次拉取；发现本身不受影响。
+#       modelMetadataUrl: 'https://models.dev/models.json'
+#
+#       # 是否把发现的模型清单写进 llm-pi-ai 设置段。
+#       # false = 只发现不写入（配置页照常显示发现结果）。
+#       sync: true
+#
+#       # 自动刷新间隔（分钟）。0（默认）表示只在加载时、配置变更时和配置页上的
+#       # 「立即刷新」时刷新。
+#       refreshIntervalMinutes: 0
 - insert:
     - id: aperture
       name: 'dsh-aperture'
-      config:
-        # Aperture 实例根地址，例如 https://ai.example.ts.net——必填。
-        # `/v1` 由插件追加；这里的值若自带结尾的 `/v1`，会被容忍并剥掉。
-        # 留空则插件照常挂载但处于休眠：不发现任何模型，也不写任何东西。
-        baseUrl: ''
-
-        # 本插件在 llm-pi-ai 的 `providers` 字典里拥有的两条路由。
-        # Aperture 的 `supported_endpoints` 里列了 `/v1/chat/completions` 的模型
-        # 走 `route`；列了 `/v1/messages` 的走 `anthropicRoute`；
-        # 两者都不提供的模型被记为“没有可服务的端点”，不发布到任何地方。
-        route: aperture
-        anthropicRoute: aperture-anthropic
-
-        # 凭据引用，由凭据服务接缝按请求解析。网关靠网络身份认证（Tailscale）时留空：
-        # 插件随后只会写入 pi-ai 要求的占位请求头，不保存任何密钥。
-        apiKeyEnv: ''
-
-        # `auto` 把模型的推理能力映射成 reasoningEfforts；
-        # `off` 声明所有发现的模型都不推理。
-        reasoning: auto
-
-        # `ignore` 声明纯文本；`metadata` 会接受 models.dev 为某些模型声明的输入模态（图片）。
-        images: ignore
-
-        # 用于补齐 Aperture 没有说明的部分的 models.dev 清单。
-        # 置为空串会关闭这次拉取；发现本身不受影响。
-        modelMetadataUrl: 'https://models.dev/models.json'
-
-        # 是否把发现的模型清单写进 llm-pi-ai 设置段。
-        # false = 只发现不写入（标签页照常显示发现结果）。
-        sync: true
-
-        # 自动刷新间隔（分钟）。0（默认）表示只在加载时、配置变更时和标签页上的
-        # 「立即刷新」时刷新。
-        refreshIntervalMinutes: 0

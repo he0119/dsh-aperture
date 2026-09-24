@@ -1,7 +1,7 @@
 /**
- * 报告：设置标签页的状态段与模型清单。
+ * 报告：配置页的状态段与模型清单。
  *
- * 这里是**结构化数据**，不是拼好的句子。标签页是双语的，把中文句子拼在宿主半边就等于让英文
+ * 这里是**结构化数据**，不是拼好的句子。配置页是双语的，把中文句子拼在宿主半边就等于让英文
  * 界面显示中文；而「哪个模型属于哪条路由」「这条事实是谁给的」本来就是数据，句子只是它的一种
  * 渲染。宿主因此只把发现过程决定了什么摆齐——哪个端点应答了、哪些模型进了哪条路由、哪个模型
  * 没有任何端点能服务、每条事实来自哪里，以及哪些字段是用户写下的覆盖——措辞与排版都交给界面。
@@ -12,16 +12,6 @@
 import type { ResolvedConfig } from './config.ts';
 import type { RefreshOutcome } from './runtime.ts';
 import type { ConfiguredModel, DiscoveredModel, FactSource, Modality } from './types.ts';
-
-/** 报告里的一个模型的覆盖（`aperture.models` 里对应那一条）。 */
-export interface PanelModelOverride {
-  readonly name?: string;
-  readonly api?: string;
-  readonly contextWindow?: number;
-  readonly maxTokens?: number;
-  readonly input?: readonly Modality[];
-  readonly thinking?: boolean;
-}
 
 /** 报告里的一个模型。 */
 export interface PanelModel {
@@ -50,8 +40,14 @@ export interface PanelModel {
     readonly input: FactSource;
     readonly name: FactSource;
   };
-  /** 用户为这个模型写下的覆盖；用来预填编辑表单。 */
-  readonly override?: PanelModelOverride;
+  /**
+   * 用户层里这一行自己写下的键（含界面不编辑的，例如 `reasoningEfforts`；别名写成 `alias`）。
+   *
+   * 这是「覆盖」的唯一判据，而它只能从用户层读——官方也是这么定义的：看字段在不在用户层里，
+   * 而不是拿值与默认值比。解析后的配置用不得：schema 会把没写的数组字段补成 `[]`，把补出来的
+   * 空值当成覆盖，界面就会在一行什么都没写过的模型上挂一颗永远撤不掉的「已覆盖」。
+   */
+  readonly overrideKeys?: readonly string[];
   /** 用户写下的清单别名（`aperture.modelAliases` 里对应那一项）。 */
   readonly alias?: string;
 }
@@ -103,7 +99,7 @@ export interface PanelRefresh {
   };
 }
 
-/** 标签页要显示的整份报告。 */
+/** 配置页要显示的整份报告。 */
 export interface PanelReport {
   /** 实例地址（已归一化）；没有配置时为空串，措辞交给界面。 */
   readonly place: string;
@@ -115,15 +111,37 @@ export interface PanelReport {
   readonly models: readonly PanelModel[];
 }
 
+/** 用户层里写下的东西：报告要照着它说「哪些是这一行自己写的」。 */
+export interface DeclaredOverrides {
+  /** 用户层 `aperture.models` 的原样条目。 */
+  readonly models?: readonly Record<string, unknown>[];
+  /** 用户层 `aperture.modelAliases` 里写过的模型 id。 */
+  readonly aliasIds?: readonly string[];
+}
+
 /**
  * 组装报告。
  *
  * @param outcome - 最近一次刷新；一次都没完成过时传 `undefined`。
- * @param config - 当前生效配置：用户写下的覆盖与别名只在这里读得到。
+ * @param config - 当前生效配置。
+ * @param declared - 用户层里写下的覆盖；缺省即「什么都没写过」。
  * @returns 报告。
  */
-export function buildReport(outcome: RefreshOutcome | undefined, config: ResolvedConfig): PanelReport {
-  const overrides = new Map(config.models.map((entry) => [entry.id, entry]));
+export function buildReport(
+  outcome: RefreshOutcome | undefined,
+  config: ResolvedConfig,
+  declared: DeclaredOverrides = {},
+): PanelReport {
+  const keys = new Map<string, string[]>();
+  for (const entry of declared.models ?? []) {
+    const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+    if (id.length === 0) continue;
+    keys.set(id, Object.keys(entry).filter((key) => key !== 'id'));
+  }
+  for (const id of declared.aliasIds ?? []) {
+    // 别名是另一张表，但对界面来说它是这一行的覆盖之一：撤的时候一起撤。
+    keys.set(id, [...(keys.get(id) ?? []), 'alias']);
+  }
   const routes: PanelRoute[] = (outcome?.routes ?? []).map((route) => ({
     provider: route.provider,
     ...(route.profile.api === undefined ? {} : { api: route.profile.api }),
@@ -135,7 +153,7 @@ export function buildReport(outcome: RefreshOutcome | undefined, config: Resolve
   const routed = new Set<string>();
   const describe = (model: DiscoveredModel, route?: string): PanelModel => {
     routed.add(model.id);
-    const override = overrides.get(model.id);
+    const declaredKeys = keys.get(model.id) ?? [];
     const alias = config.modelAliases[model.id];
     return {
       id: model.id,
@@ -148,7 +166,7 @@ export function buildReport(outcome: RefreshOutcome | undefined, config: Resolve
       input: model.input,
       reasoning: model.reasoning,
       provenance: model.provenance,
-      ...(override === undefined ? {} : { override: trim(override) }),
+      ...(declaredKeys.length === 0 ? {} : { overrideKeys: declaredKeys }),
       ...(alias === undefined ? {} : { alias }),
     };
   };
@@ -166,26 +184,6 @@ export function buildReport(outcome: RefreshOutcome | undefined, config: Resolve
     ...(outcome === undefined ? {} : { refresh: refresh(outcome) }),
     routes,
     models,
-  };
-}
-
-/**
- * 把一条覆盖收成报告要显示的那几个字段。
- *
- * `reasoningEfforts` 这类界面不编辑的字段不报出去：写入是按字段合并的，界面没提到的字段原样
- * 留在设置文档里，因此不必（也不该）把它搬进报告再搬回去。
- *
- * @param entry - `aperture.models` 里的一条。
- * @returns 只含界面会显示与编辑的字段的覆盖。
- */
-function trim(entry: ConfiguredModel): PanelModelOverride {
-  return {
-    ...(entry.name === undefined ? {} : { name: entry.name }),
-    ...(entry.api === undefined ? {} : { api: entry.api }),
-    ...(entry.contextWindow === undefined ? {} : { contextWindow: entry.contextWindow }),
-    ...(entry.maxTokens === undefined ? {} : { maxTokens: entry.maxTokens }),
-    ...(entry.input === undefined ? {} : { input: entry.input }),
-    ...(entry.thinking === undefined ? {} : { thinking: entry.thinking }),
   };
 }
 

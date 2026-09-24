@@ -36,7 +36,6 @@ export function options(overrides: Partial<BuildOptions> = {}): BuildOptions {
     models: [],
     enabledModelIds: [],
     modelAliases: {},
-    defaultContextWindow: 128_000,
     images: 'ignore',
     reasoning: 'auto',
     ...overrides,

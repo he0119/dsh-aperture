@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings';
+import type { SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
 import type { RoutePlan } from '../src/profile.ts';
-import { applySync, clearRoutes, deepEqualJson, planSync } from '../src/sync.ts';
+import { applySync, deepEqualJson, planSync } from '../src/sync.ts';
 
 /** 一条计划中的路由，其 profile 可被轻易识别。 */
 function routePlan(provider: string, marker: string): RoutePlan {
@@ -60,15 +60,19 @@ describe('planSync', () => {
   });
 });
 
-/** 一个记录写入、并能拒绝一个带版本号的设置服务。 */
+/**
+ * 一个记录写入、并能拒绝一个带版本号的设置服务。
+ *
+ * 形状照着真实的 `SettingsForms`：**没有 `get(ns)`**，读一个命名空间只能从 `describe()`
+ * 里挑出那一条描述符；`value` 与 `revision` 就在描述符上。
+ */
 function fakeSettings(value: unknown, options: { conflictOnce?: boolean } = {}) {
   const writes: Array<readonly SettingsPathOp[]> = [];
   let revision = 1;
   let conflict = options.conflictOnce ?? false;
   let current = value;
   const service = {
-    get: () => current,
-    describe: () => [{ ns: 'llm-pi-ai', revision }],
+    describe: () => (current === undefined ? [] : [{ ns: 'llm-pi-ai', revision, value: current }]),
     mutate: async (_ns: string, ops: readonly SettingsPathOp[]): Promise<void> => {
       if (conflict) {
         conflict = false;
@@ -82,7 +86,7 @@ function fakeSettings(value: unknown, options: { conflictOnce?: boolean } = {}) 
       revision += 1;
     },
   };
-  return { service: service as unknown as SettingsProvider, writes };
+  return { service: service as unknown as SettingsForms, writes };
 }
 
 describe('applySync', () => {
@@ -118,31 +122,31 @@ describe('applySync', () => {
 
   it('上报非冲突的拒绝', async () => {
     const service = {
-      get: () => ({ providers: {} }),
-      describe: () => [{ ns: 'llm-pi-ai', revision: 1 }],
+      describe: () => [{ ns: 'llm-pi-ai', revision: 1, value: { providers: {} } }],
       mutate: async (): Promise<void> => {
         throw new Error('model "x" has an empty reasoningEfforts');
       },
-    } as unknown as SettingsProvider;
+    } as unknown as SettingsForms;
     await assert.rejects(() => applySync(service, [routePlan('aperture', 'a')], OWNED), /empty reasoningEfforts/);
   });
 });
 
-describe('clearRoutes', () => {
+describe('撤下（同步关掉时的空方案）', () => {
   it('只移除它拥有的路由', async () => {
     const { service, writes } = fakeSettings({ providers: { aperture: {}, workbuddy: {}, 'aperture-anthropic': {} } });
-    const outcome = await clearRoutes(service, OWNED);
+    const outcome = await applySync(service, [], OWNED);
     assert.equal(outcome.applied, true);
     assert.deepEqual(writes[0], [
       { op: 'unset', path: ['providers', 'aperture'] },
       { op: 'unset', path: ['providers', 'aperture-anthropic'] },
     ]);
+    assert.deepEqual(outcome.routes, []);
   });
 
   it('当路由已不存在时报告无事可做', async () => {
     const { service } = fakeSettings({ providers: { workbuddy: {} } });
-    const outcome = await clearRoutes(service, OWNED);
+    const outcome = await applySync(service, [], OWNED);
     assert.equal(outcome.applied, false);
-    assert.equal(outcome.reason, '没有需要移除的路由');
+    assert.equal(outcome.reason, '已处于同步状态');
   });
 });

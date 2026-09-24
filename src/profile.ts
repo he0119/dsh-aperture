@@ -55,8 +55,6 @@ export interface ProfileOptions {
   readonly apiKeyEnv?: string;
   /** 额外的路由头；它们优先于占位头。 */
   readonly headers: Readonly<Record<string, string>>;
-  /** 占位凭据值；为空则不发布占位头。 */
-  readonly placeholderCredential: string;
   /** 已配置的逐模型覆盖项，用于查询显式的推理档位。 */
   readonly configured: readonly ConfiguredModel[];
 }
@@ -154,11 +152,11 @@ function routeHeaders(
       return lower === 'authorization' || lower === 'x-api-key' || lower === 'cf-aig-authorization';
     });
 
-  if (!hasCredential && options.placeholderCredential.length > 0) {
+  if (!hasCredential) {
     if (protocol === 'openai-completions') {
-      headers.authorization = `Bearer ${options.placeholderCredential}`;
+      headers.authorization = `Bearer ${DEFAULT_PLACEHOLDER_CREDENTIAL}`;
     } else {
-      headers['x-api-key'] = options.placeholderCredential;
+      headers['x-api-key'] = DEFAULT_PLACEHOLDER_CREDENTIAL;
     }
   }
 
@@ -191,8 +189,13 @@ function resolveReasoning(
   protocol: ApertureProtocol,
   configured: ConfiguredModel | undefined,
 ): Pick<PiAiModelProfile, 'reasoningEfforts' | 'compat'> {
-  if (configured?.reasoningEfforts !== undefined) {
-    return { reasoningEfforts: { ...configured.reasoningEfforts }, ...compatFor(model, protocol) };
+  // 空字典等于什么都没声明。`llm-pi-ai` 适配器会以「reasoningEfforts 是空的」为由拒绝**整段**
+  // 写入——于是三条路由一条都发布不出去，而用户写下 `{}` 想说的显然不是「这条模型没有任何推理
+  // 档位」（那该写 `false`）。适配器自己的建议就是「省略这个字段以沿用已安装清单的能力」，
+  // 这里照它办：当作没声明，继续往下按模型推导。
+  const declared = configured?.reasoningEfforts;
+  if (declared !== undefined && Object.keys(declared).length > 0) {
+    return { reasoningEfforts: { ...declared }, ...compatFor(model, protocol) };
   }
   if (!model.reasoning) {
     return {};

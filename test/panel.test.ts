@@ -1,23 +1,29 @@
 /**
- * 标签页背后的六个端点。
+ * 配置页背后的三个端点。
  *
- * 标签页本身在浏览器里，无法在这里执行；能在这里钉住的是它依赖的那份契约：报告是结构化数据
+ * 配置页本身在浏览器里，无法在这里执行；能在这里钉住的是它依赖的那份契约：报告是结构化数据
  * （哪个模型属于哪条路由、每条事实来自哪里、用户写了哪些覆盖），刷新用界面这个来源触发，
- * 撤下路由只动本插件拥有的键，配置读写落在 `aperture` 段并带上版本号，模型的参数按字段合并
- * 且非法值在写入前就被挡下来，并且六个端点都不抛异常——失败是要显示的结果，不是要分辨的
- * rejection。
+ * 模型参数写进 `aperture` 段并带上版本号、按字段合并且非法值在写入前就被挡下来，并且三个端点
+ * 都不抛异常——失败是要显示的结果，不是要分辨的 rejection。
+ *
+ * 地址与同步开关不在这份契约里：那两项由配置页交给页主递来的设置表单（`form.mutate`），
+ * 版本校验与冲突恢复都是设置接缝自己的事（浏览器半边的用例在 `test/client.test.ts`）。
  *
  * @module dsh-aperture/test/panel
  */
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings';
-import { resolveConfig } from '../src/config.ts';
+import type { SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
+import type { ModelCatalog } from '../src/catalog.ts';
+import { memoizedConfig, resolveConfig, type Config } from '../src/config.ts';
 import { createPanelOps, type PanelDeps, type PanelModelPatch } from '../src/panel.ts';
 import type { RoutePlan } from '../src/profile.ts';
-import type { ApertureRuntime, RefreshOutcome } from '../src/runtime.ts';
+import { ApertureRuntime, type RefreshOutcome, type RuntimeLogger } from '../src/runtime.ts';
 import type { DiscoveredModel } from '../src/types.ts';
+
+/** 什么都不输出的 logger。 */
+const quiet: RuntimeLogger = { error() {}, info() {}, warn() {}, debug() {} };
 
 /** 一个已发现模型，其来源全写在报告行里。 */
 function model(id: string): DiscoveredModel {
@@ -78,15 +84,13 @@ interface FakeAperture {
 /** 一个记录写入的设置服务。 */
 function fakeSettings(
   value: unknown,
-  options: { fail?: string; aperture?: FakeAperture; writable?: boolean } = {},
+  options: { fail?: string; aperture?: FakeAperture } = {},
 ) {
   const writes: Write[] = [];
   let revision = 1;
   const service = {
-    get: () => value,
-    writable: options.writable ?? true,
     describe: () => [
-      { ns: 'llm-pi-ai', revision },
+      { ns: 'llm-pi-ai', revision, value },
       ...(options.aperture === undefined
         ? []
         : [{
@@ -102,7 +106,7 @@ function fakeSettings(
       revision += 1;
     },
   };
-  return { service: service as unknown as SettingsProvider, writes };
+  return { service: service as unknown as SettingsForms, writes };
 }
 
 /** 一个只记住触发的运行时替身。 */
@@ -114,10 +118,68 @@ function fakeRuntime(first?: RefreshOutcome, next?: RefreshOutcome) {
     refresh: async (trigger: string) => {
       triggers.push(trigger);
       if (next !== undefined) latest = next;
-      return latest;
+      // 真的运行时永远返回一份结果（刷新失败也是一种结果），替身也照此：没摆报告时给一次空的
+      // 成功结果，好让只关心写入的用例不必先准备一份发现结果。`last()` 仍然可以是空的——那说的
+      // 是「还一次都没刷新过」，与这次调用的结果不是一回事。
+      return latest ?? outcome({ trigger, listed: 0, models: [], routes: [], unserved: [] });
     },
   };
   return { runtime: runtime as unknown as ApertureRuntime, triggers };
+}
+
+/**
+ * 一个真的会落盘的设置服务替身。
+ *
+ * 两件事照真的来：`mutate` 把路径操作应用到 `aperture` 段上，并且**每次提交都换一份新的解析
+ * 结果**（身份变了才是新版本，运行时靠它判断一轮刷新读的是不是此刻的配置）；通知也照真的来路
+ * ——宿主半边监听 Loader 的 `loader/volatile-update` 来唤起刷新，这里把那个「该刷新了」交给
+ * 调用方去接。
+ *
+ * @param options - `aperture` 段的起点。
+ * @returns 设置服务、读当前配置段的 thunk，以及登记变更通知的地方。
+ */
+function liveSettings(options: { baseUrl?: string; models?: unknown[] } = {}) {
+  let section: Record<string, unknown> = {
+    baseUrl: options.baseUrl ?? 'https://ai.example.ts.net',
+    route: 'aperture',
+    anthropicRoute: 'aperture-anthropic',
+    models: options.models ?? [],
+  };
+  let user: Record<string, unknown> = { models: section.models };
+  let revision = 1;
+  let notify: (() => void) | undefined;
+
+  const service = {
+    describe: () => [{ ns: 'aperture', revision, value: section, user }],
+    mutate: async (_ns: string, ops: readonly SettingsPathOp[]): Promise<void> => {
+      const next = { ...section };
+      const nextUser = { ...user };
+      for (const op of ops) {
+        const [head, tail] = op.path;
+        if (head === undefined) throw new Error('路径为空');
+        // 这一条只走容量那条路：别的路径写错了就该响亮，而不是被替身悄悄放过。
+        if (tail !== undefined) throw new Error(`替身不认识的路径：${op.path.join('.')}`);
+        if (op.op === 'set') {
+          next[head] = op.value;
+          nextUser[head] = op.value;
+        } else {
+          delete next[head];
+          delete nextUser[head];
+        }
+      }
+      section = next;
+      user = nextUser;
+      revision += 1;
+      notify?.();
+    },
+  };
+  return {
+    service: service as unknown as SettingsForms,
+    source: (() => section) as () => Config,
+    onChange: (fn: () => void) => {
+      notify = fn;
+    },
+  };
 }
 
 /**
@@ -132,17 +194,15 @@ function panel(overrides: Partial<PanelDeps> & {
   settingsValue?: unknown;
   settingsFail?: string;
   aperture?: FakeAperture;
-  writable?: boolean;
 } = {}) {
   const { runtime, triggers } = fakeRuntime(overrides.first, overrides.next);
   const { service, writes } = fakeSettings(overrides.settingsValue ?? { providers: {} }, {
     fail: overrides.settingsFail,
     aperture: overrides.aperture,
-    writable: overrides.writable,
   });
   const ops = createPanelOps({
     runtime: overrides.runtime ?? runtime,
-    config: overrides.config ?? (() => resolveConfig({ baseUrl: 'https://ai.example.ts.net', route: 'aperture', anthropicRoute: 'aperture-anthropic' })),
+    config: overrides.config ?? (() => resolveConfig({ baseUrl: 'https://ai.example.ts.net', route: 'aperture' })),
     settings: overrides.settings ?? service,
   });
   return { ops, triggers, writes };
@@ -184,7 +244,7 @@ describe('panel.status', () => {
     assert.equal(first?.maxTokens, 384_000);
     assert.deepEqual(first?.input, ['text']);
     assert.equal(first?.reasoning, false);
-    // 每条事实的来源就是这张标签页存在的理由，因此它必须在数据里。
+    // 每条事实的来源就是这个配置页存在的理由，因此它必须在数据里。
     assert.deepEqual(first?.provenance, {
       limits: 'aperture',
       reasoning: 'models.dev',
@@ -193,27 +253,47 @@ describe('panel.status', () => {
     });
   });
 
-  it('把用户写下的覆盖与清单别名一并报出来，界面才能预填表单', () => {
+  it('「已覆盖」只看用户层写了哪些键：schema 补出来的空值不算，写过的别名算', () => {
+    // 生效值里带着 schema 补出来的 `input: []`（没写的数组字段会被补成空数组）。它是「没写」，
+    // 不是覆盖——把它当覆盖，界面上那颗「已覆盖」就会永远挂着：撤的时候发的是 `input: null`，
+    // 而用户层里根本没有这个键。
+    const materialized = { id: 'deepseek-flash', input: [], reasoningEfforts: {} };
     const { ops } = panel({
       first: outcome(),
       config: () => resolveConfig({
         baseUrl: 'https://ai.example.ts.net',
         route: 'aperture',
-        anthropicRoute: 'aperture-anthropic',
-        models: [{
-          id: 'deepseek-flash',
-          name: 'Flash',
-          contextWindow: 8192,
-          thinking: false,
-          reasoningEfforts: { low: 'low' },
-        }],
+        models: [materialized],
         modelAliases: { 'deepseek-flash': 'deepseek/deepseek-v4-flash' },
       }),
+      aperture: {
+        value: { models: [materialized], modelAliases: { 'deepseek-flash': 'deepseek/deepseek-v4-flash' } },
+        user: {
+          models: [{ id: 'deepseek-flash', reasoningEfforts: {} }],
+          modelAliases: { 'deepseek-flash': 'deepseek/deepseek-v4-flash' },
+        },
+      },
     });
     const [first] = ops.status().models;
-    // 界面不编辑的 `reasoningEfforts` 不必进报告：写入是按字段合并的，它留在设置文档里。
-    assert.deepEqual(first?.override, { name: 'Flash', contextWindow: 8192, thinking: false });
+    // `reasoningEfforts` 界面不编辑，但它确实写在用户层里；别名在另一张表，对界面是同一件事。
+    assert.deepEqual(first?.overrideKeys, ['reasoningEfforts', 'alias']);
     assert.equal(first?.alias, 'deepseek/deepseek-v4-flash');
+  });
+
+  it('用户层写下的字段就是覆盖，值与默认相同也算', () => {
+    const { ops } = panel({
+      first: outcome(),
+      aperture: {
+        value: {},
+        user: { models: [{ id: 'deepseek-flash', name: 'Flash', contextWindow: 8192, thinking: false }] },
+      },
+    });
+    assert.deepEqual(ops.status().models[0]?.overrideKeys, ['name', 'contextWindow', 'thinking']);
+  });
+
+  it('用户层什么都没写过时，一行标签都不挂', () => {
+    const { ops } = panel({ first: outcome() });
+    assert.equal(ops.status().models[0]?.overrideKeys, undefined);
   });
 
   it('没有任何路由能服务的模型排在最后，并带上它通告的端点', () => {
@@ -238,82 +318,6 @@ describe('panel.status', () => {
     assert.equal(models[1]?.route, undefined);
     assert.equal(models[1]?.protocol, undefined);
     assert.deepEqual(models[1]?.endpoints, ['/v1beta/models/gemini-2.5-flash:generateContent']);
-  });
-});
-
-describe('panel.configuration', () => {
-  it('命名空间还没注册时回落到生效配置，并如实说「没有覆盖」', () => {
-    const { ops } = panel();
-    const configuration = ops.configuration();
-    assert.deepEqual(configuration, {
-      baseUrl: 'https://ai.example.ts.net',
-      sync: true,
-      baseUrlOverridden: false,
-      syncOverridden: false,
-      writable: true,
-    });
-  });
-
-  it('「被覆盖」看的是用户层里有没有这个字段', () => {
-    const { ops } = panel({
-      aperture: { value: { baseUrl: 'https://user.example.ts.net', sync: false }, user: { baseUrl: 'https://user.example.ts.net' } },
-    });
-    const configuration = ops.configuration();
-    assert.equal(configuration.baseUrl, 'https://user.example.ts.net');
-    assert.equal(configuration.sync, false);
-    assert.equal(configuration.baseUrlOverridden, true);
-    assert.equal(configuration.syncOverridden, false, 'sync 不在用户层里，即使它和默认值不同');
-  });
-
-  it('设置文档不接受写入时转达出去', () => {
-    const { ops } = panel({ writable: false });
-    assert.equal(ops.configuration().writable, false);
-  });
-});
-
-describe('panel.save', () => {
-  it('把草稿写进 aperture 段，并带上刚读到的版本号', async () => {
-    const { ops, writes } = panel({ aperture: { value: {}, user: {}, revision: 9 } });
-    const action = await ops.save('https://new.example.ts.net', false);
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /已写入设置/u);
-    assert.deepEqual(writes, [{
-      ns: 'aperture',
-      ops: [
-        { op: 'set', path: ['baseUrl'], value: 'https://new.example.ts.net' },
-        { op: 'set', path: ['sync'], value: false },
-      ],
-      expectedRevision: 9,
-    }]);
-  });
-
-  it('地址两端的多余空白不写进设置', async () => {
-    const { ops, writes } = panel({ aperture: { value: {}, user: {} } });
-    await ops.save('  https://new.example.ts.net  ', undefined);
-    assert.deepEqual(writes[0]?.ops, [{ op: 'set', path: ['baseUrl'], value: 'https://new.example.ts.net' }]);
-  });
-
-  it('null 表示撤销覆盖：只移除字段，不动别的', async () => {
-    const { ops, writes } = panel({ aperture: { value: {}, user: { baseUrl: 'https://user.example.ts.net' } } });
-    const action = await ops.save(null, undefined);
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /撤销覆盖/u);
-    assert.deepEqual(writes[0]?.ops, [{ op: 'unset', path: ['baseUrl'] }]);
-  });
-
-  it('两个参数都没给时不写设置，也不算失败', async () => {
-    const { ops, writes } = panel();
-    const action = await ops.save(undefined, undefined);
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /没有要保存的改动/u);
-    assert.deepEqual(writes, []);
-  });
-
-  it('写入被拒绝时返回失败原因', async () => {
-    const { ops } = panel({ aperture: { value: {}, user: {} }, settingsFail: '设置文档刚被别人改过' });
-    const action = await ops.save('https://new.example.ts.net', undefined);
-    assert.equal(action.ok, false);
-    assert.match(action.summary, /设置文档刚被别人改过/u);
   });
 });
 
@@ -345,6 +349,33 @@ describe('panel.edit', () => {
         // `reasoningEfforts` 界面根本不编辑，因此它必须原样活着。
         { id: 'deepseek-flash', reasoningEfforts: { low: 'low' }, contextWindow: 8192, thinking: false },
       ],
+    }]);
+  });
+
+  it('写入成功但重新发现失败时，那句话分开说', async () => {
+    const { ops } = panel({
+      first: outcome(),
+      next: outcome({ ok: false, error: '网关不可达' }),
+      aperture: section,
+    });
+    const action = await ops.edit('deepseek-flash', { contextWindow: 8192 });
+    assert.equal(action.ok, true, '写入本身是成功的');
+    assert.match(action.summary, /已保存 "deepseek-flash" 的参数/u);
+    assert.match(action.summary, /但重新发现没有成功：网关不可达/u);
+  });
+
+  it('写回时剔掉 schema 补出来的空值，不把「没写」变成用户的覆盖', async () => {
+    const { ops, writes } = panel({
+      aperture: {
+        value: { models: [{ id: 'deepseek-flash', input: [], reasoningEfforts: {} }] },
+        user: { models: [{ id: 'deepseek-flash', reasoningEfforts: {} }] },
+      },
+    });
+    await ops.edit('deepseek-flash', { contextWindow: 8192 });
+    assert.deepEqual(writes[0]?.ops, [{
+      op: 'set',
+      path: ['models'],
+      value: [{ id: 'deepseek-flash', contextWindow: 8192 }],
     }]);
   });
 
@@ -526,7 +557,7 @@ describe('panel.refresh', () => {
     assert.deepEqual(triggers, ['设置界面']);
     assert.equal(action.ok, true);
     assert.match(action.summary, /已重新发现并发布/u);
-    // 报告随之更新，标签页再读一次就能看到新一轮来源。
+    // 报告随之更新，配置页再读一次就能看到新一轮来源。
     assert.equal(ops.status().refresh?.trigger, '设置界面');
   });
 
@@ -538,48 +569,37 @@ describe('panel.refresh', () => {
   });
 });
 
-describe('panel.withdraw', () => {
-  it('撤下本插件拥有的两条路由', async () => {
-    const { ops, writes } = panel({ first: outcome(), settingsValue: { providers: { aperture: {}, 'aperture-anthropic': {}, workbuddy: {} } } });
-    const action = await ops.withdraw();
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /撤下 2 条路由/u);
-    assert.deepEqual(writes[0]?.ops, [
-      { op: 'unset', path: ['providers', 'aperture'] },
-      { op: 'unset', path: ['providers', 'aperture-anthropic'] },
-    ]);
-  });
+describe('写完等一轮刷新落地', () => {
+  it('模型参数写完之后重读报告，拿到的是新配置算出来的那一份', async () => {
+    const original = globalThis.fetch;
+    // 让发现慢一拍：不等刷新的实现会在这里露出来——它返回时报告还是旧的那一份，而配置页
+    // 拿到回答就会重读，于是「保存了却没变」。
+    globalThis.fetch = (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return new Response(JSON.stringify({ data: [{ id: 'm' }] }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const store = liveSettings({ models: [{ id: 'm', contextWindow: 1000 }] });
+      const config = memoizedConfig(store.source);
+      const runtime = new ApertureRuntime({
+        config,
+        settings: store.service,
+        logger: quiet,
+        // 清单只报可用性：这一条看的不是 models.dev，而是配置里的覆盖。
+        catalog: { load: async () => ({ entries: 0 }) } as unknown as ModelCatalog,
+      });
+      // 照 `index.ts` 的接法：配置一变就唤起一轮刷新（宿主那边是 Loader 的
+      // `loader/volatile-update`）。
+      store.onChange(() => void runtime.refresh('配置变更'));
+      const ops = createPanelOps({ runtime, config, settings: store.service });
 
-  it('跟随配置里的路由名，而不是写死的默认名', async () => {
-    const { ops, writes } = panel({
-      first: outcome(),
-      config: () => resolveConfig({ baseUrl: 'https://ai.example.ts.net', route: 'team', anthropicRoute: 'team-anthropic' }),
-      settingsValue: { providers: { team: {}, 'team-anthropic': {} } },
-    });
-    await ops.withdraw();
-    assert.deepEqual(writes[0]?.ops, [
-      { op: 'unset', path: ['providers', 'team'] },
-      { op: 'unset', path: ['providers', 'team-anthropic'] },
-    ]);
-  });
+      await ops.refresh();
+      assert.equal(ops.status().models[0]?.contextWindow, 1000, '第一轮读的是旧配置');
 
-  it('当路由本来就不在时报告无事可做，但仍算成功', async () => {
-    const { ops } = panel({ first: outcome(), settingsValue: { providers: { workbuddy: {} } } });
-    const action = await ops.withdraw();
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /没有需要撤下的路由/u);
-  });
-
-  it('写入被拒绝时返回失败原因，而现状仍然读得到', async () => {
-    const { ops } = panel({
-      first: outcome(),
-      settingsValue: { providers: { aperture: {} } },
-      settingsFail: '设置文档拒绝这次写入',
-    });
-    const action = await ops.withdraw();
-    assert.equal(action.ok, false);
-    assert.match(action.summary, /设置文档拒绝这次写入/u);
-    // 报告仍然读得到：失败时界面更应该显示现状。
-    assert.equal(ops.status().place, 'https://ai.example.ts.net');
+      await ops.edit('m', { contextWindow: 2000 });
+      assert.equal(ops.status().models[0]?.contextWindow, 2000);
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

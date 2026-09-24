@@ -45,14 +45,15 @@ npx @deepseek-ai/dsh plugin --profile web add /path/to/dsh-aperture
 ### 2. 填上你的 Aperture 地址
 
 ```yaml
-# ~/.dsh/settings.yaml
-aperture:
-  baseUrl: https://ai.example.ts.net
+# ~/.dsh/profiles/web/cordis.patch.yml
+- id: aperture
+  config:
+    baseUrl: https://ai.example.ts.net
 ```
 
-也可以写进 profile 的 `cordis.patch.yml`（组合层）；用户层覆盖组合层。
+这一层（profile 的补丁文档，即用户层）是本插件的设置命名空间 `aperture`。本包自带的 `cordis.patch.yml`（组合层）只声明这一行、不写 `config`：每个键的缺省值都在 schema 里，所以只写想改的键就够了，其余回落缺省值。注意补丁层是**整行替换**而不是深合并——这一行的 `config` 会整个取代组合层那一行的，正因为组合层没有 `config`，你写几项就只有几项。
 
-重启之后也可以直接在界面里填：**设置 → 插件 → Aperture**（与「插件配置」并列的标签页），页面上的「实例地址」写的就是同一个 `aperture.baseUrl`。
+也可以直接在界面里填：**插件**页里点开本插件，配置页上第一个格子「实例地址」写的就是同一个 `aperture.baseUrl`，保存后落在同一个文件里。
 
 ### 3. 重启 DSH
 
@@ -64,88 +65,75 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 
 ### 4. 确认
 
-模型会出现在选择器里，路由名 `Aperture`。最近一次刷新做了什么，看 **设置 → 插件 → Aperture**：状态段把每一行摆成一项事实，下面按路由列出模型。
+模型会出现在选择器里，路由名 `Aperture`。最近一次刷新做了什么，看 **插件 → dsh-aperture**：这个包的配置页就是这一页——上面是实例地址与同步开关，中间按行列出发现的模型，最后是这一轮的发现报告。
 
 ```
-最近一次刷新
-  触发  配置变更        时间  2026-09-23 12:32:36
-  耗时  286ms           结果  成功
-  清单  422 个条目      端点  https://ai.example.ts.net/v1/models 列出了 16 行
-  设置  向 llm-pi-ai 写入 2 个操作（aperture, aperture-anthropic）
+实例地址   已覆盖 恢复默认
+[https://ai.example.ts.net                            ]
+填 Aperture 的地址；留空即休眠，不再发现模型。
 
-模型与路由                        已覆盖 1 个模型，其余沿用发现值与清单
-  aperture · openai-completions
-  → https://ai.example.ts.net/v1 · 11 个模型
-    deepseek-v4-flash  DeepSeek V4 Flash  已覆盖              [▾ 收起]
-      1,048,576 上下文窗口 · 384,000 输出 · 文本+图像 · 推理
-      │ deepseek-v4-flash · aperture · openai-completions
-      │ 显示名   [DeepSeek V4 Flash           ]   来自 models.dev
-      │ 清单别名 [deepseek/deepseek-v4-flash]
-      │ 上下文   [1048576]  生效 1,048,576 · 来自 aperture
-      │ 最大输出 [384000]   生效 384,000 · 来自 aperture
-      │ 输入模态 ☑文本 ☑图像   生效 文本+图像 · 来自 配置
-      │ 推理     [跟随发现 ▾]  生效 开 · 来自 models.dev
-      │ 协议     [跟随发现 ▾]  生效 openai-completions
-      │ 显示名、容量与模态留空表示这一项不覆盖……   [撤销覆盖] [取消] [保存]
-    gemini-2.5-flash                                         [▸ 编辑]
-      128,000 上下文窗口 · 文本 · 无推理
-  未服务：没有本插件可发布的端点
-  4 个模型
-    gemini-2.5-flash-lite                                    [▸ 编辑]
-      通告的端点：/v1beta/models/gemini-2.5-flash-lite:generateContent
+自动同步                              已覆盖 恢复默认   ●━
+每轮发现之后，把模型与参数写进 dsh 的 llm-pi-ai 路由。   [保存]
+
+模型                                          [立刻刷新]
+一行一个模型；展开改这一行的覆盖，「保存这一行」只写这一行。
+
+● deepseek-v4-flash  aperture · openai-completions · 1,048,576 上下文 · 384,000 输出
+                    文本+图像 · 推理 · 覆盖了 显示名、清单别名
+● gemini-2.5-flash   aperture · openai-completions · 128,000 上下文 · 文本 · 关
+⚠ qwen3-vl-32b       未服务 · 262,144 上下文 · 文本+图像 · 推理
+
+发现报告
+路由
+  aperture             openai-completions   11 个模型   已写入
+  https://ai.example.ts.net/v1
+触发  配置变更         时间  2026-09-23 12:32:36
+耗时  286ms            结果  成功
+清单  422 个条目       端点  https://ai.example.ts.net/v1/models 列出了 16 行
+写入  2 个操作（aperture, aperture-anthropic）
 ```
 
-收起时每一行只是一条事实（模型 id 与生效的取值）；点「编辑」展开面板，每条来源就写在它描述的那个字段旁边（「生效 1,048,576 · 来自 aperture」）。一行一套「保存 / 取消」，按「保存」只写这一行，「取消」把这一行的改动整个丢掉。
-
-旁边就是改地址、立刻刷新与撤下路由的按钮。
+**地址与同步开关**是同一份官方设置表单里的两个字段：每一项右边写着「已覆盖」时，紧跟一颗「恢复默认」把它从设置文件里删掉（官方「插件配置」那页同一对词与同一个位置），按「保存」只发真的改动过的那一项。**模型清单**一行一个模型，收起来是一行事实（路由、协议、容量、模态、推理，以及覆盖了哪几项），点开就是这一行的覆盖编辑器：显示名、协议、上下文容量、最大输出、清单别名各一个输入框，模态两个勾选框，推理一个三段开关（跟随发现 / 开 / 关）；每个字段下面那句注脚说着它的来源（「留空即用发现到的名字。来源：Aperture」），收起时完全不出现。一行一套「保存这一行 / 清空覆盖 / 取消」，按「保存这一行」只写这一行。**发现报告**在页面最下面：一列路由（`provider`、协议、模型数与这一轮有没有写进 `llm-pi-ai`），加一份最近一次刷新的事实表（触发、时间、耗时、结果、清单、端点、写入）。没有卡片，也没有第二层折叠——分组靠标题与间距分开，能点开的只有模型行。
 
 ## 使用
 
-界面在 **设置 → 插件 → Aperture**：一个标签页，写着你当前的实例地址与最近一次刷新做了什么，下面按路由列出发现的模型，可以改地址、开关「同步到 llm-pi-ai」、按一下立刻重新发现、按一下把已经发布的路由从 `llm-pi-ai` 段撤下来，也可以就地为单个模型改参数。地址与开关在按下「保存」之前只是草稿；保存交给宿主半边写进设置接缝，因此有版本设栅——表单已经与设置文档脱节时会拒绝写入，而不是覆盖别处的改动。模型参数同理，而且**按行来**：展开的那一行改的是草稿，行上出现「待保存」，按「保存」才写，也只写这一行；「取消」把这一行的改动丢掉。
+界面在 **插件 → dsh-aperture**（在插件列表里点开本插件；配置页挂在包上，因此没有单独的「配置」按钮）。页头的名字、图标与那句描述来自本包的 `locale/*.json` 与 `package.json` 的 `icon`，页面本身由插件页画出；页面主体写着你当前的实例地址、同步开关、发现的模型与最近一次刷新的报告。地址与开关在按下「保存」之前只是草稿；保存写进设置接缝，因此有版本设栅——表单已经与设置文档脱节时会拒绝写入，而不是覆盖别处的改动。模型参数同理，而且**按行来**：展开的那一行改的是草稿，行上出现「有未保存的改动」，按「保存这一行」才写，也只写这一行；「取消」把这一行的改动丢掉（收起一行不算放弃，那颗标签会一直挂着）。
 
 | 位置 | 作用 |
 | --- | --- |
-| 标签页 · 状态 | 最近一次刷新做了什么、它是被什么触发的，以及清单、端点与设置写入的结果 |
-| 标签页 · 实例地址 | 改 `baseUrl`（写入设置接缝，带「已覆盖」标记与撤销回继承） |
-| 标签页 · 同步开关 | 改 `sync`：关掉就只探测、不写 `llm-pi-ai` |
-| 标签页 · 保存 | 把地址与开关的草稿写进设置文档 |
-| 标签页 · 立即刷新 | 立刻重新发现并发布，并把这一轮的报告摆出来 |
-| 标签页 · 撤掉已发布的路由 | 把本插件的两条路由从 `llm-pi-ai` 段撤下来 |
-| 标签页 · 模型与路由 | 每个模型所在的路由，以及它生效的取值 |
-| 标签页 · 编辑 | 展开一个模型的参数：显示名、清单别名、容量、模态、推理、协议，每条事实来自哪里就写在对应字段旁边 |
-| 标签页 · 保存 / 取消 | 只写这一行，或者把这一行的改动整个丢掉 |
-| 标签页 · 撤销覆盖 | 只清掉报告里写着确实被覆盖过的那几项，随即回落到发现值与清单 |
+| 配置页 · 实例地址 | 改 `baseUrl`（写入设置接缝；写着「已覆盖」时旁边那颗「恢复默认」把它放回缺省值） |
+| 配置页 · 同步开关 | 改 `sync`：关掉就只探测、不写 `llm-pi-ai`——那一轮刷新会顺手把本插件已经发布的路由撤下来；同样带「已覆盖 / 恢复默认」这一对 |
+| 配置页 · 保存 | 表单下方，把地址与开关的草稿写进设置文档；写完等这一轮重新发现落地才返回，界面随即显示新配置 |
+| 配置页 · 模型 | 一行一个模型，收起来是一行事实：路由、协议、容量、模态、推理，以及覆盖了哪几项 |
+| 配置页 · 展开一行 | 这一行的覆盖编辑器：显示名、协议、上下文容量、最大输出、清单别名、模态两个勾选框、推理三段开关；每个字段下面那句注脚说着它现在的值来自哪里 |
+| 配置页 · 保存这一行 / 清空覆盖 / 取消 | 只写这一行，或者只清掉报告里写着确实被覆盖过的那几项，或者把这一行的草稿整个丢掉；「保存这一行」同样等一轮重新发现落地，所以按完看到的就是新值 |
+| 配置页 · 立刻刷新 | 模型那一块右上角的动作：立刻重新发现并发布，并把这一轮的报告摆出来 |
+| 配置页 · 发现报告 | 路由一列（`provider`、协议、模型数、这一轮有没有写进 `llm-pi-ai`），下面是最近一次刷新的事实表：触发、时间、耗时、结果、清单、端点、写入 |
 
-就地编辑写的都是配置：容量与模态等落在 `aperture.models` 的对应条目上，清单别名落在 `aperture.modelAliases[id]`，写入按字段合并——界面没提到的字段原样留着（比如 `reasoningEfforts`），留空则表示这一项不覆盖、回落到发现值与清单。协议那一项是「未服务」模型唯一的出路：填上它就能让只在原生端点上应答的模型在对应路由上发布。
+就地编辑写的都是配置：容量与模态等落在 `aperture.models` 的对应条目上，清单别名落在 `aperture.modelAliases[id]`，写入按字段合并——界面没提到的字段原样留着（比如 `reasoningEfforts`），留空则表示这一项不覆盖、回落到发现值与清单。容量认 `1M`、`100K` 这种写法（十进制后缀，跟官方「模型」页同一套词汇：`1M` 是 1000000，不是 1048576），存下去的仍是普通 token 数，输入框回写成能原样读回来的最短那个（`384000` → `384K`，而 `1048576` 不是整千，照原样写）。协议那一项是「未服务」模型唯一的出路：填上它就能让只在原生端点上应答的模型在对应路由上发布。
 
-> 「撤掉已发布的路由」只撤这一次：下一次刷新会按当前配置重新发布。要让撤下长期生效，先把同步开关关掉（等价于 `sync: false`）。
+> 想让本插件发布的路由消失，就把同步开关关掉：那一轮刷新会把它们从 `llm-pi-ai` 段撤下来（撤的是本插件拥有的那两个键，配置段里其他 provider 原样留着）。
 
 ## 配置
 
-所有键都可写在 `~/.dsh/settings.yaml` 的 `aperture:` 段（用户层），或 profile 的 `cordis.patch.yml`（组合层）。`baseUrl` 与 `sync` 也可以在界面上的 Aperture 标签页里改，`models` 与 `modelAliases` 里的逐模型参数同样可以在那里就地编辑；其余键只有配置文件这一条路。
+所有键都写在 profile 补丁文档里那一行的 `config:` 下（用户层）。本包自带的 `cordis.patch.yml`（组合层）只负责把这行装进去、不写 `config`，所以不写的键一律回落下面这些缺省值。`baseUrl` 与 `sync` 也可以在配置页上改，`models` 与 `modelAliases` 里的逐模型参数同样可以在那里就地编辑；其余键只有配置文件这一条路。
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture 实例地址。末尾 `/v1` 会被容忍并去掉；空值表示休眠（不探测、不写入） |
-| `route` | `aperture` | OpenAI 兼容模型的路由名 |
-| `anthropicRoute` | `aperture-anthropic` | Anthropic Messages 模型的路由名 |
-| `displayName` | `Aperture` | 选择器里的名字 |
-| `anthropicDisplayName` | `Aperture (Anthropic)` | 同上，Anthropic 路由 |
+| `route` | `aperture` | OpenAI 兼容模型的路由名；Anthropic 那条是它加 `-anthropic`，两个选择器名称也由它推出来（`aperture` → `Aperture` / `Aperture (Anthropic)`） |
 | `apiKeyEnv` | `''` | 凭据 seam 里的引用名；非空时不再写占位头 |
-| `placeholderCredential` | `dsh-aperture` | 占位凭据的值；设成 `''` 就完全不写占位头 |
 | `headers` | `{}` | 每条请求额外带的头，**优先于**占位头 |
 | `enabledModelIds` | `[]` | 非空时只保留这些 id（`models` 里显式列出的不受限） |
 | `modelAliases` | `{}` | 网关 id → models.dev id |
 | `models` | `[]` | 逐模型覆盖或补充：`id`、`name`、`api`、`contextWindow`、`maxTokens`、`input`、`thinking`、`reasoningEfforts` |
 | `modelMetadataUrl` | `https://models.dev/models.json` | 目录地址；设成 `''` 关闭补全 |
-| `defaultContextWindow` | `128000` | 谁都没说容量时的上下文 |
 | `images` | `ignore` | `metadata` = 采用 models.dev 的输入模态（图片） |
 | `reasoning` | `auto` | `off` = 所有模型都当不会推理 |
-| `sync` | `true` | `false` = 只探测不写设置（标签页仍可查看） |
+| `sync` | `true` | `false` = 只探测不写设置（配置页仍可查看） |
 | `refreshIntervalMinutes` | `0` | 定时刷新间隔；`0` = 只在启动和配置变化时刷新 |
-| `timeoutMs` | `20000` | 网关与目录的单次请求超时 |
 
-容量与推理档位缺失时，按 Aperture 字段 → [models.dev](https://models.dev) → 保守默认值补全；`maxTokens` 没人声明时**故意不写**（在 `llm-pi-ai` 里它同时是每次请求的 `max_tokens` 上限，凭空编一个值会把请求截断）。
+容量与推理档位缺失时，按 Aperture 字段 → [models.dev](https://models.dev) → 保守默认值补全（兜底容量 128000、单次请求超时 20s 是代码里的常量，不是配置项）；`maxTokens` 没人声明时**故意不写**（在 `llm-pi-ai` 里它同时是每次请求的 `max_tokens` 上限，凭空编一个值会把请求截断）。
 
 ## 常见问题
 
@@ -165,7 +153,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
 **有些模型没出现在选择器里？**
-看标签页上的「模型与路由」（「未服务」那一行）。只提供 Gemini 原生 `generateContent` 端点的模型接不进来——`llm-pi-ai` 只讲 OpenAI 兼容和 Anthropic Messages 两种协议。走错端点时 Aperture 会明确告诉你该用哪个：
+看配置页上的「模型与路由」（「未服务」那一行）。只提供 Gemini 原生 `generateContent` 端点的模型接不进来——`llm-pi-ai` 只讲 OpenAI 兼容和 Anthropic Messages 两种协议。走错端点时 Aperture 会明确告诉你该用哪个：
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat
@@ -176,46 +164,61 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 默认只给保守的两档（DeepSeek 系 `off/high/max`，其它会推理的模型 `off/high`），自己加：
 
 ```yaml
-aperture:
-  models:
-    - id: deepseek-v4-pro
-      reasoningEfforts:
-        off: disabled
-        minimal: minimal
-        low: low
-        medium: medium
-        high: high
-        max: max
+# ~/.dsh/profiles/web/cordis.patch.yml
+- id: aperture
+  config:
+    models:
+      - id: deepseek-v4-pro
+        reasoningEfforts:
+          off: disabled
+          minimal: minimal
+          low: low
+          medium: medium
+          high: high
+          max: max
 ```
 
 **网关没列出的模型也想接？**
-用 `models` 显式补一条即可（比如标签页里「未服务」的那几个 Gemini 模型，只要你知道它在 OpenAI 兼容端点上确实能用）：
+用 `models` 显式补一条即可（比如配置页里「未服务」的那几个 Gemini 模型，只要你知道它在 OpenAI 兼容端点上确实能用）：
 
 ```yaml
-aperture:
-  models:
-    - id: gemini-2.5-pro
-      api: openai-completions
+# ~/.dsh/profiles/web/cordis.patch.yml
+- id: aperture
+  config:
+    models:
+      - id: gemini-2.5-pro
+        api: openai-completions
 ```
 
 **模型的容量/推理标记没补上？**
 网关会改名，models.dev 上可能对不上（实测 `deepseek-flash`、`k3` 那边叫 `deepseek/deepseek-v4-flash`、`moonshotai/kimi-k3`）。显式映射：
 
 ```yaml
-aperture:
-  modelAliases:
-    deepseek-flash: deepseek/deepseek-v4-flash
-    k3: moonshotai/kimi-k3
+# ~/.dsh/profiles/web/cordis.patch.yml
+- id: aperture
+  config:
+    modelAliases:
+      deepseek-flash: deepseek/deepseek-v4-flash
+      k3: moonshotai/kimi-k3
 ```
 
-**标签页上说 `设置：未写入（已处于同步状态）`？**
+**配置页上说 `设置：未写入（已处于同步状态）`？**
 正常状态，表示设置里已经是最新内容。
+
+**保存了但没生效？**
+DSH 的补丁层是叠加的：profile 的补丁文档之上还有 `$DSH_HOME/cordis.patch.yml` 这类更高优先级的层。如果 `aperture` 这一行在那里也被写过，配置页上的保存会落在 profile 的补丁文档里、却被上面那层盖住（这一笔也可能被设置接缝直接拒收，配置页会说没被收下）。把那一行从高优先级的层里删掉，或者直接改那一处。
+
+**从 0.2 升上来，我的 `settings.yaml` 去哪了？**
+0.1.7 起设置不再有独立文件，而是落在 profile 的补丁文档里。首次启动时 `$DSH_HOME/settings.yaml` 会被改名成 `settings.yaml.imported`，各段按设置命名空间搬进补丁文档——`aperture:` 段原样搬过去，仍能过 schema 的键与值都不变，所以地址与逐模型覆盖都还在。此后被读的只有补丁文档，`settings.yaml.imported` 只是留档，改它没有用；搬不过去的段（值已不合法）也只留在那份留档里，并在日志里说一声。
+
+**本部署没有「插件」页 / 没有界面？**
+配置页只在 Web 界面里有（它靠 Typert Remote 端点工作）。headless profile 里插件照常发现、照常写入，只是没有可点按的页面。若这个部署连可管理的 profile 都没有，`settings` 服务不存在，插件按硬依赖停在 `PENDING`——它唯一的职责就是写设置，没有设置可写时宁可不动。
 
 **需要真密钥而不是占位头？**
 Aperture 靠网络身份（Tailscale）认证，本不需要密钥；插件默认写入 `authorization: Bearer dsh-aperture` / `x-api-key: dsh-aperture`，只是让适配器愿意发请求，**不是密钥**。真要密钥时把 `apiKeyEnv` 指向凭据 seam 里的记录，占位头就不会写入。
 
-**改了 `route` / `anthropicRoute` 之后旧路由还在？**
-插件只认自己当前拥有的两个键，不知道历史上用过哪些名字，所以旧键会留在 `llm-pi-ai.providers` 里。它不报错、只是不再刷新；要清理就手动删掉那一行。
+**改了 `route` 之后旧路由还在？**
+插件只认自己当前拥有的两个键（`route` 与 `route` + `-anthropic`），不知道历史上用过哪些名字，所以旧键会留在 `llm-pi-ai.providers` 里。它不报错、只是不再刷新；要清理就手动删掉那一行。
 
 ## 它做了什么
 
@@ -223,14 +226,14 @@ Aperture 靠网络身份（Tailscale）认证，本不需要密钥；插件默�
 GET {baseUrl}/v1/models
         │
         ├─ 每个模型：supported_endpoints ──► 分流
-        │     /v1/chat/completions        ──► route            （openai-completions）
-        │     /v1/messages                ──► anthropicRoute   （anthropic-messages）
+        │     /v1/chat/completions        ──► route                     （openai-completions）
+        │     /v1/messages                ──► route + -anthropic        （anthropic-messages）
         │     只有原生 generateContent     ──► 不发布（列进「未服务」）
         │
         ├─ 容量：Aperture 字段 ─► models.dev ─► 默认值
         ├─ 推理：Aperture 字段 ─► models.dev ─► 关闭
         │
-        └─ 生成 llm-pi-ai 的 providers.<route>，按 revision 写入 settings.yaml
+        └─ 生成 llm-pi-ai 的 providers.<route>，按 revision 写进 profile 的补丁文档
 ```
 
 写入只碰 `llm-pi-ai.providers` 下属于本插件的两个键：内容没变就不写；用路径操作写，你手写的其它 provider 原样保留；探测失败绝不删空已有目录；路由没模型了就删掉。
@@ -243,18 +246,32 @@ GET {baseUrl}/v1/models
 npm install                # 若机器级 npm 缓存不可写：npm install --cache ./.npm-cache --ignore-scripts
 npm run build              # tsc -> lib/
 npm run typecheck          # 含 test/，并用 node --check 解析浏览器半边
-npm test                   # 单元测试（119 个，离线运行；需要已安装的 devDependencies）
-npm run inspect            # 打印真实生成的 settings.yaml 与解析结果
+npm test                   # 单元测试 + 端到端（229 个，离线运行；需要已安装的 devDependencies）
 
-DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live   # 端到端：真实 DSH 栈 + 真实网关
+DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live   # 只跑端到端，且指向真实实例
+DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run inspect     # 手动走查：打印写入后的补丁文档与 LLM 解析结果（先 npm run build）
 ```
+
+`npm test` 里的端到端那一份（`test/live.test.ts`）不依赖网络：它在本地起一个假网关
+（`test/fake-gateway.ts`，端口由内核挑），把插件挂到真的 Cordis Loader 上，再断言写进 profile
+补丁文档的东西能被真的 `llm-pi-ai` 解析出来。CI 因此跑得动它。想对着真实实例跑，或者只想跑这
+一份，就用 `npm run test:live` 加上 `DSH_APERTURE_LIVE_URL`。
+
+不在 Tailscale 网络里、又想手动看生成的配置段时，可以自己把那个假网关摆在固定端口上：
+
+```sh
+node scripts/fake-aperture-gateway.mjs 54117
+DSH_APERTURE_LIVE_URL=http://127.0.0.1:54117 npm run inspect
+```
+
+两半的构建方式不同，改代码时容易踩空：浏览器半边（`client/aperture.js`）是手写 CJS，DSH 按文件直接服务，改完刷新页面就见效；宿主半边（`src/*.ts`）跑的是编译产物 `lib/`，改完必须 `npm run build` **再重启宿主**，否则跑的还是上一次构建的代码。`lib/` 的 mtime 比 `src/` 旧就说明还没构建。
 
 发布流程与产物构成见 [docs/releasing.md](https://github.com/he0119/dsh-aperture/blob/main/docs/releasing.md)。
 
 ## 致谢
 
 - [he0119/vscode-aperture-for-copilot](https://github.com/he0119/vscode-aperture-for-copilot)：本插件的参考实现，Aperture 模型发现的做法来自这个 VS Code 扩展。
-- [xiaoyuyu6420/dsh-backup](https://github.com/xiaoyuyu6420/dsh-backup)：界面接线的参考实现，设置标签页的注册方式与 Remote 端点的形状都来自这个插件。
+- [xiaoyuyu6420/dsh-backup](https://github.com/xiaoyuyu6420/dsh-backup)：界面接线的参考实现，Remote 端点的形状来自这个插件；配置页本身的挂载方式在 0.1.7 之后改由插件页的槽位契约给出。
 - [Aperture](https://tailscale.com/kb/1542/aperture)（Tailscale）：提供被发现的网关。
 - [models.dev](https://models.dev)：为 Aperture 未声明的容量与能力做补全。
 - `@deepseek-ai/dsh-llm-pi-ai`：本插件只做发现，协议对接交给它。

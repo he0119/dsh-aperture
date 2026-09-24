@@ -30,6 +30,7 @@ import {
   extractModelId,
   extractProvider,
 } from './metadata/extract.ts';
+import { DEFAULT_CONTEXT_WINDOW } from './config.ts';
 import type {
   ApertureProtocol,
   BuildOptions,
@@ -131,7 +132,7 @@ function fromEndpoint(
     name: apertureName ?? catalog?.name ?? id,
     ...(protocol === undefined ? {} : { protocol }),
     endpoints,
-    contextWindow: apertureLimits?.contextWindow ?? catalog?.contextWindow ?? options.defaultContextWindow,
+    contextWindow: apertureLimits?.contextWindow ?? catalog?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     ...resolveOutputCap(apertureLimits?.maxTokens ?? catalog?.maxTokens),
     input: options.images === 'metadata' ? (capabilities?.input ?? catalog?.input ?? ['text']) : ['text'],
     reasoning: options.reasoning === 'auto' && (capabilities?.reasoning ?? catalog?.reasoning ?? false),
@@ -152,7 +153,7 @@ function fromConfiguration(id: string, options: BuildOptions, lookup: CatalogLoo
     id,
     name: catalog?.name ?? id,
     endpoints: [],
-    contextWindow: catalog?.contextWindow ?? options.defaultContextWindow,
+    contextWindow: catalog?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     ...resolveOutputCap(catalog?.maxTokens),
     input: options.images === 'metadata' ? (catalog?.input ?? ['text']) : ['text'],
     reasoning: options.reasoning === 'auto' && (catalog?.reasoning ?? false),
@@ -171,16 +172,22 @@ function applyConfigured(model: DiscoveredModel, configured: ConfiguredModel, op
   const contextWindow = configured.contextWindow ?? model.contextWindow;
   const maxTokens = configured.maxTokens ?? model.maxTokens;
   const name = configured.name?.trim() || model.name;
-  const input = configured.input ?? model.input;
+  // 运行时 schema 给 `models[].input` 的缺省值是空数组，而空数组在别处等于「这个模型不接受任何
+  // 模态」——没有谁会想要那个声明。因此空数组按**没写**处理，继续沿用发现到的模态（想声明纯
+  // 文本的是 `images: ignore`，不是 `input: []`）。
+  const declaredInput = configured.input !== undefined && configured.input.length > 0
+    ? configured.input
+    : undefined;
+  const input = declaredInput ?? model.input;
 
   return {
     id: model.id,
     name,
     ...(protocol === undefined ? {} : { protocol }),
     endpoints: model.endpoints,
-    contextWindow: contextWindow ?? options.defaultContextWindow,
+    contextWindow: contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     ...resolveOutputCap(maxTokens),
-    input: configured.input !== undefined || options.images === 'metadata' ? input : ['text'],
+    input: declaredInput !== undefined || options.images === 'metadata' ? input : ['text'],
     reasoning: configured.thinking ?? model.reasoning,
     ...(model.provider === undefined ? {} : { provider: model.provider }),
     provenance: {
@@ -189,7 +196,7 @@ function applyConfigured(model: DiscoveredModel, configured: ConfiguredModel, op
           ? 'config'
           : model.provenance.limits,
       reasoning: configured.thinking !== undefined ? 'config' : model.provenance.reasoning,
-      input: configured.input !== undefined ? 'config' : model.provenance.input,
+      input: declaredInput !== undefined ? 'config' : model.provenance.input,
       name: configured.name?.trim() ? 'config' : model.provenance.name,
     },
   };

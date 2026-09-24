@@ -17,7 +17,6 @@ function plan(overrides: Partial<ProfileOptions> = {}, build = options()) {
     displayName: 'Aperture',
     anthropicDisplayName: 'Aperture (Anthropic)',
     headers: {},
-    placeholderCredential: 'dsh-aperture',
     configured: build.models,
     ...overrides,
   });
@@ -55,13 +54,13 @@ describe('buildProfilePlan', () => {
   });
 
   it('配置了凭据引用之后就去掉占位凭据', () => {
-    const result = plan({ apiKeyEnv: 'APERTURE_API_KEY', placeholderCredential: '' });
+    const result = plan({ apiKeyEnv: 'APERTURE_API_KEY' });
     assert.equal(route(result, 'aperture')?.profile.apiKeyEnv, 'APERTURE_API_KEY');
     assert.equal(route(result, 'aperture')?.profile.headers, undefined);
   });
 
   it('允许配置的请求头替换占位凭据', () => {
-    const result = plan({ headers: { authorization: 'Bearer real-token' }, placeholderCredential: '' });
+    const result = plan({ headers: { authorization: 'Bearer real-token' } });
     assert.deepEqual(route(result, 'aperture')?.profile.headers, { authorization: 'Bearer real-token' });
   });
 
@@ -81,6 +80,19 @@ describe('buildProfilePlan', () => {
     const model = entry(plan(), 'aperture', 'deepseek-flash');
     assert.equal(model?.reasoningEfforts, undefined);
     assert.equal(model?.compat, undefined);
+  });
+
+  it('空的 reasoningEfforts 等于没声明，不当成「没有任何档位」发出去', () => {
+    // `llm-pi-ai` 会以「reasoningEfforts 是空的」为由拒绝整段写入，于是三条路由一条都发布不
+    // 出去。适配器自己的建议是「省略这个字段以沿用已安装清单的能力」，这里就照它办：空字典落
+    // 回按模型推导出来的档位，而不是把一个空对象原样递过去。
+    const reasoning = options({ models: [{ id: 'deepseek-v4-pro', reasoningEfforts: {} }] });
+    assert.deepEqual(
+      entry(plan({}, reasoning), 'aperture', 'deepseek-v4-pro')?.reasoningEfforts,
+      { off: 'disabled', high: 'high', max: 'max' },
+    );
+    const plain = options({ models: [{ id: 'deepseek-flash', reasoningEfforts: {} }] });
+    assert.equal(entry(plan({}, plain), 'aperture', 'deepseek-flash')?.reasoningEfforts, undefined);
   });
 
   it('让发现的 Anthropic 模型保持不推理，因为档位不是它的旋钮', () => {
@@ -117,7 +129,6 @@ describe('buildProfilePlan', () => {
       displayName: 'Aperture',
       anthropicDisplayName: 'Aperture (Anthropic)',
       headers: {},
-      placeholderCredential: 'dsh-aperture',
       configured: [],
     });
     assert.deepEqual(

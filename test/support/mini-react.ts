@@ -1,7 +1,7 @@
 /**
- * 一个只够跑本插件标签页的 React 替身。
+ * 一个只够跑本插件配置页的 React 替身。
  *
- * 标签页的逻辑几乎都在组件里：草稿与生效值的差异、按钮的可用性、动作按下之后把结果贴出来。
+ * 配置页的逻辑几乎都在组件里：草稿与生效值的差异、按钮的可用性、动作按下之后把结果贴出来。
  * 这些没法靠「模块加载成功」证明，也没法在无浏览器、无 `react-dom` 的环境里用真 React 渲染
  * ——SSR 不跑 effect，因此只能看到加载态那一帧。这个替身实现 `createElement` + `useState`
  * + `useEffect`，按提交循环驱动到稳定，于是「挂载 → 拉配置 → 改输入 → 按保存」这条路径可以
@@ -152,16 +152,6 @@ export class MiniReact {
     return deps;
   }
 
-  /** 卸载：跑一遍所有 cleanup。 */
-  unmount(): void {
-    for (const instance of this.instances.values()) {
-      for (const slot of instance.hooks) {
-        slot.cleanup?.();
-        slot.cleanup = undefined;
-      }
-    }
-  }
-
   /** 一次提交：重渲染、跑 effect。 */
   private commit(): void {
     this.dirty = false;
@@ -250,11 +240,6 @@ export function findAll(node: unknown, predicate: (element: HostElement) => bool
   return found;
 }
 
-/** 按标签名找元素。 */
-export function findAllByType(node: unknown, type: string): HostElement[] {
-  return findAll(node, (element) => element.type === type);
-}
-
 /** 按 `id` 找元素。 */
 export function findById(node: unknown, id: string): HostElement {
   const [found] = findAll(node, (element) => element.props.id === id);
@@ -264,23 +249,18 @@ export function findById(node: unknown, id: string): HostElement {
 
 /** 按按钮文字找按钮。 */
 export function findButton(node: unknown, label: string): HostElement {
-  const [found] = findAll(node, (element) => element.type === 'button' && textOf(element).includes(label));
+  const [found] = findAll(node, (element) => element.type === 'button' && text(element).includes(label));
   if (found === undefined) throw new Error(`找不到写着「${label}」的按钮`);
   return found;
 }
 
 /** 一个元素子树的文本。 */
-export function textOf(node: unknown): string {
+export function text(node: unknown): string {
   if (node === null || node === undefined || typeof node === 'boolean') return '';
-  if (Array.isArray(node)) return node.map((child) => textOf(child)).join('');
+  if (Array.isArray(node)) return node.map((child) => text(child)).join('');
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   const element = node as HostElement;
-  return textOf(element.props.children);
-}
-
-/** 整棵树的文本。 */
-export function text(node: unknown): string {
-  return textOf(node);
+  return text(element.props.children);
 }
 
 /** 触发一个元素的 `onClick`。 */
@@ -302,4 +282,10 @@ export function toggle(element: HostElement, checked: boolean): void {
   const handler = element.props.onChange;
   if (typeof handler !== 'function') throw new Error(`<${element.type}> 没有 onChange`);
   (handler as (event: unknown) => void)({ target: { checked } });
+}
+
+/** 触发输入框的 `onBlur`（没有就不做任何事：多数输入框本来就不听这个事件）。 */
+export function blur(element: HostElement): void {
+  const handler = element.props.onBlur;
+  if (typeof handler === 'function') (handler as () => void)();
 }

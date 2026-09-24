@@ -27,6 +27,8 @@ jobs:
       # 仓库不带原生依赖，安装是为了拿到 typescript 与各 @deepseek-ai/* 类型声明。
       - run: npm ci
       # test/ 含 .ts 用例，靠 node 自带的类型擦除运行，因此这一步同时是「类型没坏」的证明。
+      # 端到端那一份也在 glob 里（test/live.test.ts）：它连的网关由 test/fake-gateway.ts 自己起，
+      # 不写死端口、不要网络，因此这里不需要 DSH_APERTURE_LIVE_URL，也不必单独一步。
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
