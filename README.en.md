@@ -221,8 +221,8 @@ Gateways rename things, and models.dev may not match (in practice `deepseek-flas
 **The configuration page says `设置：未写入（已处于同步状态）`?**
 That is the normal steady state: the settings already hold the current catalog.
 
-**Saved but not in effect, and the GUI says a higher-priority configuration overrides it?**
-DSH's patch layers stack: above the profile patch document sit higher-priority layers such as `$DSH_HOME/cordis.patch.yml`. If the `aperture` row is written there too, a save from the configuration page lands in the profile patch document but is shadowed by that layer. Delete the row from the higher-priority layer, or edit it there instead.
+**Saved but not in effect?**
+DSH's patch layers stack: above the profile patch document sit higher-priority layers such as `$DSH_HOME/cordis.patch.yml`. If the `aperture` row is written there too, a save from the configuration page lands in the profile patch document but is shadowed by that layer (the settings service may also refuse the write outright, in which case the page says so). Delete the row from the higher-priority layer, or edit it there instead.
 
 **Upgrading from 0.2 — where did my `settings.yaml` go?**
 As of 0.1.7 settings no longer live in a file of their own; they live in the profile patch document. On the first start `$DSH_HOME/settings.yaml` is renamed to `settings.yaml.imported` and each section is moved into the patch document under its settings namespace — the `aperture:` section moves as-is, and every key and value that still passes the schema is unchanged, so the address and the per-model overrides are all still there. From then on only the patch document is read, and `settings.yaml.imported` is just an archive; editing it does nothing. A section whose values no longer validate stays in that archive too, with a line in the log saying so.

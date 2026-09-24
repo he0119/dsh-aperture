@@ -142,7 +142,6 @@ function harness(options: { readonly typert?: boolean } = {}): Harness {
   };
 
   const settings = {
-    writable: true,
     describe: (): SettingsDescriptor[] => [],
     mutate: async (_ns: string, _ops: readonly SettingsPathOp[]): Promise<void> => {},
     configure: (presentation: unknown, owner: unknown): (() => void) => {
@@ -410,16 +409,15 @@ describe('apply 的面板半边', () => {
       assert.equal(record.plugins.length, 1, '面板服务只挂一次');
 
       const ops = panelOps(record);
-      for (const method of ['status', 'refresh', 'configuration', 'save', 'edit'] as const) {
+      for (const method of ['status', 'refresh', 'edit'] as const) {
         assert.equal(typeof ops[method], 'function', `端点 ${method} 必须真的存在`);
       }
 
       await settle();
       // ops 接的是**同一个**运行时：报告里就是刚才那次加载触发的那一轮。
       assert.equal((ops.status() as PanelReport).refresh?.trigger, '插件加载');
-      // 也接的是同一份活配置。
-      assert.equal(ops.configuration().baseUrl, 'https://ai.example.ts.net');
-      assert.equal(ops.configuration().sync, true, '同步默认打开');
+      // 报告里的实例地址也来自同一份活配置。
+      assert.match(ops.status().place, /ai\.example\.ts\.net/u);
     } finally {
       net.restore();
     }

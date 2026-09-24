@@ -1,17 +1,17 @@
 /**
  * 设置界面配置页的宿主半边。
  *
- * 配置页本身在浏览器里跑（`client/aperture.js`），它能读到的只有这里暴露的端点——与参考
- * 实现（`@xiaoyuyu6420/dsh-backup` 的 `backupPanel`）同一种做法：界面不直接碰宿主存储，
- * 所有读写都经自己的 Remote 命名空间往返，因此客户端半边不必注入设置传输，也不必知道设置
- * 文档长什么样。
+ * 配置页本身在浏览器里跑（`client/aperture.js`），这里只留下它读不到的那几样：最近一次刷新的
+ * 报告、立刻刷新，以及单个模型参数的写入。地址与同步开关**不在这里**——那两项就在页主递来的
+ * 设置表单快照里，配置页交给同一个 `form.mutate` 写，版本校验、冲突恢复都由设置接缝负责，
+ * 本文件不必再实现一遍；同一个命名空间上挂两条写路径，只会让「谁在什么时候写」说不清。
  *
- * 写入仍然是配置，所以它落在 `aperture` 命名空间的用户层：地址与同步开关用路径操作写，
- * 「撤销」是把字段从用户层移除、回落到缺省值。单个模型的参数也走这里，只是它们更
- * 零碎——容量、模态、推理、协议落在 `models` 的对应条目上，清单别名落在 `modelAliases[id]`，
- * 而写入是按字段合并的：界面没提到的字段原样留着（`reasoningEfforts` 界面根本不编辑，也不该
- * 被顺手抹掉）。报告与两个动作则不是配置——把发现的模型塞进设置文档会让「用户写了什么」与
- * 「插件发现了什么」混成同一份账，而后者每轮刷新都会被重写。
+ * 留下的这个写入口是模型参数，因为它们零碎：容量、模态、推理、协议落在 `models` 的对应条目上，
+ * 清单别名落在 `modelAliases[id]`，写入按字段合并——界面没提到的字段原样留着
+ * （`reasoningEfforts` 界面根本不编辑，也不该被顺手抹掉）。合并与校验都在这里做，因为写进设置
+ * 文档的坏值会让下一轮刷新的 `resolveConfig` 直接抛异常，那时用户已经在别处改坏了配置。
+ * 报告则不是配置：把发现的模型塞进设置文档会让「用户写了什么」与「插件发现了什么」混成同一份账，
+ * 而后者每轮刷新都会被重写。
  *
  * 端点都不抛异常：失败是界面要显示的结果之一，因此它是返回值里的字段，而不是需要配置页
  * 去分辨的 rejected promise。
@@ -57,18 +57,26 @@ export interface PanelAction {
   readonly summary: string;
 }
 
-/** 配置页表单要显示的东西。 */
-export interface PanelConfiguration {
-  /** 生效的实例地址（schema 默认值 → 组合层 → 用户层）。 */
-  readonly baseUrl: string;
-  /** 生效的同步开关。 */
-  readonly sync: boolean;
-  /** `baseUrl` 在用户层里有条目，也就是被覆盖了。 */
-  readonly baseUrlOverridden: boolean;
-  /** `sync` 在用户层里有条目。 */
-  readonly syncOverridden: boolean;
-  /** 设置文档是否接受写入；为假时表单只读。 */
-  readonly writable: boolean;
+/** 配置页可以调用的端点。 */
+export interface PanelOps {
+  /** 最近一次刷新做了什么；不触发任何工作。 */
+  status(): PanelReport;
+  /** 立刻重新发现并发布。 */
+  refresh(): Promise<PanelAction>;
+  /**
+   * 写入一个模型的参数。
+   *
+   * 一次只动一个模型：界面上一行一个「保存」，写下去的就只有那一行，版本校验也只管这一次
+   * 写入。没提到的字段原样留在设置文档里（界面根本不编辑的 `reasoningEfforts` 就不会被顺手
+   * 抹掉），空串与 `null` 都表示「这一项不覆盖」。写完等一轮重新发现落地才返回：报告里的
+   * 容量、模态、协议都是刷新算出来的事实，不等它就是「保存了却没变」。
+   *
+   * 地址与同步开关不走这里：那两项直接由配置页交给页主的设置表单（`form.mutate`）。
+   *
+   * @param id - 模型 id（Aperture 接受的那个）。
+   * @param patch - 要改的字段；`null` 表示撤销这个模型的全部覆盖（含别名）。
+   */
+  edit(id: string, patch: PanelModelPatch | null): Promise<PanelAction>;
 }
 
 /** 端点背后的东西。 */
@@ -81,44 +89,11 @@ export interface PanelDeps {
   readonly settings: SettingsForms;
 }
 
-/** 配置页可以调用的端点。 */
-export interface PanelOps {
-  /** 最近一次刷新做了什么；不触发任何工作。 */
-  status(): PanelReport;
-  /** 立刻重新发现并发布。 */
-  refresh(): Promise<PanelAction>;
-  /** 表单要显示的配置与「是否被覆盖」。 */
-  configuration(): PanelConfiguration;
-  /**
-   * 写入配置。
-   *
-   * 写完**等一轮重新发现落地**才返回：配置页拿到回答就会重读报告，而报告里的路由与模型事实
-   * 来自最近一次刷新，不等它就还是旧配置那一份。
-   *
-   * @param baseUrl - 新地址；`null` 表示恢复默认（从用户层移除），`undefined` 表示不碰。
-   * @param sync - 新开关；`null` 表示恢复默认，`undefined` 表示不碰。
-   */
-  save(baseUrl: string | null | undefined, sync: boolean | null | undefined): Promise<PanelAction>;
-  /**
-   * 写入一个模型的参数。
-   *
-   * 一次只动一个模型：界面上一行一个「保存」，写下去的就只有那一行，版本校验也只管这一次
-   * 写入。没提到的字段原样留在设置文档里（界面根本不编辑的 `reasoningEfforts` 就不会被顺手
-   * 抹掉），空串与 `null` 都表示「这一项不覆盖」。与 {@link save} 一样，写完等一轮重新发现
-   * 落地才返回。
-   *
-   * @param id - 模型 id（Aperture 接受的那个）。
-   * @param patch - 要改的字段；`null` 表示撤销这个模型的全部覆盖（含别名）。
-   */
-  edit(id: string, patch: PanelModelPatch | null): Promise<PanelAction>;
-}
-
 /** `aperture` 段的解析视图：生效值、用户层、以及写入要带上的版本号。 */
 interface ApertureSection {
   readonly value: Record<string, unknown>;
   readonly user: Record<string, unknown>;
   readonly revision: number | undefined;
-  readonly writable: boolean;
 }
 
 /** 把未知值当成一个普通对象；数组与 `null` 都不算。 */
@@ -188,7 +163,6 @@ function readSection(settings: SettingsForms): ApertureSection {
     value: asRecord(descriptor?.value),
     user: asRecord(descriptor?.user),
     revision: descriptor?.revision,
-    writable: settings.writable !== false,
   };
 }
 
@@ -253,16 +227,11 @@ function mergeEntry(
   return Object.keys(entry).some((key) => key !== 'id') ? { entry } : {};
 }
 
-/** 一个字段在用户层里有没有条目。 */
-function overridden(user: Record<string, unknown>, field: string): boolean {
-  return Object.prototype.hasOwnProperty.call(user, field);
-}
-
 /**
  * 组装端点。
  *
  * @param deps - 运行时、配置活引用与设置服务。
- * @returns 四个端点；`status` 与 `configuration` 是同步的，读一份已经算好的结果不该等待。
+ * @returns 三个端点；`status` 是同步的，读一份已经算好的结果不该等待。
  */
 export function createPanelOps(deps: PanelDeps): PanelOps {
   // 报告每次都按当前配置现组装：覆盖与别名本身是配置，改完必须立刻能在列表里看到。
@@ -277,51 +246,6 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
       return outcome.ok
         ? { ok: true, summary: '已重新发现并发布。' }
         : { ok: false, summary: `刷新没有成功：${outcome.error ?? '原因未知'}` };
-    },
-
-    configuration(): PanelConfiguration {
-      const section = readSection(deps.settings);
-      const config = deps.config();
-      return {
-        // 表单显示的是用户写的那个值（`rawBaseUrl`），不是归一化后的 `instanceRoot`：
-        // 把归一化结果回填进输入框，会让人以为自己写的地址被悄悄改掉了。
-        baseUrl: typeof section.value.baseUrl === 'string' ? section.value.baseUrl : config.rawBaseUrl,
-        sync: typeof section.value.sync === 'boolean' ? section.value.sync : config.sync,
-        baseUrlOverridden: overridden(section.user, 'baseUrl'),
-        syncOverridden: overridden(section.user, 'sync'),
-        writable: section.writable,
-      };
-    },
-
-    async save(baseUrl, sync): Promise<PanelAction> {
-      const ops: SettingsPathOp[] = [];
-      if (baseUrl === null) ops.push({ op: 'unset', path: ['baseUrl'] });
-      else if (baseUrl !== undefined) ops.push({ op: 'set', path: ['baseUrl'], value: baseUrl.trim() });
-      if (sync === null) ops.push({ op: 'unset', path: ['sync'] });
-      else if (sync !== undefined) ops.push({ op: 'set', path: ['sync'], value: sync });
-      if (ops.length === 0) return { ok: true, summary: '没有要保存的改动。' };
-
-      // 恢复默认是唯一一种「只移除、不写入」的保存，值得单独说一句。
-      const unsetOnly = ops.every((op) => op.op === 'unset');
-      try {
-        // 带着刚读到的版本号写入：期间有别人改过就拒绝，而不是覆盖他的改动。
-        await deps.settings.mutate(APERTURE_NAMESPACE, ops, readSection(deps.settings).revision);
-        // 写完等这一轮刷新落地再回答：配置页拿到回答就会重读报告，而报告里的模型事实来自最近
-        // 一次刷新——不等它，界面就会「保存了却没变」（地址换了，模型清单还是旧地址那一份）。
-        // 配置变更本身也会唤起同一轮刷新（Loader 的 `loader/volatile-update`），因此这里通常是
-        // 并进那一轮，而不是另跑一轮。
-        const outcome = await deps.runtime.refresh('配置变更');
-        // 写入成功了，但重新发现可能失败——两件事不能混成一句话说。
-        const wrote = unsetOnly ? '已恢复默认，回落到缺省值' : '已写入设置';
-        return {
-          ok: true,
-          summary: outcome.ok
-            ? `${wrote}，并按新配置重新发现。`
-            : `${wrote}，但重新发现没有成功：${outcome.error ?? '原因未知'}`,
-        };
-      } catch (error) {
-        return { ok: false, summary: `保存失败：${message(error)}` };
-      }
     },
 
     async edit(id, patch): Promise<PanelAction> {
@@ -391,10 +315,12 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
       if (ops.length === 0) return { ok: true, summary: '没有要保存的改动。' };
 
       try {
-        // 与 `save` 同一条路径：带着刚读到的版本号写入，期间别人改过就拒绝。
+        // 带着刚读到的版本号写入：期间别人改过就拒绝，而不是覆盖他的改动。
         await deps.settings.mutate(APERTURE_NAMESPACE, ops, section.revision);
-        // 等这一轮刷新落地再回答（理由见 `save`）：这一行的容量、模态、协议都是刷新算出来的
-        // 事实，不等它，配置页重读报告时看到的还是旧值——「保存了却没变」就是这么来的。
+        // 写完等这一轮刷新落地再回答：这一行的容量、模态、协议都是刷新算出来的事实，不等它，
+        // 配置页重读报告时看到的还是旧值——「保存了却没变」就是这么来的。配置变更自己也会唤起
+        // 同一轮刷新（Loader 的 `loader/volatile-update`），运行时的单飞判定按配置版本合并，
+        // 因此这里通常并进那一轮，而不是另跑一轮。
         const outcome = await deps.runtime.refresh('配置变更');
         const saved = revoked
           ? `已撤销 "${modelId}" 的全部覆盖，回落到发现值与清单`

@@ -4,8 +4,8 @@
  * 这一面是手工登记的：生成描述符的 Typert 生成器不随 DSH 发布，而两半边（这里与
  * `client/aperture.js`）共享同一组端点名，谁写错一个字都不会有编译期报错，只会在浏览器里
  * 安静地什么都不出现。因此这里钉住的是那份契约本身——端点 id 的文法与命名空间、参数的名字与
- * 顺序（网关按顺序位置传入，名字对不上就是把 `sync` 当成了地址）、编解码器的模式、以及端点名
- * 绝不能撞上 `RemoteNamespaceService` 的预置成员（撞上时注册表会撤回**整份**贡献）。
+ * 顺序（网关按顺序位置传入，名字对不上就是把 `patch` 当成了模型 id）、编解码器的模式、以及
+ * 端点名绝不能撞上 `RemoteNamespaceService` 的预置成员（撞上时注册表会撤回**整份**贡献）。
  *
  * 宿主服务那半边只剩委托：`AperturePanelService` 的每个方法都必须原样把参数交给注入的
  * `PanelOps` 并原样返回它的结果，不加解释、不吞异常——配置页看到的每一句话都来自 `ops`。
@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Context } from '@deepseek-ai/cordis';
 import type { InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol';
-import type { PanelAction, PanelConfiguration, PanelOps } from '../src/panel.ts';
+import type { PanelAction, PanelOps } from '../src/panel.ts';
 import type { PanelReport } from '../src/report.ts';
 import {
   AperturePanelService,
@@ -28,7 +28,7 @@ import {
 } from '../src/remote.ts';
 
 /** 端点的宿主方法名，顺序与 `PANEL_INVOCATIONS` 一致。 */
-const METHODS = ['status', 'refresh', 'configuration', 'save', 'edit'] as const;
+const METHODS = ['status', 'refresh', 'edit'] as const;
 
 /** 其中一个端点方法名。 */
 type PanelMethod = (typeof METHODS)[number];
@@ -87,12 +87,10 @@ function recordingOps(): {
   calls: Array<{ method: string; args: readonly unknown[] }>;
   report: PanelReport;
   action: PanelAction;
-  configuration: PanelConfiguration;
 } {
   const calls: Array<{ method: string; args: readonly unknown[] }> = [];
   const report = { marker: 'report' } as unknown as PanelReport;
   const action: PanelAction = { ok: true, summary: '替身给的回答' };
-  const configuration = { marker: 'configuration' } as unknown as PanelConfiguration;
 
   const ops: PanelOps = {
     status(): PanelReport {
@@ -103,20 +101,12 @@ function recordingOps(): {
       calls.push({ method: 'refresh', args: [] });
       return action;
     },
-    configuration(): PanelConfiguration {
-      calls.push({ method: 'configuration', args: [] });
-      return configuration;
-    },
-    async save(baseUrl, sync): Promise<PanelAction> {
-      calls.push({ method: 'save', args: [baseUrl, sync] });
-      return action;
-    },
     async edit(id, patch): Promise<PanelAction> {
       calls.push({ method: 'edit', args: [id, patch] });
       return action;
     },
   };
-  return { ops, calls, report, action, configuration };
+  return { ops, calls, report, action };
 }
 
 /**
@@ -143,7 +133,7 @@ describe('PANEL_INVOCATIONS 的端点身份', () => {
     assert.deepEqual(
       PANEL_INVOCATIONS.map((entry) => entry.method),
       [...METHODS],
-      '端点表就是宿主服务的五个方法，顺序也一样',
+      '端点表就是宿主服务的三个方法，顺序也一样',
     );
 
     for (const entry of PANEL_INVOCATIONS) {
@@ -154,7 +144,7 @@ describe('PANEL_INVOCATIONS 的端点身份', () => {
       assert.equal(entry.namespace, PANEL_NAMESPACE, `${entry.method} 的线上命名空间`);
       assert.deepEqual(entry.invocation, { kind: 'direct' }, `${entry.method} 是直调，没有作用域`);
       assert.equal(entry.implementation, undefined, '端点名就是实例方法名，不需要别名');
-      assert.equal(entry.mode, undefined, '五个端点都是一元的：没有流式端点');
+      assert.equal(entry.mode, undefined, '三个端点都是一元的：没有流式端点');
       assert.equal(entry.cancellation, undefined, '没有端点读取消信号');
     }
 
@@ -164,7 +154,6 @@ describe('PANEL_INVOCATIONS 的端点身份', () => {
   it('参数表与宿主方法的形参同名、同序', () => {
     // 网关按描述符顺序位置传入，名字只用于拼 wire 的 `args`；两处任何一处错位都表现为
     // 「界面保存了，但写进去的是另一个字段」。
-    assert.deepEqual(formalParameters('save'), ['baseUrl', 'sync']);
     assert.deepEqual(formalParameters('edit'), ['id', 'patch']);
 
     for (const method of METHODS) {
@@ -181,9 +170,8 @@ describe('PANEL_INVOCATIONS 的端点身份', () => {
       assert.equal(entry.parameters.length, AperturePanelService.prototype[method].length, `${method} 的参数个数`);
     }
 
-    assert.deepEqual(descriptorOf('save').parameters.map((parameter) => parameter.wire), ['baseUrl', 'sync']);
     assert.deepEqual(descriptorOf('edit').parameters.map((parameter) => parameter.wire), ['id', 'patch']);
-    for (const method of ['status', 'refresh', 'configuration'] as const) {
+    for (const method of ['status', 'refresh'] as const) {
       assert.deepEqual(descriptorOf(method).parameters, [], `${method} 不收任何参数`);
     }
   });
@@ -222,7 +210,7 @@ describe('PANEL_CONTRIBUTION', () => {
 });
 
 describe('AperturePanelService', () => {
-  it('五个方法一一委托给 PanelOps，原样传参并原样返回', async () => {
+  it('三个方法一一委托给 PanelOps，原样传参并原样返回', async () => {
     const recorded = recordingOps();
     const { ctx } = stubContext();
     const panel = new AperturePanelService(ctx, recorded.ops);
@@ -230,19 +218,13 @@ describe('AperturePanelService', () => {
 
     assert.equal(panel.status(), recorded.report, 'status 原样返回 ops 的报告');
     assert.equal(await panel.refresh(), recorded.action, 'refresh 原样返回 ops 的结论');
-    assert.equal(panel.configuration(), recorded.configuration, 'configuration 原样返回 ops 的配置');
-    assert.equal(await panel.save('https://new.example.ts.net', false), recorded.action);
-    // 三种「没给」必须原样透传：`null` 是恢复默认、`undefined` 是不碰，服务这一层不许把它们归一化。
-    assert.equal(await panel.save(null, undefined), recorded.action);
     assert.equal(await panel.edit('deepseek-flash', patch), recorded.action);
+    // `null` 是「撤销这个模型的全部覆盖」，缺失是调用方写错了：服务这一层不许把它归一化。
     assert.equal(await panel.edit('deepseek-flash', null), recorded.action);
 
     assert.deepEqual(recorded.calls, [
       { method: 'status', args: [] },
       { method: 'refresh', args: [] },
-      { method: 'configuration', args: [] },
-      { method: 'save', args: ['https://new.example.ts.net', false] },
-      { method: 'save', args: [null, undefined] },
       { method: 'edit', args: ['deepseek-flash', patch] },
       { method: 'edit', args: ['deepseek-flash', null] },
     ]);

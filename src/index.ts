@@ -59,7 +59,7 @@ export {
 } from './config.ts';
 export type { Config as ApertureConfig, ConfigRef, ResolvedConfig } from './config.ts';
 export { createPanelOps } from './panel.ts';
-export type { PanelAction, PanelConfiguration, PanelDeps, PanelModelPatch, PanelOps } from './panel.ts';
+export type { PanelAction, PanelDeps, PanelModelPatch, PanelOps } from './panel.ts';
 export { buildReport } from './report.ts';
 export type { DeclaredOverrides, PanelModel, PanelRefresh, PanelReport, PanelRoute } from './report.ts';
 export { DEFAULT_PLACEHOLDER_CREDENTIAL, buildProfilePlan } from './profile.ts';
@@ -167,9 +167,9 @@ export function apply(ctx: Context, config: ConfigRef): void {
   // 值全部补齐），所以第一轮刷新看到的就是生效配置，不必先按组合层跑一遍再补一遍去对齐。
   void runtime.refresh('插件加载');
 
-  // 配置页需要宿主半边的 Remote 面（报告、配置读写、立刻刷新），而
-  // Typert 注册表只有 Web 这类装配了网关的 profile 才有。其余 profile 里这一整块被跳过：
-  // 发现照常运行，只是没有可点按的界面。
+  // 配置页需要宿主半边的 Remote 面（报告、按行写模型参数、立刻刷新），而 Typert 注册表只有
+  // Web 这类装配了网关的 profile 才有。其余 profile 里这一整块被跳过：发现照常运行，只是没有
+  // 可点按的界面。
   ctx.inject(['typert'], (panelCtx) => {
     const ops = createPanelOps({ runtime, config: readConfig, settings: ctx.settings });
     panelCtx.effect(() => panelCtx.typert.register(PANEL_CONTRIBUTION), 'aperture panel invocations');

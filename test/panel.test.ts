@@ -1,10 +1,13 @@
 /**
- * 配置页背后的五个端点。
+ * 配置页背后的三个端点。
  *
  * 配置页本身在浏览器里，无法在这里执行；能在这里钉住的是它依赖的那份契约：报告是结构化数据
  * （哪个模型属于哪条路由、每条事实来自哪里、用户写了哪些覆盖），刷新用界面这个来源触发，
- * 配置读写落在 `aperture` 段并带上版本号，模型的参数按字段合并且非法值在写入前就被挡下来，
- * 并且五个端点都不抛异常——失败是要显示的结果，不是要分辨的 rejection。
+ * 模型参数写进 `aperture` 段并带上版本号、按字段合并且非法值在写入前就被挡下来，并且三个端点
+ * 都不抛异常——失败是要显示的结果，不是要分辨的 rejection。
+ *
+ * 地址与同步开关不在这份契约里：那两项由配置页交给页主递来的设置表单（`form.mutate`），
+ * 版本校验与冲突恢复都是设置接缝自己的事（浏览器半边的用例在 `test/client.test.ts`）。
  *
  * @module dsh-aperture/test/panel
  */
@@ -81,12 +84,11 @@ interface FakeAperture {
 /** 一个记录写入的设置服务。 */
 function fakeSettings(
   value: unknown,
-  options: { fail?: string; aperture?: FakeAperture; writable?: boolean } = {},
+  options: { fail?: string; aperture?: FakeAperture } = {},
 ) {
   const writes: Write[] = [];
   let revision = 1;
   const service = {
-    writable: options.writable ?? true,
     describe: () => [
       { ns: 'llm-pi-ai', revision, value },
       ...(options.aperture === undefined
@@ -148,7 +150,6 @@ function liveSettings(options: { baseUrl?: string; models?: unknown[] } = {}) {
   let notify: (() => void) | undefined;
 
   const service = {
-    writable: true,
     describe: () => [{ ns: 'aperture', revision, value: section, user }],
     mutate: async (_ns: string, ops: readonly SettingsPathOp[]): Promise<void> => {
       const next = { ...section };
@@ -193,13 +194,11 @@ function panel(overrides: Partial<PanelDeps> & {
   settingsValue?: unknown;
   settingsFail?: string;
   aperture?: FakeAperture;
-  writable?: boolean;
 } = {}) {
   const { runtime, triggers } = fakeRuntime(overrides.first, overrides.next);
   const { service, writes } = fakeSettings(overrides.settingsValue ?? { providers: {} }, {
     fail: overrides.settingsFail,
     aperture: overrides.aperture,
-    writable: overrides.writable,
   });
   const ops = createPanelOps({
     runtime: overrides.runtime ?? runtime,
@@ -319,90 +318,6 @@ describe('panel.status', () => {
     assert.equal(models[1]?.route, undefined);
     assert.equal(models[1]?.protocol, undefined);
     assert.deepEqual(models[1]?.endpoints, ['/v1beta/models/gemini-2.5-flash:generateContent']);
-  });
-});
-
-describe('panel.configuration', () => {
-  it('命名空间还没注册时回落到生效配置，并如实说「没有覆盖」', () => {
-    const { ops } = panel();
-    const configuration = ops.configuration();
-    assert.deepEqual(configuration, {
-      baseUrl: 'https://ai.example.ts.net',
-      sync: true,
-      baseUrlOverridden: false,
-      syncOverridden: false,
-      writable: true,
-    });
-  });
-
-  it('「被覆盖」看的是用户层里有没有这个字段', () => {
-    const { ops } = panel({
-      aperture: { value: { baseUrl: 'https://user.example.ts.net', sync: false }, user: { baseUrl: 'https://user.example.ts.net' } },
-    });
-    const configuration = ops.configuration();
-    assert.equal(configuration.baseUrl, 'https://user.example.ts.net');
-    assert.equal(configuration.sync, false);
-    assert.equal(configuration.baseUrlOverridden, true);
-    assert.equal(configuration.syncOverridden, false, 'sync 不在用户层里，即使它和默认值不同');
-  });
-
-  it('设置文档不接受写入时转达出去', () => {
-    const { ops } = panel({ writable: false });
-    assert.equal(ops.configuration().writable, false);
-  });
-});
-
-describe('panel.save', () => {
-  it('把草稿写进 aperture 段，并带上刚读到的版本号', async () => {
-    const { ops, writes } = panel({ aperture: { value: {}, user: {}, revision: 9 } });
-    const action = await ops.save('https://new.example.ts.net', false);
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /已写入设置/u);
-    assert.deepEqual(writes, [{
-      ns: 'aperture',
-      ops: [
-        { op: 'set', path: ['baseUrl'], value: 'https://new.example.ts.net' },
-        { op: 'set', path: ['sync'], value: false },
-      ],
-      expectedRevision: 9,
-    }]);
-  });
-
-  it('地址两端的多余空白不写进设置', async () => {
-    const { ops, writes } = panel({ aperture: { value: {}, user: {} } });
-    await ops.save('  https://new.example.ts.net  ', undefined);
-    assert.deepEqual(writes[0]?.ops, [{ op: 'set', path: ['baseUrl'], value: 'https://new.example.ts.net' }]);
-  });
-
-  it('null 表示恢复默认：只移除字段，不动别的', async () => {
-    const { ops, writes } = panel({ aperture: { value: {}, user: { baseUrl: 'https://user.example.ts.net' } } });
-    const action = await ops.save(null, undefined);
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /恢复默认/u);
-    assert.deepEqual(writes[0]?.ops, [{ op: 'unset', path: ['baseUrl'] }]);
-  });
-
-  it('同步开关也能恢复默认，而且不会顺手把地址一起撤掉', async () => {
-    const { ops, writes } = panel({ aperture: { value: { sync: false }, user: { sync: false } } });
-    const action = await ops.save(undefined, null);
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /恢复默认/u);
-    assert.deepEqual(writes[0]?.ops, [{ op: 'unset', path: ['sync'] }]);
-  });
-
-  it('两个参数都没给时不写设置，也不算失败', async () => {
-    const { ops, writes } = panel();
-    const action = await ops.save(undefined, undefined);
-    assert.equal(action.ok, true);
-    assert.match(action.summary, /没有要保存的改动/u);
-    assert.deepEqual(writes, []);
-  });
-
-  it('写入被拒绝时返回失败原因', async () => {
-    const { ops } = panel({ aperture: { value: {}, user: {} }, settingsFail: '设置文档刚被别人改过' });
-    const action = await ops.save('https://new.example.ts.net', undefined);
-    assert.equal(action.ok, false);
-    assert.match(action.summary, /设置文档刚被别人改过/u);
   });
 });
 
@@ -655,7 +570,7 @@ describe('panel.refresh', () => {
 });
 
 describe('写完等一轮刷新落地', () => {
-  it('保存之后重读报告，拿到的是新配置算出来的那一份', async () => {
+  it('模型参数写完之后重读报告，拿到的是新配置算出来的那一份', async () => {
     const original = globalThis.fetch;
     // 让发现慢一拍：不等刷新的实现会在这里露出来——它返回时报告还是旧的那一份，而配置页
     // 拿到回答就会重读，于是「保存了却没变」。
@@ -683,10 +598,6 @@ describe('写完等一轮刷新落地', () => {
 
       await ops.edit('m', { contextWindow: 2000 });
       assert.equal(ops.status().models[0]?.contextWindow, 2000);
-
-      // 地址同理：路由的 baseURL 是刷新算出来的事实。
-      await ops.save('https://other.example.ts.net', true);
-      assert.match(ops.status().routes[0]?.baseURL ?? '', /other\.example\.ts\.net/u);
     } finally {
       globalThis.fetch = original;
     }

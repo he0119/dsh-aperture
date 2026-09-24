@@ -4,7 +4,7 @@
  * 这个文件不走打包器，因此没有编译器替它检查「握手 id 对不对」「端点与宿主是否同名」
  * 「字典是不是双语齐备」「配置页注册在哪个槽位上」。用例把这些逐个钉住，然后更进一步：
  * 用 `support/mini-react.ts` 真的把配置页渲染出来，走一遍
- * 挂载 → 拉配置 → 改地址 → 保存 → 读报告 的路径。
+ * 挂载 → 读设置快照 → 改地址 → 保存 → 读报告 的路径；页主没递来快照那条路也走一遍。
  *
  * 渲染次数也在被钉住的范围内：注入面每轮渲染都是新对象，effect 依赖一旦写到它上面就会
  * 自激循环——那正是「界面装上了但动不了」这类故障的常见形态。
@@ -72,9 +72,35 @@ interface Registration {
 interface PanelFace {
   status: () => Promise<Report>;
   refresh: () => Promise<{ ok: boolean; summary: string }>;
-  configuration: () => Promise<Configuration>;
-  save: (baseUrl?: string | null, sync?: boolean) => Promise<{ ok: boolean; summary: string }>;
   edit: (id: string, patch: ModelPatch | null) => Promise<{ ok: boolean; summary: string }>;
+}
+
+/** 页主随 `form` 交出来的路径操作（`SettingsPathOp`）。 */
+interface SettingsOp {
+  op: 'set' | 'unset';
+  path: readonly string[];
+  value?: unknown;
+}
+
+/**
+ * 页主随 `form` 交出来的设置快照。
+ *
+ * 只列这一页真的会读的字段：`value` 是生效值、`user` 是用户层、`revision` 是写入要带上的版本
+ * 号、`writable` 说这份文档收不收写入。真的接缝给的字段比这多（`base`、`mode` 等），但这一页
+ * 不该依赖它们。
+ */
+interface SectionState {
+  status: 'loading' | 'ready' | 'unavailable';
+  value?: { baseUrl?: unknown; sync?: unknown };
+  user?: Record<string, unknown>;
+  revision: number;
+  writable?: boolean;
+}
+
+/** 页主交出来的配置读写面（`ConfigPageForm` 里这一页用得着的两样）。 */
+interface FormFace {
+  state: SectionState;
+  mutate: (ops: readonly SettingsOp[], revision?: number) => Promise<boolean>;
 }
 
 /** 界面为单个模型发出去的补丁。 */
@@ -168,22 +194,13 @@ function report(overrides: Partial<Report> = {}): Report {
   };
 }
 
-/** 配置端点返回的形状。 */
-interface Configuration {
-  baseUrl: string;
-  sync: boolean;
-  baseUrlOverridden: boolean;
-  syncOverridden: boolean;
-  writable: boolean;
-}
-
-/** 假宿主返回的配置。 */
-function configuration(overrides: Partial<Configuration> = {}): Configuration {
+/** 页主交出来的设置快照；默认是「地址来自用户层、同步跟随缺省」。 */
+function section(overrides: Partial<SectionState> = {}): SectionState {
   return {
-    baseUrl: 'https://ai.example.ts.net',
-    sync: true,
-    baseUrlOverridden: true,
-    syncOverridden: false,
+    status: 'ready',
+    value: { baseUrl: 'https://ai.example.ts.net', sync: true },
+    user: { baseUrl: 'https://ai.example.ts.net' },
+    revision: 4,
     writable: true,
     ...overrides,
   };
@@ -208,13 +225,15 @@ interface Harness {
   readonly slotInjections: string[];
   readonly styles: Array<{ mark: string | null; css: string; removed: boolean }>;
   readonly panelCalls: string[];
-  readonly saveCalls: Array<[string | null | undefined, boolean | undefined]>;
+  readonly writes: Array<{ ops: readonly SettingsOp[]; revision: number | undefined }>;
   readonly editCalls: Array<[string, ModelPatch | null]>;
 }
 
 /** 一份可调的假端点集合。 */
 interface FakePanelOptions {
-  configuration?: Partial<Configuration>;
+  section?: Partial<SectionState>;
+  /** `form.mutate` 的回答；`false` 就是「这一笔没被收下」。 */
+  refused?: boolean;
   summary?: string;
   fails?: string;
   report?: Report;
@@ -222,7 +241,6 @@ interface FakePanelOptions {
 
 /** 建一个假 `aperturePanel` 命名空间，并记录调用。 */
 function fakeNamespace(harness: Harness, options: FakePanelOptions = {}) {
-  const config = configuration(options.configuration);
   const summary = options.summary ?? '已重新发现并发布。';
   const action = { ok: true, summary };
   return {
@@ -233,23 +251,33 @@ function fakeNamespace(harness: Harness, options: FakePanelOptions = {}) {
       }
       return { ok: true, value: options.report ?? report() };
     },
-    configuration: async () => {
-      harness.panelCalls.push('configuration');
-      return { ok: true, value: config };
-    },
     refresh: async () => {
       harness.panelCalls.push('refresh');
-      return { ok: true, value: action };
-    },
-    save: async (baseUrl?: string | null, sync?: boolean) => {
-      harness.panelCalls.push('save');
-      harness.saveCalls.push([baseUrl, sync]);
       return { ok: true, value: action };
     },
     edit: async (id: string, patch: ModelPatch | null) => {
       harness.panelCalls.push('edit');
       harness.editCalls.push([id, patch]);
       return { ok: true, value: action };
+    },
+  };
+}
+
+/**
+ * 建一个假 `form`：读的是给定的快照，写下来的每一笔都记账。
+ *
+ * `mutate` 的签名与设置接缝一致：第二项是期望版本号，返回是否被收下。
+ *
+ * @param harness - 记账容器。
+ * @param options - 快照覆盖与是否拒绝写入。
+ * @returns 页主会交出来的那个 `form`。
+ */
+function fakeForm(harness: Harness, options: FakePanelOptions = {}): FormFace {
+  return {
+    state: section(options.section),
+    mutate: async (ops: readonly SettingsOp[], revision?: number) => {
+      harness.writes.push({ ops, revision });
+      return options.refused !== true;
     },
   };
 }
@@ -319,7 +347,7 @@ function loadClient(): Harness {
     slotInjections: [],
     styles,
     panelCalls: [],
-    saveCalls: [],
+    writes: [],
     editCalls: [],
   };
 }
@@ -327,13 +355,14 @@ function loadClient(): Harness {
 /**
  * 驱动一次 `apply`，并把作用域回调也走完。
  *
- * @param options - 假端点选项。
+ * @param options - 假端点与假设置快照选项。
  * @param view - 页主问的那一种视图：`page` 要整块内容，`summary` 只要一行字。
  * @returns 记账容器、注入面、替身、配置页组件与元素工厂。
  */
 function driveClient(options: FakePanelOptions = {}, view: 'page' | 'summary' = 'page'): {
   harness: Harness;
   face: PanelFace;
+  form: FormFace;
   mini: MiniReact;
   component: Registration['component'];
   element: unknown;
@@ -341,6 +370,7 @@ function driveClient(options: FakePanelOptions = {}, view: 'page' | 'summary' = 
 } {
   const harness = loadClient();
   const mini = harness.mini;
+  const form = fakeForm(harness, options);
 
   const ctx = {
     effect: (fn: () => unknown, label: string) => {
@@ -393,10 +423,12 @@ function driveClient(options: FakePanelOptions = {}, view: 'page' | 'summary' = 
   return {
     harness,
     face: registration.options.inject().panel,
+    form,
     mini,
     component: registration.component,
     element: mini.createElement(registration.component, {
       panel: registration.options.inject().panel,
+      form,
       t,
       view,
     }),
@@ -491,7 +523,7 @@ describe('浏览器半边', () => {
     const { harness } = driveClient();
     await new Promise((resolve) => setImmediate(resolve));
     const descriptors = harness.mounted?.descriptors ?? [];
-    assert.equal(descriptors.length, 5);
+    assert.equal(descriptors.length, 3);
     for (const descriptor of descriptors) {
       // 注册表（@deepseek-ai/dsh-typert-registry）只认这三样：`mode: 'strict'`、非空
       // `typeSymbol`、以及一个返回 `{ parse }` 的 `create` 工厂。拿一个 `schema` 字段顶替会
@@ -520,7 +552,6 @@ describe('浏览器半边', () => {
     };
     assert.deepEqual(names('status'), []);
     assert.deepEqual(names('refresh'), []);
-    assert.deepEqual(names('save'), ['baseUrl', 'sync']);
     assert.deepEqual(names('edit'), ['id', 'patch']);
   });
 
@@ -675,7 +706,7 @@ describe('浏览器半边', () => {
 
     // 地址空着：它是休眠的根因，因此标题说地址，不说刷新。
     const dormant = driveClient({
-      configuration: { baseUrl: '' },
+      section: { value: { baseUrl: '', sync: true } },
       report: report({ refresh: { ...refresh, ok: false, error: '网关不可达' } }),
     });
     dormant.mini.mount(dormant.element);
@@ -885,7 +916,7 @@ describe('浏览器半边', () => {
 
     assert.match(text(mini.tree()), /正在读取状态/u);
     await mini.flush();
-    assert.deepEqual([...harness.panelCalls].sort(), ['configuration', 'status']);
+    assert.deepEqual([...harness.panelCalls].sort(), ['status'], '配置来自页主递来的快照，不再单独问宿主');
     const tree = mini.tree();
     assert.equal(findById(tree, 'dap-base-url').props.value, 'https://ai.example.ts.net');
     assert.equal(findById(tree, 'dap-sync').props.checked, true);
@@ -898,12 +929,15 @@ describe('浏览器半边', () => {
     for (const deps of mini.hookDeps()) {
       if (deps === undefined) continue;
       for (const dep of deps) {
-        assert.equal(typeof dep, 'number', `effect 依赖里出现了非原始值：${String(dep)}`);
+        assert.ok(
+          ['number', 'string', 'boolean'].includes(typeof dep),
+          `effect 依赖里出现了非原始值：${String(dep)}`,
+        );
       }
     }
   });
 
-  it('改地址后保存，把草稿原样交给端点', async () => {
+  it('改地址后保存：只发改动过的那一项，带上快照的版本号，并等一轮重新发现', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
@@ -915,13 +949,18 @@ describe('浏览器半边', () => {
     click(save);
     await mini.flush();
 
-    assert.deepEqual(harness.saveCalls, [['https://new.example.ts.net', true]]);
-    assert.match(text(mini.tree()), /已重新发现并发布/u);
-    assert.ok(harness.panelCalls.filter((call) => call === 'configuration').length >= 2, '保存后应重读配置');
+    // 没动的 `sync` 不出现在操作里：它因此在设置文档里原样留着，不会被这次保存顺手写一遍。
+    assert.deepEqual(plain(harness.writes), [{
+      ops: [{ op: 'set', path: ['baseUrl'], value: 'https://new.example.ts.net' }],
+      revision: 4,
+    }]);
+    // 写完必须等一轮：报告里的路由与模型事实来自最近一次刷新，不等它就是「保存了却没变」。
+    assert.ok(harness.panelCalls.includes('refresh'), '写入之后应当唤起一轮发现');
+    assert.match(text(mini.tree()), /已写入设置；那一轮重新发现：已重新发现并发布/u);
   });
 
-  it('「恢复默认」明确传 null：地址与同步开关各撤各的', async () => {
-    const { mini, harness, element } = driveClient({ configuration: { syncOverridden: true } });
+  it('「恢复默认」发的是 unset：地址与同步开关各撤各的', async () => {
+    const { mini, harness, element } = driveClient({ section: { user: { baseUrl: 'https://ai.example.ts.net', sync: true } } });
     mini.mount(element);
     await mini.flush();
 
@@ -941,11 +980,12 @@ describe('浏览器半边', () => {
 
     click(resets[0]!);
     await mini.flush();
-    assert.deepEqual(harness.saveCalls, [[null, undefined]], '地址那颗只撤地址');
+    assert.deepEqual(plain(harness.writes[0]?.ops), [{ op: 'unset', path: ['baseUrl'] }], '地址那颗只撤地址');
 
     click(findAll(mini.tree(), (node) => node.props.className === 'dap-reset')[1]!);
     await mini.flush();
-    assert.deepEqual(harness.saveCalls[1], [undefined, null], '开关那颗只撤开关');
+    assert.deepEqual(plain(harness.writes[1]?.ops), [{ op: 'unset', path: ['sync'] }], '开关那颗只撤开关');
+    assert.match(text(mini.tree()), /已恢复默认，回落到缺省值/u);
   });
 
   it('同步开关与立即刷新各自打到对应端点', async () => {
@@ -957,21 +997,50 @@ describe('浏览器半边', () => {
     await mini.flush();
     click(findButton(mini.tree(), '保存'));
     await mini.flush();
-    assert.deepEqual(harness.saveCalls[0], ['https://ai.example.ts.net', false]);
+    assert.deepEqual(plain(harness.writes[0]?.ops), [{ op: 'set', path: ['sync'], value: false }]);
 
     click(findButton(mini.tree(), '立即刷新'));
     await mini.flush();
     assert.ok(harness.panelCalls.includes('refresh'));
   });
 
+  it('设置服务拒收这一笔时如实说出来，不假装写成功', async () => {
+    const { mini, harness, element } = driveClient({ refused: true });
+    mini.mount(element);
+    await mini.flush();
+
+    change(findById(mini.tree(), 'dap-base-url'), 'https://new.example.ts.net');
+    await mini.flush();
+    click(findButton(mini.tree(), '保存'));
+    await mini.flush();
+
+    assert.equal(harness.writes.length, 1, '写入确实发出去了');
+    assert.match(text(mini.tree()), /写入被设置服务拒绝/u);
+    assert.ok(!harness.panelCalls.includes('refresh'), '没写进去就不该假装刷新过');
+  });
+
   it('设置文档只读时表单禁用并说明原因', async () => {
-    const { mini, element } = driveClient({ configuration: { writable: false } });
+    const { mini, element } = driveClient({ section: { writable: false } });
     mini.mount(element);
     await mini.flush();
 
     const tree = mini.tree();
     assert.equal(findById(tree, 'dap-base-url').props.disabled, true);
     assert.match(text(tree), /不接受写入/u);
+  });
+
+  it('页主没递来设置快照时只显示发现结果，不假装读到了配置', async () => {
+    const { mini, harness, component, face, t } = driveClient();
+    mini.mount(mini.createElement(component, { panel: face, t, view: 'page' }));
+    await mini.flush();
+
+    const tree = mini.tree();
+    assert.equal(findAll(tree, (node) => node.props.id === 'dap-base-url').length, 0, '没有快照就没有地址输入框');
+    assert.match(text(tree), /只显示发现结果/u);
+    // 报告照常：缺一份设置快照不该让整页停在「正在读取」，也不该把卡头那颗点说得像没有地址。
+    assert.ok(harness.panelCalls.includes('status'));
+    assert.match(text(tree), /最近一次刷新/u);
+    assert.equal(findAll(tree, (node) => node.props.className === 'dap-dot')[0]?.props['data-state'], 'ok');
   });
 
   it('状态段把一次刷新决定了什么摊成一行一项', async () => {

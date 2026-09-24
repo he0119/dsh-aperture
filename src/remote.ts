@@ -15,7 +15,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry';
-import type { PanelAction, PanelConfiguration, PanelModelPatch, PanelOps } from './panel.ts';
+import type { PanelAction, PanelModelPatch, PanelOps } from './panel.ts';
 import type { PanelReport } from './report.ts';
 
 /** 包名，同时是端点 id 的前缀。 */
@@ -56,8 +56,6 @@ function panelDescriptor(method: string, parameters: readonly string[] = []): In
 export const PANEL_INVOCATIONS: readonly InvocationDescriptor[] = [
   panelDescriptor('status'),
   panelDescriptor('refresh'),
-  panelDescriptor('configuration'),
-  panelDescriptor('save', ['baseUrl', 'sync']),
   panelDescriptor('edit', ['id', 'patch']),
 ];
 
@@ -79,7 +77,7 @@ export const PANEL_CONTRIBUTION: TypertContribution = {
 /**
  * `aperturePanel` 宿主服务：方法与描述符一一对应，实现全部委托给 {@link PanelOps}。
  *
- * 方法签名必须与描述符的参数顺序一致——`save` 的两个形参名字与描述符里的两个参数同名，
+ * 方法签名必须与描述符的参数顺序一致——`edit` 的两个形参名字与描述符里的两个参数同名，
  * 顺序也相同，网关就是按描述符顺序把 wire 参数位置传入的。
  */
 export class AperturePanelService extends TypertRemoteService {
@@ -102,22 +100,6 @@ export class AperturePanelService extends TypertRemoteService {
   /** 立刻重新发现并发布。 */
   refresh(): Promise<PanelAction> {
     return this.ops.refresh();
-  }
-
-  /** 配置页表单要显示的配置。 */
-  configuration(): PanelConfiguration {
-    return this.ops.configuration();
-  }
-
-  /**
-   * 写入配置。
-   *
-   * @param baseUrl - 新地址；`null` 恢复默认，`undefined` 不碰。
-   * @param sync - 新开关；`null` 恢复默认，`undefined` 不碰。
-   * @returns 成败与一句人话。
-   */
-  save(baseUrl: string | null | undefined, sync: boolean | null | undefined): Promise<PanelAction> {
-    return this.ops.save(baseUrl, sync);
   }
 
   /**

@@ -5,11 +5,11 @@
  *
  * - 用 `plugins.row.config` 注册一个**键控槽位**，键是 `<包名>#<行 id>`（`dsh-aperture#aperture`）：
  *   插件页那一行由此长出「配置」入口，配置页由页面自己画标题、图标与面包屑，本模块只交内容；
- * - 注入面只有 `slots` / `locale` / `remote` 三个服务，**不注入设置传输**——配置读写与
- *   发现结果一样，都经自己的 `aperturePanel` Remote 命名空间往返，页面因此不关心设置
- *   文档长什么样（页主交过来的 `form` 也不用，理由见 `ApertureRowConfig`）；
- * - 组件只拿 `panel`（端点集合）与 `t`（字典，因为注册时声明了 `locale`），外加页主交过来的
- *   `view`（`summary` 要一行字，`page` 要整块内容）。
+ * - 注入面只有 `slots` / `locale` / `remote` 三个服务：报告与「立刻刷新」经自己的 `aperturePanel`
+ *   Remote 往返，而**配置本身的读写走页主递来的 `form`**（`ConfigPageForm`：设置接缝的活快照 +
+ *   带版本号校验的 `mutate`），因此地址与开关这两项不必自己再实现一遍版本、冲突与恢复；
+ * - 组件拿 `panel`（报告端点）、`form`（配置读写面）与 `t`（字典，因为注册时声明了 `locale`），
+ *   外加页主交过来的 `view`（`summary` 要一行字，`page` 要整块内容）。
  *
  * **这个文件就是构建产物。** DSH 的客户端模块系统只要求一个经典脚本，用
  * `window.__ModuleLoader__.load({ id, factory })` 的握手把自己报上去；它不要求这份脚本
@@ -96,8 +96,6 @@ window.__ModuleLoader__.load({
       descriptors: Object.freeze([
         descriptor('status'),
         descriptor('refresh'),
-        descriptor('configuration'),
-        descriptor('save', ['baseUrl', 'sync']),
         descriptor('edit', ['id', 'patch']),
       ]),
     });
@@ -304,6 +302,10 @@ window.__ModuleLoader__.load({
       refresh: '立即刷新',
       refreshing: '正在发现…',
       readOnly: '当前设置文档不接受写入，表单只读。',
+      configUnavailable: '这一页读不到设置快照，因此只显示发现结果。',
+      configSaved: '已写入设置；那一轮重新发现：{result}',
+      configReset: '已恢复默认，回落到缺省值；那一轮重新发现：{result}',
+      configRefused: '写入被设置服务拒绝（多半是期间别处改过配置）；刷新后重试。',
 
       statusHeading: '最近一次刷新',
       noAddress: '未配置地址',
@@ -404,6 +406,10 @@ window.__ModuleLoader__.load({
       refresh: 'Refresh now',
       refreshing: 'Discovering…',
       readOnly: 'This deployment does not accept settings writes, so the form is read-only.',
+      configUnavailable: 'This page cannot read the settings snapshot, so only the discovery report is shown.',
+      configSaved: 'Written to settings; that rediscovery round: {result}',
+      configReset: 'Reset to default; that rediscovery round: {result}',
+      configRefused: 'The settings service refused the write (usually because the configuration changed elsewhere); refresh and try again.',
 
       statusHeading: 'Last refresh',
       noAddress: 'no address configured',
@@ -545,6 +551,19 @@ window.__ModuleLoader__.load({
     };
 
     /**
+     * 一个键在不在用户层里。
+     *
+     * 这就是「有没有被覆盖」的判据：写了一个与默认值相同的值也是覆盖，因此只有键在不在算数。
+     *
+     * @param {unknown} layer - 用户层片段。
+     * @param {string} key - 字段名。
+     * @returns {boolean} 写过没有。
+     */
+    function hasKey(layer, key) {
+      return typeof layer === 'object' && layer !== null && Object.prototype.hasOwnProperty.call(layer, key);
+    }
+
+    /**
      * 把 `{name}` 占位符换成实参。
      *
      * locale 服务自己做这件事；这里只是为了在没有注入 `t` 时（测试、以及渲染器还没绑定字典时）
@@ -564,21 +583,22 @@ window.__ModuleLoader__.load({
     /**
      * Aperture 面板：实例卡（地址、同步开关、立刻刷新）与模型清单。
      *
-     * 只持有视图状态：配置与报告分别由一个 effect 拉取，动作按下后再拉一次。**effect 的
-     * 依赖里刻意不放注入面**——`inject` 面由渲染器每次渲染重新组装，把它的身份放进依赖会
-     * 让 effect 每渲染一次就重跑一次，进而无限循环。因此这里用自增计数器当刷新信号。
+     * 只持有视图状态：报告由一个 effect 拉取、动作按下后再拉一次，配置则由页主递进来的
+     * `form` 快照现读（写回也用同一个 `form`）。**effect 的依赖里刻意不放注入面**——`inject`
+     * 面由渲染器每次渲染重新组装，把它的身份放进依赖会让 effect 每渲染一次就重跑一次，进而
+     * 无限循环。因此这里用自增计数器当刷新信号，草稿的依赖只用两个原始值。
      *
      * 面板不自画标题与描述：「插件」页那一行的配置页由页面画标题、图标与面包屑。只有
      * 「没有实例地址」这句话留着——它是状态，不是介绍。
      *
-     * @param {object} props - 渲染器交过来的 `panel` 与 `t`。
+     * @param {object} props - 渲染器交过来的 `panel`、`form` 与 `t`。
      * @returns {object} 面板元素。
      */
     function AperturePanel(props) {
       const panel = props.panel;
+      const form = props.form;
       const t = typeof props.t === 'function' ? props.t : (key, params) => interpolate(zh[key] ?? key, params);
 
-      const [configuration, setConfiguration] = React.useState(null);
       const [draft, setDraft] = React.useState(null);
       const [report, setReport] = React.useState(null);
       const [banner, setBanner] = React.useState(null);
@@ -586,25 +606,35 @@ window.__ModuleLoader__.load({
       const [drafts, setDrafts] = React.useState({});
       const [opened, setOpened] = React.useState({});
       const [collapsed, setCollapsed] = React.useState({});
-      const [configRevision, setConfigRevision] = React.useState(0);
       const [reportRevision, setReportRevision] = React.useState(0);
 
+      /**
+       * 配置页要显示的那两项，直接读页主递来的设置快照。
+       *
+       * `value` 是叠加了默认值、组合层与用户层之后的生效值，`user` 是用户层的原始片段——
+       * 字段在不在 `user` 里才是「有没有被覆盖」的判据（拿生效值和默认值比会漏掉「写了与默认
+       * 相同的值」这种覆盖）。页主在镜像变动时重渲染这一块，因此写完之后这里会自己变新，
+       * 不需要重读。
+       */
+      const section = form !== undefined && form !== null ? form.state : undefined;
+      const configuration =
+        section === undefined || section.status !== 'ready' || typeof section.value !== 'object' || section.value === null
+          ? null
+          : {
+              baseUrl: typeof section.value.baseUrl === 'string' ? section.value.baseUrl : '',
+              sync: section.value.sync === true,
+              baseUrlOverridden: hasKey(section.user, 'baseUrl'),
+              syncOverridden: hasKey(section.user, 'sync'),
+              writable: section.writable !== false,
+            };
+
+      // 草稿跟着生效值走：镜像一变（自己刚写完、或别处改了配置）就回到干净的那份。
+      const liveBaseUrl = configuration === null ? undefined : configuration.baseUrl;
+      const liveSync = configuration === null ? undefined : configuration.sync;
       React.useEffect(() => {
-        let cancelled = false;
-        panel.configuration().then(
-          (next) => {
-            if (cancelled) return;
-            setConfiguration(next);
-            setDraft({ baseUrl: next.baseUrl, sync: next.sync });
-          },
-          (error) => {
-            if (!cancelled) setBanner({ ok: false, text: textOf(error) });
-          },
-        );
-        return () => {
-          cancelled = true;
-        };
-      }, [configRevision]);
+        if (liveBaseUrl === undefined || liveSync === undefined) return;
+        setDraft({ baseUrl: liveBaseUrl, sync: liveSync });
+      }, [liveBaseUrl, liveSync]);
 
       React.useEffect(() => {
         let cancelled = false;
@@ -637,6 +667,28 @@ window.__ModuleLoader__.load({
           }
         })();
       };
+
+      /**
+       * 写配置里的一项，然后等一轮重新发现落地再把结果贴出来。
+       *
+       * 写入走页主递来的 `form.mutate`：它自己带版本号校验（期间别处改过就拒绝，而不是覆盖
+       * 别人的改动）、自己把结果折回那份快照，因此这里既不发版本号也不重读配置——重渲染时
+       * 快照已经是新的了。写入本身只改设置文档，报告里的路由与模型事实来自最近一次刷新，
+       * 因此写完必须等一轮：不等它，界面就会「保存了却没变」（地址换了，模型清单还是旧的那份）。
+       * 配置变更自己也会唤起同一轮刷新（Loader 的 `loader/volatile-update`），运行时的单飞判定
+       * 按配置版本合并，所以这里通常是并进那一轮，而不是另跑一轮。
+       *
+       * @param {string} okKey - 成功那句的前半句。
+       * @param {object[]} ops - 路径操作（`set` / `unset`）。
+       */
+      const writeConfig = (okKey, ops) =>
+        run('save', async () => {
+          const accepted = await form.mutate(ops, section.revision);
+          if (!accepted) return { ok: false, summary: t('configRefused') };
+          const round = await panel.refresh();
+          // 写入成功了，但重新发现可能失败——两件事不能混成一句话说，因此后半句照抄那一轮的说法。
+          return { ok: round.ok, summary: t(okKey, { result: round.summary }) };
+        }, () => setReportRevision((value) => value + 1));
 
       /**
        * 一个模型此刻在表单里长什么样。
@@ -761,7 +813,6 @@ window.__ModuleLoader__.load({
         run('edit', () => panel.edit(model.id, patch), () => {
           dropDraft(model.id);
           close(model.id);
-          setConfigRevision((value) => value + 1);
           setReportRevision((value) => value + 1);
         });
       };
@@ -806,22 +857,32 @@ window.__ModuleLoader__.load({
         run('revert', () => panel.edit(model.id, payload), () => {
           dropDraft(model.id);
           close(model.id);
-          setConfigRevision((value) => value + 1);
           setReportRevision((value) => value + 1);
         });
       };
 
-      if (configuration === null || draft === null) {
-        return h(
-          'div',
-          { [STYLE_MARK]: '', 'aria-busy': 'true' },
-          h('p', { className: 'dap-subtitle' }, banner === null ? t('loading') : banner.text),
-        );
+      // 设置快照读不到时（页主没递来 `form`，或这一行还没进客户端镜像）表单那半块只剩一句说明，
+      // 报告照常显示——报告才是这一页每次都有的东西，因此这里不等设置。
+      const hasConfig = configuration !== null && draft !== null;
+
+      if (!hasConfig && report === null) {
+        // 两样都还没有：报错优先，其次区分「读不到设置」与「正在读」——前者不是暂时的，也就是说
+        // 这句话得说清是这一页说明不了配置，而不是让用户一直等下去。
+        const text =
+          banner !== null
+            ? banner.text
+            : section !== undefined && section.status === 'unavailable'
+              ? t('configUnavailable')
+              : t('loading');
+        return h('div', { [STYLE_MARK]: '', 'aria-busy': 'true' }, h('p', { className: 'dap-subtitle' }, text));
       }
 
-      const disabled = busy !== '' || !configuration.writable;
-      const dirty = draft.baseUrl !== configuration.baseUrl || draft.sync !== configuration.sync;
-      const dormant = draft.baseUrl.trim().length === 0;
+      // 「立即刷新」只需要没在忙：它不改设置，因此只读文档也该按得动。
+      const refreshDisabled = busy !== '' || (hasConfig && !configuration.writable);
+      const disabled = busy !== '' || !hasConfig || !configuration.writable;
+      const dirty = hasConfig && (draft.baseUrl !== configuration.baseUrl || draft.sync !== configuration.sync);
+      // 「休眠」看的是有没有地址：有快照时看草稿（用户正在输入的那个），没有就看报告里生效的那个。
+      const dormant = hasConfig ? draft.baseUrl.trim().length === 0 : report !== null && report.place.length === 0;
       // 卡头那颗点说的是**整张卡**：地址能不能用，以及最近一次刷新成不成功。两件事现在都在这张
       // 卡里，因此哪种出问题都让它变红，标题点名是哪一种——折起来时它是唯一的信号，而颜色不是
       // 唯一的说法（`title` 与 `aria-label` 写着同一句话）。
@@ -1406,6 +1467,92 @@ window.__ModuleLoader__.load({
         return [head, h('ul', { className: 'dap-models' }, cards)];
       };
 
+      /**
+       * 实例卡里表单那半块。
+       *
+       * 读得到设置快照时就是地址与同步开关加那排按钮；读不到时只留一句说明——报告照旧显示，
+       * 缺一份设置快照不该让整页停在「正在读取」。
+       *
+       * @returns {object[]} 编辑器里表单部分的子元素。
+       */
+      const configForm = () => (hasConfig ? [
+        h(
+          'div',
+          { className: 'dap-editor-head', key: 'head' },
+          h('span', { className: 'dap-editor-title' }, t('tab')),
+          h('span', { className: 'dap-editor-route' }, 'aperture.baseUrl'),
+        ),
+        h(
+          'div',
+          { className: 'dap-fields', key: 'fields' },
+          field(
+            'dap-base-url',
+            t('addressLabel'),
+            h('input', {
+              id: 'dap-base-url',
+              className: 'dap-input',
+              type: 'text',
+              spellCheck: false,
+              autoComplete: 'off',
+              placeholder: t('addressPlaceholder'),
+              value: draft.baseUrl,
+              disabled,
+              onChange: (event) => setDraft({ baseUrl: event.target.value, sync: draft.sync }),
+            }),
+            undefined,
+            { wide: true, emphasis: true },
+            configuration.baseUrlOverridden
+              ? overrideBadges(() => writeConfig('configReset', [{ op: 'unset', path: ['baseUrl'] }]))
+              : undefined,
+          ),
+        ),
+        h(
+          'div',
+          { className: 'dap-row', key: 'row' },
+          h(
+            'label',
+            { className: 'dap-check', htmlFor: 'dap-sync' },
+            h('input', {
+              id: 'dap-sync',
+              type: 'checkbox',
+              checked: draft.sync,
+              disabled,
+              onChange: (event) => setDraft({ baseUrl: draft.baseUrl, sync: event.target.checked }),
+            }),
+            t('syncLabel'),
+          ),
+          h('span', { className: 'dap-tag' }, draft.sync ? t('syncOn') : t('syncOff')),
+          configuration.syncOverridden
+            ? overrideBadges(() => writeConfig('configReset', [{ op: 'unset', path: ['sync'] }]))
+            : null,
+        ),
+        configuration.writable ? null : h('p', { className: 'dap-banner', 'data-ok': 'false', key: 'read-only' }, t('readOnly')),
+        h(
+          'div',
+          { className: 'dap-actions', 'data-align': 'end', key: 'actions' },
+          h('button', {
+            type: 'button',
+            className: 'dap-button',
+            disabled: busy !== '' || !dirty,
+            onClick: () => setDraft({ baseUrl: configuration.baseUrl, sync: configuration.sync }),
+          }, t('cancel')),
+          h('button', {
+            type: 'button',
+            className: 'dap-button',
+            'data-primary': 'true',
+            disabled: disabled || !dirty,
+            // 只发改动过的字段：没提的键不动，因此另一项在别处被改成什么样都留着。
+            onClick: () =>
+              writeConfig('configSaved', [
+                ...(draft.baseUrl === configuration.baseUrl
+                  ? []
+                  : [{ op: 'set', path: ['baseUrl'], value: draft.baseUrl.trim() }]),
+                ...(draft.sync === configuration.sync ? [] : [{ op: 'set', path: ['sync'], value: draft.sync }]),
+              ]),
+          }, busy === 'save' ? t('saving') : t('save')),
+        ),
+      ] : [h('p', { className: 'dap-hint', key: 'unavailable' }, t('configUnavailable'))]);
+
       return h(
         'div',
         { [STYLE_MARK]: '', 'aria-busy': busy !== '' ? 'true' : 'false' },
@@ -1419,7 +1566,7 @@ window.__ModuleLoader__.load({
           cardHead(
             [
               h('span', { className: 'dap-name' }, t('tab')),
-              draft.sync ? null : h('span', { className: 'dap-tag' }, t('syncOffTag')),
+              draft !== null && !draft.sync ? h('span', { className: 'dap-tag' }, t('syncOffTag')) : null,
               dot(headState, headTitle),
             ],
             // 「立即刷新」是这张卡的动作，因此留在卡头、折叠开关**外面**：卡折着也按得到。
@@ -1431,7 +1578,7 @@ window.__ModuleLoader__.load({
               h('button', {
                 type: 'button',
                 className: 'dap-button',
-                disabled,
+                disabled: refreshDisabled,
                 onClick: () => run('refresh', () => panel.refresh(), () => setReportRevision((value) => value + 1)),
               }, busy === 'refresh' ? t('refreshing') : t('refresh')),
             ],
@@ -1445,77 +1592,7 @@ window.__ModuleLoader__.load({
           sectionOpen('instance') ? h(
             'div',
             { className: 'dap-editor', id: 'dap-body-instance' },
-            h(
-              'div',
-              { className: 'dap-editor-head' },
-              h('span', { className: 'dap-editor-title' }, t('tab')),
-              h('span', { className: 'dap-editor-route' }, 'aperture.baseUrl'),
-            ),
-            h(
-              'div',
-              { className: 'dap-fields' },
-              field(
-                'dap-base-url',
-                t('addressLabel'),
-                h('input', {
-                  id: 'dap-base-url',
-                  className: 'dap-input',
-                  type: 'text',
-                  spellCheck: false,
-                  autoComplete: 'off',
-                  placeholder: t('addressPlaceholder'),
-                  value: draft.baseUrl,
-                  disabled,
-                  onChange: (event) => setDraft({ baseUrl: event.target.value, sync: draft.sync }),
-                }),
-                undefined,
-                { wide: true, emphasis: true },
-                configuration.baseUrlOverridden
-                  ? overrideBadges(() => run('reset', () => panel.save(null, undefined), () => setConfigRevision((value) => value + 1)))
-                  : undefined,
-              ),
-            ),
-            h(
-              'div',
-              { className: 'dap-row' },
-              h(
-                'label',
-                { className: 'dap-check', htmlFor: 'dap-sync' },
-                h('input', {
-                  id: 'dap-sync',
-                  type: 'checkbox',
-                  checked: draft.sync,
-                  disabled,
-                  onChange: (event) => setDraft({ baseUrl: draft.baseUrl, sync: event.target.checked }),
-                }),
-                t('syncLabel'),
-              ),
-              h('span', { className: 'dap-tag' }, draft.sync ? t('syncOn') : t('syncOff')),
-              configuration.syncOverridden
-                ? overrideBadges(() => run('reset', () => panel.save(undefined, null), () => setConfigRevision((value) => value + 1)))
-                : null,
-            ),
-            configuration.writable ? null : h('p', { className: 'dap-banner', 'data-ok': 'false' }, t('readOnly')),
-            h(
-              'div',
-              { className: 'dap-actions', 'data-align': 'end' },
-              h('button', {
-                type: 'button',
-                className: 'dap-button',
-                disabled: busy !== '' || !dirty,
-                onClick: () => setDraft({ baseUrl: configuration.baseUrl, sync: configuration.sync }),
-              }, t('cancel')),
-              h('button', {
-                type: 'button',
-                className: 'dap-button',
-                'data-primary': 'true',
-                disabled: disabled || !dirty,
-                onClick: () => run('save', () => panel.save(draft.baseUrl, draft.sync), () => {
-                  setConfigRevision((value) => value + 1);
-                  setReportRevision((value) => value + 1);
-                }),
-              }, busy === 'save' ? t('saving') : t('save')),
-            ),
+            ...configForm(),
             // 「最近一次刷新」跟着实例走：同一块浅色面上切一条线，不再另起一张卡，也不再铺第二层
             // 底色（与模型参数面同一套做法）。它是只读诊断，因此排在表单动作之后——卡里那两半的
             // 分界正是那排按钮。
@@ -1544,9 +1621,10 @@ window.__ModuleLoader__.load({
      * 页主按 `view` 问两次：`summary` 只要一行字（作为那一行描述缺失时的兜底），`page` 要那块
      * 带自己保存动作的表单。两种视图共用同一个面板；标题、图标与面包屑整块由页面自己画。
      *
-     * 页面随 `form` 一起交出来的 `state` / `mutate` 刻意**不用**：本插件的写入走自己的 Remote 面
-     * ——它带版本号校验、写完等一轮重新发现落地、并把结果说成一句人话（成功、冲突、还是发现失败），
-     * 那些都只有宿主半边知道。走两条写路径只会让「谁在什么时候写」变得说不清。
+     * 页面随 `form` 一起交出来的 `state` / `mutate` 就是配置的读写面：它由设置接缝的镜像驱动
+     * （`ConfigFormController`），字段在不在用户层里、当前版本号是多少、写完怎么折回来，都由它
+     * 说；本插件不再自己实现一遍。`form` 只在命名空间真的出现在客户端镜像里时才有——那时本行
+     * 的配置才读得出来，没有它就只剩报告可看。
      *
      * @param {object} props - 页主交过来的 `view`（与仅 `page` 视图有的 `form`），以及注入的
      *   `panel` 与 `t`。
@@ -1556,7 +1634,7 @@ window.__ModuleLoader__.load({
       const t = typeof props.t === 'function' ? props.t : (key, params) => interpolate(zh[key] ?? key, params);
       // 摘要就是面板的副标题：同一个说法只写一遍，免得页面上那张卡与这一行各说各话。
       if (props.view === 'summary') return t('subtitle');
-      return h(AperturePanel, { panel: props.panel, t });
+      return h(AperturePanel, { panel: props.panel, form: props.form, t });
     }
 
     // ---------------------------------------------------------------- 插件本体
@@ -1614,8 +1692,6 @@ window.__ModuleLoader__.load({
         const panel = {
           status: async () => unwrap(await namespace().status()),
           refresh: async () => unwrap(await namespace().refresh()),
-          configuration: async () => unwrap(await namespace().configuration()),
-          save: async (baseUrl, sync) => unwrap(await namespace().save(baseUrl, sync)),
           edit: async (id, patch) => unwrap(await namespace().edit(id, patch)),
         };
         scope.slots.inject('plugins.row.config', () => scope.slots.register({
