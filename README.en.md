@@ -59,7 +59,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # should show a "# == dsh-ape
 
 ### 4. Confirm
 
-The models appear in the selector under the route `Aperture`. To see what the last refresh did, look at **Plugins → dsh-aperture**: this package's configuration page is that page — the instance address and sync toggle on top, one row per discovered model in the middle, and this round's discovery report at the bottom.
+The models appear in the selector under the route `Aperture`. This package's configuration page at **Plugins → dsh-aperture** is that page — the instance address and sync toggle on top, one row per discovered model below.
 
 ```
 Instance address  Overridden  Reset to default
@@ -69,40 +69,37 @@ Where Aperture listens; leave it empty to go dormant and stop discovering models
 Sync automatically                 Overridden  Reset to default   ●━
 After each discovery round, write the models into dsh's llm-pi-ai routes.  [Save]
 
-Models                                        [Refresh now]
-One model per row; expand a row to edit its overrides, and Save row writes only that row.
+Saved: rediscovered and published.
 
-● deepseek-v4-flash  aperture · openai-completions · 1,048,576 context · 384,000 output
-                     text+image · on · overrides Display name, Catalog alias
-● gemini-2.5-flash   aperture · openai-completions · 128,000 context · text · off
-⚠ qwen3-vl-32b       unserved · 262,144 context · text+image · on
+Models 18                                     ⟳ Refresh now
+One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery, with anything no route can serve last.
 
-Discovery report
-Routes
-  aperture             openai-completions   11 models   written
-  https://ai.example.ts.net/v1
-Trigger  配置变更        Time     2026-09-23 12:32:36
-Took     286ms           Result   ok
-Catalog  422 entries     Endpoint https://ai.example.ts.net/v1/models listed 16 rows
-Sync     wrote 2 entries (aperture, aperture-anthropic)
+● deepseek-v4-flash
+  route aperture · protocol openai-completions · context 1,048,576 · output 384,000 · modalities text+image · reasoning on · 1 overridden
+● gemini-2.5-flash
+  route aperture · protocol openai-completions · context 128,000 · modalities text · reasoning off
+● qwen3-vl-32b  unserved
+  context 262,144 · modalities text+image · reasoning on
+
+  (expand a row and you get that row's override editor: name and protocol in one group, capacity in another,
+   modalities beside reasoning, and Save / Clear overrides / Cancel underneath)
 ```
 
-**The instance address and the sync toggle** are two fields of one official settings form: where a field says "Overridden", a "Reset to default" right beside it drops that key from your settings file (the same two words in the same position as the official plugin-config page), and Save writes only the fields you actually changed. The per-model override editor and the discovery report are covered under [Usage](#usage). There are no cards and no second level of collapsing — headings and spacing separate the groups, and the only thing you can expand is a model row.
+**The instance address and the sync toggle** are two fields of one official settings form: where a field says "Overridden", a "Reset to default" right beside it drops that key from your settings file (the same two words in the same position as the official plugin-config page), and Save writes only the fields you actually changed. The per-model override editor is covered under [Usage](#usage). Headings and spacing separate the groups, while a model row is a card (a hairline outline with a large radius, coloured only with theme tokens this page really defines), and the only thing you can expand is a model row.
 
 (English labels are shown above; the page itself is bilingual.)
 
 ## Usage
 
-The interface is at **Plugins → dsh-aperture**: open this plugin in the plugin list; the configuration page hangs off the package, so there is no separate Configure button. The page header's name, icon and description come from the package's `locale/*.json` and `package.json`'s `icon`; the page itself is drawn by the Plugins page. The address, the toggle and the per-model parameters stay drafts until you press Save / Save row; models are **one row at a time**, and collapsing a row does not throw its draft away — the "unsaved edits" tag stays visible.
+The interface is at **Plugins → dsh-aperture**: open this plugin in the plugin list; the configuration page hangs off the package, so there is no separate Configure button. The page header's name, icon and description come from the package's `locale/*.json` and `package.json`'s `icon`; the page itself is drawn by the Plugins page. The address, the toggle and the per-model parameters stay drafts until you press Save; models are **one row at a time**, and collapsing a row does not throw its draft away — the "unsaved edits" tag stays visible.
 
 | Where | Effect |
 | --- | --- |
 | Configuration page · Instance address | edits `baseUrl` (written through the settings seam; when it says "Overridden", the "Reset to default" beside it falls back to the default) |
 | Configuration page · Sync toggle | edits `sync`: off discovers without writing `llm-pi-ai`, and that round withdraws whatever this plugin had published (only the two keys it owns; every other provider in the section is left alone); carries the same "Overridden / Reset to default" pair |
 | Configuration page · Save | below the form: writes the address and toggle drafts into the settings document; it is revision-fenced, so a form that has drifted from the settings document is refused rather than overwriting someone else's edit; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
-| Configuration page · Models | one row per model: collapsed, a row is one line of facts (route, protocol, capacities, modalities, reasoning, and which fields are overridden); expanded, it is that row's override editor — display name, protocol, context window, max output and catalog alias as text fields, two checkboxes for the modalities, and a three-way switch for reasoning (follow discovery / on / off); a caption under each field names where its current value comes from ("Leave it empty to use the discovered name. Source: Aperture") and disappears while the row is collapsed; the "Refresh now" action at its top right discovers and republishes immediately, then shows that round's report |
-| Configuration page · Save row / Clear overrides / Cancel | write that row only, clear only the fields the report says really were overridden, or drop that row's draft; Save row likewise waits for a round of re-discovery, so what you see afterwards is the new value |
-| Configuration page · Discovery report | the routes (`provider`, protocol, model count, whether this round wrote it into `llm-pi-ai`) above the facts of the last refresh: trigger, time, duration, result, catalog, endpoint, sync |
+| Configuration page · Models | one row per model, one card per row: a state dot at its head (green: this round wrote it into the routes; grey: this round synced but did not write it; amber: no route can serve it — hovering it, or a screen reader, hears exactly that), then the name with its "unserved / N overridden / unsaved edits" tags on the first line and labelled facts (route, protocol, capacities, modalities, reasoning, alias) on the second, with long names ellipsised and facts wrapping; expanded, it is that row's override editor — display name, alias and protocol as one group of text fields, context window and max output as the "capacity" group, and two modality checkboxes beside a three-way reasoning switch (follow discovery / on / off); a field keeps only one line naming where its value comes from ("Source: Aperture"), while how-to copy ("Leave it empty to use the discovered name") lives behind the "i" next to the label and only takes up room once opened; the "Refresh now" action at its top right discovers and republishes immediately, and the list and every row's status follow that round |
+| Configuration page · Save / Clear overrides / Cancel | write that row only, clear only the fields the backend report says really were overridden, or drop that row's draft; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
 
 In-place edits are configuration: capacities and modalities land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. Capacities accept the `1M` / `100K` spelling (decimal suffixes, the same vocabulary as the official Models page: `1M` is 1000000, not 1048576); what gets stored is still a plain token count, and the field spells it back in the shortest form that survives a round trip (`384000` → `384K`, while `1048576` is not a whole thousand and stays written out). The protocol field is the only way out for an unserved model: filling it in publishes a model that only answers on its native endpoint under the matching route.
 
@@ -141,7 +138,7 @@ Missing capacity and reasoning levels are filled in from Aperture's own fields �
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-**Some models never show up in the selector?** Look at 模型与路由 on the configuration page (the `未服务` line). Models that only offer Gemini's native `generateContent` endpoint cannot be attached — `llm-pi-ai` speaks OpenAI-compatible and Anthropic Messages only. Using the wrong endpoint fails loudly, and Aperture names the right one:
+**Some models never show up in the selector?** Look at the rows tagged `未服务` (unserved) in the Models section of the configuration page. Models that only offer Gemini's native `generateContent` endpoint cannot be attached — `llm-pi-ai` speaks OpenAI-compatible and Anthropic Messages only. Using the wrong endpoint fails loudly, and Aperture names the right one:
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat

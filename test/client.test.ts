@@ -593,12 +593,17 @@ function createPrimitives(renderer: MiniReact): Record<string, unknown> {
       invalidLabel: string;
       onEdit: (text: string) => void;
       onReset: () => void;
+      help?: { label: string; content: unknown };
     };
     return h(
       'label',
       null,
       props.label,
       h('span', { className: 'sf-hint' }, props.hint),
+      // 真字段把长解释收在「i」按钮里，替身也留一个，好让那些句子仍进得了断言。
+      props.help === undefined
+        ? null
+        : h('button', { type: 'button', className: 'sf-help', title: props.help.label }, props.help.content),
       h('input', {
         id: props.id,
         ...(props.placeholder === undefined ? {} : { placeholder: props.placeholder }),
@@ -654,7 +659,7 @@ function createPrimitives(renderer: MiniReact): Record<string, unknown> {
   };
 
   const Button = (raw: Record<string, unknown>): unknown => {
-    const props = raw as { onClick?: () => void; disabled?: boolean; title?: string; children?: unknown };
+    const props = raw as { onClick?: () => void; disabled?: boolean; title?: string; icon?: unknown; children?: unknown };
     return h(
       'button',
       {
@@ -663,9 +668,13 @@ function createPrimitives(renderer: MiniReact): Record<string, unknown> {
         disabled: props.disabled === true,
         ...(props.title === undefined ? {} : { title: props.title }),
       },
+      props.icon ?? null,
       props.children,
     );
   };
+
+  /** 图标替身：真图标是 svg，这里只要能进树、能认出来就够。 */
+  const Icon = (raw: Record<string, unknown>): unknown => h('span', { className: 'sf-icon', size: raw.size });
 
   const Tag = (raw: Record<string, unknown>): unknown => {
     const props = raw as { tone?: string; children?: unknown };
@@ -743,6 +752,8 @@ function createPrimitives(renderer: MiniReact): Record<string, unknown> {
     SegmentedControl,
     SettingsFormModel: FakeSettingsFormModel,
     settingsTextField,
+    IconChevronRightOutlineRegular: Icon,
+    IconRefreshOutlineRegular: Icon,
   };
 }
 
@@ -1063,6 +1074,20 @@ function rowButton(mini: MiniReact, id: string, label: string): HostElement {
   return findButton(rowOf(mini, id), label);
 }
 
+/**
+ * 这一行那颗保存按钮。
+ *
+ * 不能用 `rowButton(..., '保存')`：`findButton` 是「文本包含」，而行首那颗折叠按钮把名字、标签与
+ * 事实一起读进来——改过东西之后标签里就有「有未保存的改动」，于是「包含保存」的第一个按钮是行首那颗，
+ * 一点就把这一行收起来了。这里按整段文本量，跟设置表单那颗保存按钮同一个办法。
+ */
+function rowSave(mini: MiniReact, id: string): HostElement {
+  const [found] = findAll(rowOf(mini, id), (node) => node.type === 'button'
+    && (text(node) === '保存' || text(node) === '保存中…'));
+  assert.ok(found, `模型行 ${id} 应当有一颗保存按钮`);
+  return found;
+}
+
 /** 设置表单那颗保存按钮：文案随 `state.saving` 变，因此按「在 form 里」定位。 */
 function settingsSave(mini: MiniReact): HostElement {
   const [form] = findAll(mini.tree(), (node) => node.type === 'form');
@@ -1086,18 +1111,6 @@ function syncSwitch(mini: MiniReact): HostElement {
 /** 页面上的标签（替身把官方 `Tag` 渲染成带 `tone` 的 `span`）。 */
 function tags(node: unknown): HostElement[] {
   return findAll(node, (element) => element.type === 'span' && element.props.tone !== undefined);
-}
-
-/** 报告那一张 `dl`，摊成「标签 → 值」；没有标签的那种只有值。 */
-function facts(mini: MiniReact): Array<[string | null, string]> {
-  const [dl] = findAll(mini.tree(), (node) => node.type === 'dl');
-  assert.ok(dl, '报告那一块应当是一张 dl');
-  return findAll(dl, (node) => node.type === 'div' && node.props.className === 'dap-fact').map((row) => {
-    const [dt] = findAll(row, (node) => node.type === 'dt');
-    const [dd] = findAll(row, (node) => node.type === 'dd');
-    assert.ok(dd, '每一行事实都应当有一个值');
-    return [dt === undefined ? null : text(dt), text(dd)];
-  });
 }
 
 /** 分段控件此刻选中的那一项（替身把选中项写成 `aria-pressed="true"` 加 `data-active`）。 */
@@ -1229,8 +1242,8 @@ describe('客户端半边', () => {
     assert.ok(zh, '应当注册中文词典');
     assert.ok(en, '应当注册英文词典');
     assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort(), '两种语言的键必须一一对应');
-    assert.equal(zh.saveRow, '保存这一行');
-    assert.equal(en.saveRow, 'Save row');
+    assert.equal(zh.saveRow, '保存');
+    assert.equal(en.saveRow, 'Save');
     assert.equal(zh.resetField, '恢复默认');
     assert.equal(zh.tab, undefined, '标题来自包元数据，字典里不该再有 tab 这一项');
 
@@ -1245,6 +1258,69 @@ describe('客户端半边', () => {
 
     harness.disposers['dsh-aperture: stylesheet']?.();
     assert.equal(style.removed, true, '卸载时样式表要摘掉');
+  });
+
+  it('样式表：没有同名规则，也没有引用这一页没定义的 token', () => {
+    const { harness } = driveClient();
+    const css = harness.styles[0]?.textContent ?? '';
+    assert.ok(css.length > 0, '应当注入样式表');
+
+    // 同一个选择器写两遍，后一条会整条压掉前一条。`.dap-facts` 就吃过这个亏：报告那张 `dl` 先占了
+    // 这个名字，模型行再拿它装事实，于是「路由 x · 协议 y」被报告的竖排规则压成了一条一行。
+    const counts = new Map<string, number>();
+    for (const [, raw = ''] of css.matchAll(/([^{}]+)\{/gu)) {
+      const selector = raw.trim();
+      if (selector === '' || selector.includes('@')) continue;
+      counts.set(selector, (counts.get(selector) ?? 0) + 1);
+    }
+    assert.deepEqual(
+      [...counts].filter(([, count]) => count > 1).map(([selector]) => selector),
+      [],
+      '同一个选择器不许定义两次',
+    );
+    assert.ok(counts.size > 20, `样式表里应当有几十条规则，实际 ${String(counts.size)} 条`);
+
+    // 颜色只许用「这一页真的定义过」的名字，两类：Theme 检查面列出的那些，以及官方原语自己引用的那些。
+    // 反例是 `--dsw-alias-settings-card-*`：它只活在官方「模型」页那份组件 CSS 里，插件页上没有定义，
+    // `var()` 于是落到回落值（白 16% 的描边），亮色主题下白底白边——卡片连边都看不见。
+    const allowed = new Set([
+      // Theme 检查面（client / Theme / listTokens）列出的
+      '--dsw-alias-bg-base',
+      '--dsw-alias-bg-layer-1',
+      '--dsw-alias-bg-layer-2',
+      '--dsw-alias-bg-overlay',
+      '--dsw-alias-border-l1',
+      '--dsw-alias-border-l2',
+      '--dsw-alias-brand-primary',
+      '--dsw-alias-label-primary',
+      '--dsw-alias-label-secondary',
+      '--dsw-alias-state-error-primary',
+      '--dsw-alias-state-idle-primary',
+      '--dsw-alias-state-success-primary',
+      '--dsw-alias-state-warn-primary',
+      '--dsw-specific-sidebar-fill',
+      // 官方原语包自己引用的（在 primitives 的 *.module.css 里能搜到）
+      '--dsw-alias-bg-layer-3',
+      '--dsw-alias-border-l3',
+      '--dsw-alias-border-l4',
+      '--dsw-alias-interactive-bg-hover',
+      '--dsw-alias-label-tertiary',
+      '--dsw-alias-label-dimmed',
+      '--dsw-alias-bg-module-platform',
+      // 圆角：主题里定义的一整套，原语用的是 sm / md / lg
+      '--dsw-radius-xs',
+      '--dsw-radius-sm',
+      '--dsw-radius-md',
+      '--dsw-radius-lg',
+      '--dsw-radius-xl',
+    ]);
+    const used = new Set([...css.matchAll(/var\((--dsw-[a-z0-9-]+)/gu)].map(([, name]) => name!));
+    assert.ok(used.size > 5, `样式表里应当引用好几个 token，实际 ${String(used.size)} 个`);
+    assert.deepEqual(
+      [...used].filter((name) => !allowed.has(name)).sort(),
+      [],
+      '引用了这一页没定义的 token',
+    );
   });
 
   it('表单订阅设置快照，dispose() 之后订阅者回到 0', () => {
@@ -1262,10 +1338,10 @@ describe('客户端半边', () => {
     assert.ok(harness.panelCalls.includes('status'), '挂载要先读一次报告');
     assert.equal(harness.panelCalls.includes('refresh'), false, '读报告不该顺手刷新');
     const tree = mini.tree();
-    assert.match(text(tree), /发现报告/u);
-    // 设置表单那一段的输入框与提示语都在（报告那一段的断言各自另有用例）。
+    assert.match(text(tree), /一行一个模型/u);
+    // 设置表单那一段的输入框与提示语都在（模型那一段的断言各自另有用例）。
     assert.match(text(tree), /Aperture 的地址/u);
-    assert.equal(findAll(tree, (node) => node.type === 'li' && node.props.className === 'dap-row').length, 2);
+    assert.equal(findAll(tree, (node) => node.type === 'li' && node.props.className === 'dap-card').length, 2);
     assert.equal(findById(tree, 'dap-base-url').props.value, 'https://ai.example.ts.net');
     assert.equal(syncSwitch(mini).props['aria-checked'], 'true');
   });
@@ -1454,12 +1530,12 @@ describe('客户端半边', () => {
     assert.ok(form, '表单本身还要在');
     assert.equal(findAll(form, (node) => node.type === 'button').length, 0, '读不到就没有可按的东西');
     assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-base-url').length, 0);
-    assert.match(text(mini.tree()), /发现报告/u, '报告那半块与设置服务无关');
-    assert.equal(findAll(mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-row').length, 2);
+    assert.match(text(mini.tree()), /一行一个模型/u, '模型那一段与设置服务无关');
+    assert.equal(findAll(mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-card').length, 2);
   });
 });
 
-describe('报告那一块', () => {
+describe('模型行与刷新', () => {
   it('模型行收起时只剩一行事实，展开才给编辑器', async () => {
     const { mini, element, t } = driveClient();
     mini.mount(element);
@@ -1476,7 +1552,7 @@ describe('报告那一块', () => {
       t('modalityText') + '+' + t('modalityImage'),
       t('reasoningOn'),
       t('factAlias', { alias: 'deepseek/deepseek-v4-flash' }),
-      t('overriddenKeys', { keys: t('editReasoning') }),
+      t('overriddenCount', { count: 1 }),
     ]) {
       assert.ok(collapsed.includes(fragment), `收起的一行应当写着 ${fragment}`);
     }
@@ -1486,15 +1562,39 @@ describe('报告那一块', () => {
     assert.equal(toggleOf(rowOf(mini, 'deepseek-flash')).props['aria-expanded'], 'true');
   });
 
-  it('状态点跟着「有没有路由可服务」', async () => {
-    const { mini, element } = driveClient();
+  it('状态点说清这一行写没写进路由，点旁边那句话是它的说法', async () => {
+    const { mini, element, t } = driveClient();
     mini.mount(element);
     await mini.flush();
-    assert.deepEqual(
-      findAll(mini.tree(), (node) => node.type === 'span' && typeof node.props.state === 'string')
-        .map((node) => node.props.state),
-      ['idle', 'warning'],
-    );
+
+    // 点自己不说话（官方 `StateDot` 是 aria-hidden 的），说给谁听得看外面那层的 aria-label。
+    const dots = (instance: MiniReact): Array<[string, string]> => findAll(
+      instance.tree(),
+      (node) => node.props.role === 'img',
+    ).map((node) => [String(node.props['aria-label']), String(findAll(node, (child) => typeof child.props.state === 'string')[0]?.props.state)]);
+
+    assert.deepEqual(dots(mini), [
+      [t('statusPublished'), 'done'],
+      [t('statusUnserved'), 'warning'],
+    ]);
+
+    // 同步没跑起来（关着）时不能说成「没写进去」：报告里根本没有这一项。
+    const unknown = driveClient({ report: report({ refresh: { ...report().refresh!, sync: undefined } }) });
+    unknown.mini.mount(unknown.element);
+    await unknown.mini.flush();
+    assert.deepEqual(dots(unknown.mini).map(([label]) => label), [
+      unknown.t('statusUnknown'),
+      unknown.t('statusUnserved'),
+    ]);
+
+    // 跑过同步但这一行没写进去（比如路由本轮没被写）时，才说「还没写进路由」。
+    const skipped = driveClient({ report: report({ models: [deepseek({ route: 'aperture-extra' }), gemini()] }) });
+    skipped.mini.mount(skipped.element);
+    await skipped.mini.flush();
+    assert.deepEqual(dots(skipped.mini), [
+      [skipped.t('statusNotPublished'), 'idle'],
+      [skipped.t('statusUnserved'), 'warning'],
+    ]);
   });
 
   it('展开一行：输入框预填的是此刻的生效值', async () => {
@@ -1528,7 +1628,7 @@ describe('报告那一块', () => {
 
     change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '32768');
     await mini.flush();
-    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+    click(rowSave(mini, 'deepseek-flash'));
     await mini.flush();
 
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { contextWindow: 32_768 }]]);
@@ -1538,7 +1638,7 @@ describe('报告那一块', () => {
     assert.match(text(mini.tree()), /已重新发现并发布/u);
   });
 
-  it('两行各开各的：保存这一行不牵连那一行', async () => {
+  it('两行各开各的：保存一行不牵连那一行', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
@@ -1548,13 +1648,13 @@ describe('报告那一块', () => {
     change(findById(mini.tree(), 'dap-deepseek-flash-maxTokens'), '8192');
     change(findById(mini.tree(), 'dap-gemini-2.5-flash-name'), 'Gemini');
     await mini.flush();
-    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+    click(rowSave(mini, 'deepseek-flash'));
     await mini.flush();
 
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { maxTokens: 8192 }]]);
     assert.equal(findById(mini.tree(), 'dap-gemini-2.5-flash-name').props.value, 'Gemini', '那一行的草稿还在');
 
-    click(rowButton(mini, 'gemini-2.5-flash', '保存这一行'));
+    click(rowSave(mini, 'gemini-2.5-flash'));
     await mini.flush();
     assert.deepEqual(plain(harness.editCalls), [
       ['deepseek-flash', { maxTokens: 8192 }],
@@ -1571,7 +1671,7 @@ describe('报告那一块', () => {
     change(findById(mini.tree(), 'dap-deepseek-flash-name'), '');
     change(findById(mini.tree(), 'dap-deepseek-flash-alias'), '');
     await mini.flush();
-    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+    click(rowSave(mini, 'deepseek-flash'));
     await mini.flush();
 
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { name: null, alias: '' }]]);
@@ -1629,8 +1729,8 @@ describe('报告那一块', () => {
     mini.mount(element);
     await mini.flush();
 
-    assert.ok(text(rowOf(mini, 'deepseek-flash')).includes('推理档位'), '不认识的键也要报出来');
     await openRow(mini, 'deepseek-flash');
+    assert.ok(text(rowOf(mini, 'deepseek-flash')).includes('推理档位'), '不认识的键也要报出来');
     click(rowButton(mini, 'deepseek-flash', '清空覆盖'));
     await mini.flush();
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', null]]);
@@ -1655,7 +1755,7 @@ describe('报告那一块', () => {
       change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), illegal);
       await mini.flush();
       assert.ok(text(rowOf(mini, 'deepseek-flash')).includes(t('invalidField')), `${illegal} 应当在输入框上标出来`);
-      click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+      click(rowSave(mini, 'deepseek-flash'));
       await mini.flush();
       assert.deepEqual(harness.editCalls, [], `${illegal} 不该发端点`);
       assert.equal(bannerOf(mini).props['data-ok'], 'false');
@@ -1664,7 +1764,7 @@ describe('报告那一块', () => {
 
     change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '64K');
     await mini.flush();
-    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+    click(rowSave(mini, 'deepseek-flash'));
     await mini.flush();
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { contextWindow: 64_000 }]]);
   });
@@ -1678,7 +1778,7 @@ describe('报告那一块', () => {
     change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '1M');
     change(findById(mini.tree(), 'dap-deepseek-flash-maxTokens'), '384k');
     await mini.flush();
-    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+    click(rowSave(mini, 'deepseek-flash'));
     await mini.flush();
 
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { contextWindow: 1_000_000 }]], '384k 与 384K 是同一个数');
@@ -1694,99 +1794,63 @@ describe('报告那一块', () => {
     assert.match(text(rowOf(mini, 'gemini-2.5-flash')), /填上协议它才有路由/u);
     change(findById(mini.tree(), 'dap-gemini-2.5-flash-api'), 'openai-completions');
     await mini.flush();
-    click(rowButton(mini, 'gemini-2.5-flash', '保存这一行'));
+    click(rowSave(mini, 'gemini-2.5-flash'));
     await mini.flush();
 
     assert.deepEqual(plain(harness.editCalls), [['gemini-2.5-flash', { api: 'openai-completions' }]]);
   });
 
-  it('报告把最近一次刷新的账摊开：触发、耗时、清单、端点、写入', async () => {
-    const { mini, element, t } = driveClient();
-    mini.mount(element);
-    await mini.flush();
+  it('这一轮哪里不对就说一句：清单读不到、该写的没写进去', async () => {
+    // 报告那一块删掉之后，这两句话本来只写在报告事实表里——现在挂在模型那一段的提示语下面。
+    const brokenCatalog = report({
+      refresh: {
+        ...report().refresh!,
+        catalog: { available: false, entries: 0, reason: '网关没回应' },
+      },
+    });
+    const first = driveClient({ report: brokenCatalog });
+    first.mini.mount(first.element);
+    await first.mini.flush();
+    assert.match(text(first.mini.tree()), /清单不可用（网关没回应）/u);
 
-    const byLabel = new Map(facts(mini).map(([label, value]) => [label, value]));
-    assert.equal(byLabel.get(t('factTrigger')), '配置变更');
-    assert.equal(byLabel.get(t('factDuration')), '286ms');
-    assert.equal(byLabel.get(t('factResult')), t('refreshOk'));
-    assert.equal(byLabel.get(t('factCatalog')), t('catalogEntries', { count: count(422) }));
-    assert.equal(byLabel.get(t('factEndpoint')), t('endpointListed', { url: 'https://ai.example.ts.net/v1/models', count: 16 }));
-    assert.equal(byLabel.get(t('factSync')), t('syncApplied', { count: 2, routes: 'aperture、aperture-anthropic' }));
-    assert.ok((byLabel.get(t('factTime')) ?? '').length > 0, '时间要本地化地写出来');
-  });
-
-  it('路由行：协议、多少个模型、写没写进去、baseURL', async () => {
-    const { mini, element, t } = driveClient();
-    mini.mount(element);
-    await mini.flush();
-
-    const [route] = findAll(mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-route');
-    assert.ok(route, '应当有一条路由');
-    assert.deepEqual(tags(route).map((node) => [node.props.tone, text(node)]), [
-      ['outline', 'openai-completions'],
-      ['quiet', t('routeModels', { count: 1 })],
-      ['success', t('routePublished')],
-    ]);
-    assert.ok(text(route).includes('https://ai.example.ts.net/v1'));
-  });
-
-  it('没写进去的路由说「未写入」，没跑过同步就不说这句', async () => {
     const skipped = report({
       refresh: {
         ...report().refresh!,
         sync: { applied: false, ops: 0, routes: [], reason: '没有配置变更' },
       },
     });
-    const first = driveClient({ report: skipped });
-    first.mini.mount(first.element);
-    await first.mini.flush();
-    const [route] = findAll(first.mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-route');
-    assert.ok(route);
-    assert.deepEqual(tags(route).map((node) => text(node)), [
-      'openai-completions',
-      first.t('routeModels', { count: 1 }),
-      first.t('routeNotPublished'),
-    ]);
-    assert.equal(tags(route)[2]?.props.tone, 'neutral');
-    const byLabel = new Map(facts(first.mini).map(([label, value]) => [label, value]));
-    assert.equal(byLabel.get(first.t('factSync')), first.t('syncSkipped', { reason: '没有配置变更' }));
-
-    const noSync = report({ refresh: { ...report().refresh!, sync: undefined } });
-    const second = driveClient({ report: noSync });
+    const second = driveClient({ report: skipped });
     second.mini.mount(second.element);
     await second.mini.flush();
-    const [route2] = findAll(second.mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-route');
-    assert.ok(route2);
-    assert.deepEqual(tags(route2).map((node) => text(node)), [
-      'openai-completions',
-      second.t('routeModels', { count: 1 }),
-    ], '没跑过同步就不说「写没写进去」');
+    assert.match(text(second.mini.tree()), /没写（没有配置变更）/u);
+    assert.equal(findAll(second.mini.tree(), (node) => node.props.className === 'dap-warnNote').length, 1);
+
+    // 正常的一轮（写进去了）什么都不说；同步关着（报告里没有这一项）也不说「没写」。
+    const quiet = driveClient();
+    quiet.mini.mount(quiet.element);
+    await quiet.mini.flush();
+    assert.equal(findAll(quiet.mini.tree(), (node) => node.props.className === 'dap-warnNote').length, 0);
+    const off = driveClient({ report: report({ refresh: { ...report().refresh!, sync: undefined } }) });
+    off.mini.mount(off.element);
+    await off.mini.flush();
+    assert.equal(findAll(off.mini.tree(), (node) => node.props.className === 'dap-warnNote').length, 0);
   });
 
-  it('还没有跑过一轮就说清楚，而不是装作清单是空的', async () => {
-    const { mini, element } = driveClient({ report: report({ refresh: undefined }) });
-    mini.mount(element);
-    await mini.flush();
+  it('没有模型时说清楚是「还没发现」还是「还没填地址」', async () => {
+    const empty = driveClient({ report: report({ refresh: undefined, routes: [], models: [] }) });
+    empty.mini.mount(empty.element);
+    await empty.mini.flush();
+    assert.match(text(empty.mini.tree()), /还没有发现任何模型/u);
 
-    assert.match(text(mini.tree()), /这一轮还没跑过/u);
-    assert.equal(findAll(mini.tree(), (node) => node.type === 'dl').length, 0);
-    assert.equal(findAll(mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-row').length, 2, '模型清单照旧');
-  });
-
-  it('没有模型、没有路由时说的是「还没有」，不是空白', async () => {
-    const { mini, element } = driveClient({ report: report({ refresh: undefined, routes: [], models: [] }) });
-    mini.mount(element);
-    await mini.flush();
-
-    assert.match(text(mini.tree()), /还没有发现任何模型/u);
-    assert.match(text(mini.tree()), /还没有发布任何路由/u);
-  });
-
-  it('报告里没有实例地址时提示先填地址', async () => {
-    const { mini, element } = driveClient({ report: report({ place: '' }) });
-    mini.mount(element);
-    await mini.flush();
-    assert.match(text(mini.tree()), /还没有实例地址/u);
+    // 地址空着的时候发现根本不会跑，空状态要说这句，不然「还没发现到模型」等于没说。
+    const dormant = driveClient({
+      report: report({ refresh: undefined, routes: [], models: [] }),
+      section: { value: { baseUrl: '', sync: true } },
+    });
+    dormant.mini.mount(dormant.element);
+    await dormant.mini.flush();
+    assert.match(text(dormant.mini.tree()), /还没有实例地址/u);
+    assert.doesNotMatch(text(dormant.mini.tree()), /还没有发现任何模型/u);
   });
 
   it('「立刻刷新」按一下就走一次 refresh，并把结果贴出来', async () => {
@@ -1835,7 +1899,7 @@ describe('报告那一块', () => {
 
     change(findById(mini.tree(), 'dap-deepseek-flash-maxTokens'), '8192');
     await mini.flush();
-    click(rowButton(mini, 'deepseek-flash', '保存这一行'));
+    click(rowSave(mini, 'deepseek-flash'));
     await mini.flush();
 
     assert.equal(harness.editCalls.length, 1);

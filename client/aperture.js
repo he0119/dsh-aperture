@@ -32,7 +32,8 @@ window.__ModuleLoader__.load({
       settingsTextField,
       Button,
       Checkbox,
-      DisclosureRow,
+      IconChevronRightOutlineRegular,
+      IconRefreshOutlineRegular,
       SegmentedControl,
       StateDot,
       Switch,
@@ -140,8 +141,18 @@ window.__ModuleLoader__.load({
      * 卸载时移除；元素按 `data-plugin-css` 认领，与自己重名的那份先删掉（热替换）。
      *
      * 选择器全部收在根节点的 `[data-dsh-aperture]` 之下，颜色只引用 dsh web 的主题 token
-     * （`--dsw-alias-*`，各带回落值），深浅色自动跟随。**没有卡片**：分组靠小标题与间距分开，只有
-     * 模型清单那种「一列可展开的行」才用一条细边框收着。
+     * （`--dsw-alias-*`，各带回落值），深浅色自动跟随。
+     *
+     * 排版照官方「模型」页：一个模型一张卡片（发丝描边 + 大圆角），展开的编辑器是卡片里一块内嵌面，
+     * 字段用官方 `SettingsValueField`，因此徽章、重置、提示这些细活与官方设置页逐像素一致。官方那些
+     * 类名是打包器哈希出来的私有产物，抄不到，能抄的只有配方（描边、圆角、内边距、字号）。
+     *
+     * 颜色只许用「这一页真的定义过」的 token：官方原语自己用的那几个（`bg-layer-3`、`border-l4`、
+     * `interactive-bg-hover`）与 Theme 检查面列出的那十几个。像 `--dsw-alias-settings-card-stroke`
+     * 这种只活在官方「模型」页自己那份组件 CSS 里的名字，在插件页上根本没定义——引用它等于引用一个
+     * 空值，回落值又是白色，于是亮色主题下卡片连边都看不见（暗色主题反而正常，因为回落值是白 16%）。
+     * 亮色主题下 `bg-layer-*` 全是白色（层与层靠阴影分开），所以卡片只能靠描边立住，底色只是给暗色
+     * 主题加一点抬起感。
      *
      * @returns {Function} 卸载时移除样式表的 disposer。
      */
@@ -171,11 +182,35 @@ window.__ModuleLoader__.load({
   justify-content: space-between;
   gap: 12px;
 }
+[data-dsh-aperture] .dap-titleWrap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
 [data-dsh-aperture] .dap-groupTitle {
   margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.5;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+/* 数目跟在标题后面，用等宽数字，免得一轮刷新改写时宽度乱跳。 */
+[data-dsh-aperture] .dap-count {
+  font-size: 14px;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+/* 空状态是官方「模型」页那条虚线盒子：没有内容时给个形状，不留白。 */
+[data-dsh-aperture] .dap-empty {
+  margin: 0;
+  padding: 12px;
+  border: 0.5px dashed var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
+  border-radius: var(--dsw-radius-lg, 16px);
+  text-align: center;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
 }
 [data-dsh-aperture] .dap-hint {
   margin: 0;
@@ -206,44 +241,187 @@ window.__ModuleLoader__.load({
   gap: 2px;
   min-width: 0;
 }
-[data-dsh-aperture] .dap-badges {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 6px;
-  vertical-align: middle;
-}
+/* 一个模型一张卡片：发丝描边立形状（官方输入框用的就是这一档描边），底色只在暗色主题下抬起一层。 */
 [data-dsh-aperture] .dap-rows {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
   margin: 0;
-  padding: 0 12px;
+  padding: 0;
   list-style: none;
-  border: 0.5px solid var(--dsw-alias-border-l4, rgba(255, 255, 255, 0.08));
-  border-radius: 8px;
-  max-height: 420px;
-  overflow: auto;
 }
-[data-dsh-aperture] .dap-rowFacts {
+[data-dsh-aperture] .dap-card {
+  display: flex;
+  flex-direction: column;
+  border: 0.5px solid var(--dsw-alias-border-l4, rgba(128, 128, 128, 0.36));
+  border-radius: var(--dsw-radius-xl, 20px);
+  background: var(--dsw-alias-bg-layer-2, transparent);
+}
+/* 行首是一条盖满整行的按钮：点哪儿都能展开这一行。 */
+[data-dsh-aperture] .dap-cardHead {
+  display: flex;
+  /* 顶着第一行走，不居中：这一行有两行身份（名字 + 事实），居中的话状态点会落在两行中间。 */
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+[data-dsh-aperture] .dap-cardHead:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.06));
+}
+[data-dsh-aperture] .dap-cardHead[aria-expanded='true'] {
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));
+  border-radius: var(--dsw-radius-xl, 20px) var(--dsw-radius-xl, 20px) 0 0;
+}
+[data-dsh-aperture] .dap-cardHead:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary, #7aaaff);
+  outline-offset: 1px;
+}
+/* 状态点：写入与否这一列永远在同一处，扫一眼就能比。22px 就是名字那一行的高度，点因此落在名字中间。 */
+[data-dsh-aperture] .dap-status {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 22px;
+}
+[data-dsh-aperture] .dap-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+[data-dsh-aperture] .dap-identityTop {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
+}
+[data-dsh-aperture] .dap-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 事实一项一句（「路由 x」「上下文 1M」），之间用小圆点分开：比一串空格好认，也不抢字号。
+   名字必须是 .dap-factRow 而不是 .dap-facts：报告那张 dl 已经占了 .dap-facts，而且它的规则在后面，
+   同名的话会把这里压成竖排（一条一行）。 */
+[data-dsh-aperture] .dap-factRow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 6px;
+  min-width: 0;
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-tertiary, #8b8b8b);
 }
+[data-dsh-aperture] .dap-factItem + .dap-factItem::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+[data-dsh-aperture] .dap-chevron {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 22px;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+  transition: transform 160ms ease;
+}
+[data-dsh-aperture] .dap-chevron[data-open='true'] {
+  transform: rotate(90deg);
+}
+/* 展开区是卡片里的一块内嵌面：暗色主题下比卡片再亮一层，亮色主题下靠这圈描边立住（底色也是白的）。 */
 [data-dsh-aperture] .dap-editor {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 4px 0 14px;
+  margin: 0 14px 14px;
+  padding: 14px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
+  border-radius: var(--dsw-radius-lg, 16px);
+  background: var(--dsw-alias-bg-layer-3, transparent);
 }
-[data-dsh-aperture] .dap-editorGrid {
+[data-dsh-aperture] .dap-editorHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+[data-dsh-aperture] .dap-editorId {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-dsh-aperture] .dap-editorDirty {
+  margin-left: auto;
+}
+[data-dsh-aperture] .dap-warnNote {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-warn-primary, #dd8629);
+}
+[data-dsh-aperture] .dap-editGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+[data-dsh-aperture] .dap-editGroupTitle {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
+}
+/* 字段用网格排，格子自带一层壳：官方那条「相邻字段加一条上边框」在网格里会错开半格。 */
+[data-dsh-aperture] .dap-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 2px 16px;
+}
+[data-dsh-aperture] .dap-fieldCell {
+  min-width: 0;
+}
+[data-dsh-aperture] .dap-grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px 16px;
+  align-items: start;
+}
+[data-dsh-aperture] .dap-endpoints {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+[data-dsh-aperture] .dap-endpointList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+[data-dsh-aperture] .dap-endpoint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
+  overflow-wrap: anywhere;
 }
 [data-dsh-aperture] .dap-inline {
   display: flex;
@@ -258,57 +436,18 @@ window.__ModuleLoader__.load({
   font-size: 13px;
   line-height: 1.5;
 }
-[data-dsh-aperture] .dap-controlLabel {
-  color: var(--dsw-alias-label-secondary, #c9c9c9);
-}
 [data-dsh-aperture] .dap-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-top: 2px;
 }
-[data-dsh-aperture] .dap-mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+/* 左边那句「还有几项没写下去」，按钮一律靠右，主按钮在最右。 */
+[data-dsh-aperture] .dap-actionsNote {
+  margin-right: auto;
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 18px;
   color: var(--dsw-alias-label-tertiary, #8b8b8b);
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-[data-dsh-aperture] .dap-routes {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-[data-dsh-aperture] .dap-routeHead {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-[data-dsh-aperture] .dap-facts {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-}
-[data-dsh-aperture] .dap-fact {
-  display: flex;
-  gap: 8px;
-}
-[data-dsh-aperture] .dap-fact dt {
-  flex: none;
-  min-width: 72px;
-  color: var(--dsw-alias-label-tertiary, #8b8b8b);
-}
-[data-dsh-aperture] .dap-fact dd {
-  margin: 0;
-  color: var(--dsw-alias-label-secondary, #c9c9c9);
-  word-break: break-all;
 }
 `;
       document.head.appendChild(element);
@@ -333,12 +472,12 @@ window.__ModuleLoader__.load({
       syncHint: '每轮发现之后，把模型与参数写进 dsh 的 llm-pi-ai 路由。',
 
       overridden: '已覆盖',
-      overriddenKeys: '覆盖了 {keys}',
+      overriddenCount: '已覆盖 {count} 项',
       resetField: '恢复默认',
       invalidField: '要填不小于 1 的整数，或留空',
 
       refresh: '立刻刷新',
-      refreshHint: '立刻重新发现并发布，然后把这一轮的报告摆出来。',
+      refreshHint: '立刻重新发现并发布一次，清单与每一行的状态都按这一轮刷新。',
       refreshing: '刷新中…',
       loading: '读取中…',
 
@@ -347,48 +486,35 @@ window.__ModuleLoader__.load({
       noChanges: '没有改动，因此没有写入。',
       invalidNumber: '{field} 只能填不小于 1 的整数。',
 
-      reportTitle: '发现报告',
-      reportHint: '报告说的是最近一次刷新算出的事实；改设置或按「立刻刷新」都会重跑一轮。',
+      // 「发现报告」那一块删掉之后留下的三句：没有地址时的空状态，以及这一轮两处可能出问题的地方。
       dormantHint: '还没有实例地址：填上并保存之后才会去发现模型。',
-      routesTitle: '路由',
-      noRoutes: '还没有发布任何路由。',
-      routeModels: '{count} 个模型',
-      routePublished: '已写入',
-      routeNotPublished: '未写入',
-      routeNoBaseUrl: '（这一条路由没有 baseURL）',
-      neverRefreshed: '这一轮还没跑过。',
+      catalogUnavailable: '清单不可用（{reason}）',
+      syncSkipped: '没写（{reason}）',
 
       modelsTitle: '模型',
-      modelsHint: '一行一个模型；展开改这一行的覆盖，「保存这一行」只写这一行。顺序来自发现顺序，没有路由可服务的排在最后。',
+      modelsHint: '一行一个模型；展开改这一行的覆盖，「保存」只写这一行。顺序来自发现顺序，没有路由可服务的排在最后。',
+      modelsCount: '{count} 个',
       noModels: '还没有发现任何模型。',
       unservedTag: '未服务',
       dirtyTag: '有未保存的改动',
+      statusUnserved: '没有路由能服务这个模型',
+      statusUnknown: '这一轮没有同步，写没写进去看不出来',
+      statusPublished: '已写入 dsh 的路由',
+      statusNotPublished: '还没写进 dsh 的路由',
 
-      factTrigger: '触发',
-      factTime: '时间',
-      factDuration: '耗时',
-      factResult: '结果',
-      factCatalog: '清单',
-      factEndpoint: '端点',
-      factSync: '写入',
       factContextWindow: '上下文 {count}',
-      factMaxTokens: '最大输出 {count}',
+      factMaxTokens: '输出 {count}',
+      factRoute: '路由 {route}',
+      factProtocol: '协议 {protocol}',
+      factInput: '模态 {value}',
+      factReasoning: '推理 {value}',
       factAlias: '别名 {alias}',
       factEndpoints: '网关通告的端点：',
       factSource: '来源：{source}',
 
-      refreshOk: '成功',
-      refreshFailed: '失败',
-      catalogEntries: '清单 {count} 条',
-      catalogUnavailable: '清单不可用（{reason}）',
-      endpointListed: '{url} 列出 {count} 行',
-      syncApplied: '写入 {count} 项（{routes}）',
-      syncSkipped: '没写（{reason}）',
-      syncOnlyRemoval: '只做了删除',
-
       modalityText: '文本',
       modalityImage: '图片',
-      modalityNone: '不接收任何模态',
+      modalityNone: '无',
       reasoningFollow: '跟随发现',
       reasoningOn: '开',
       reasoningOff: '关',
@@ -411,7 +537,13 @@ window.__ModuleLoader__.load({
       editAliasHint: '写进 llm-pi-ai 清单的别名。',
       editInputHint: '这里能覆盖报告说它接收的模态。',
       editReasoningHint: '「跟随发现」就是这一项不写。',
-      saveRow: '保存这一行',
+      fieldHelp: '{field}的说明',
+      editGroupIdentity: '名称与协议',
+      editGroupCapacity: '容量',
+      editUnknownOverrides: '这一行还有界面改不动的覆盖（{keys}）：清空覆盖会整条删掉。',
+      pendingChanges: '有 {count} 项改动还没写下去',
+      noPendingChanges: '和已保存的值相同',
+      saveRow: '保存',
       clearOverrides: '清空覆盖',
       cancelRow: '取消',
       keyReasoningEfforts: '推理档位',
@@ -432,12 +564,12 @@ window.__ModuleLoader__.load({
       syncHint: 'After each discovery round, write the models and their parameters into dsh\u2019s llm-pi-ai routes.',
 
       overridden: 'overridden',
-      overriddenKeys: 'overrides {keys}',
+      overriddenCount: '{count} overridden',
       resetField: 'Reset to default',
       invalidField: 'Enter an integer of at least 1, or leave it empty',
 
       refresh: 'Refresh now',
-      refreshHint: 'Discover and republish now, then show this round’s report.',
+      refreshHint: 'Discover and republish once; the list and every row’s status follow this round.',
       refreshing: 'Refreshing…',
       loading: 'Loading…',
 
@@ -446,48 +578,36 @@ window.__ModuleLoader__.load({
       noChanges: 'Nothing changed, so nothing was written.',
       invalidNumber: '{field} takes an integer of at least 1.',
 
-      reportTitle: 'Discovery report',
-      reportHint: 'The report states what the last discovery round worked out; saving settings or pressing Refresh now runs another.',
+      // What is left of the deleted discovery report: the empty state without an address, plus the two
+      // things that can go wrong in a round.
       dormantHint: 'No instance address yet: models are discovered once you set and save one.',
-      routesTitle: 'Routes',
-      noRoutes: 'No routes published yet.',
-      routeModels: '{count} models',
-      routePublished: 'written',
-      routeNotPublished: 'not written',
-      routeNoBaseUrl: '(this route has no baseURL)',
-      neverRefreshed: 'No round has run yet.',
+      catalogUnavailable: 'catalog unavailable ({reason})',
+      syncSkipped: 'skipped ({reason})',
 
       modelsTitle: 'Models',
-      modelsHint: 'One model per row; expand a row to edit its overrides, and Save row writes only that row. The order comes from discovery, with anything no route can serve last.',
+      modelsHint: 'One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery, with anything no route can serve last.',
+      modelsCount: '{count} models',
       noModels: 'No models discovered yet.',
       unservedTag: 'unserved',
       dirtyTag: 'unsaved edits',
+      statusUnserved: 'No route can serve this model',
+      statusUnknown: 'This round synced nothing, so whether it was written is unknown',
+      statusPublished: 'Written into the dsh routes',
+      statusNotPublished: 'Not written into the dsh routes yet',
 
-      factTrigger: 'Trigger',
-      factTime: 'Time',
-      factDuration: 'Duration',
-      factResult: 'Result',
-      factCatalog: 'Catalog',
-      factEndpoint: 'Endpoint',
-      factSync: 'Sync',
       factContextWindow: '{count} context',
-      factMaxTokens: '{count} output',
+      factMaxTokens: 'output {count}',
+      factRoute: 'route {route}',
+      factProtocol: 'protocol {protocol}',
+      factInput: 'modalities {value}',
+      factReasoning: 'reasoning {value}',
       factAlias: 'alias {alias}',
       factEndpoints: 'Endpoints the gateway advertises:',
       factSource: 'Source: {source}',
 
-      refreshOk: 'ok',
-      refreshFailed: 'failed',
-      catalogEntries: 'catalog has {count} entries',
-      catalogUnavailable: 'catalog unavailable ({reason})',
-      endpointListed: '{url} listed {count} rows',
-      syncApplied: 'wrote {count} entries ({routes})',
-      syncSkipped: 'skipped ({reason})',
-      syncOnlyRemoval: 'removals only',
-
       modalityText: 'text',
       modalityImage: 'image',
-      modalityNone: 'accepts nothing',
+      modalityNone: 'none',
       reasoningFollow: 'Follow discovery',
       reasoningOn: 'On',
       reasoningOff: 'Off',
@@ -510,7 +630,13 @@ window.__ModuleLoader__.load({
       editAliasHint: 'The alias written into the llm-pi-ai catalog.',
       editInputHint: 'This overrides the modalities the report says it accepts.',
       editReasoningHint: '\u201cFollow discovery\u201d leaves this key unwritten.',
-      saveRow: 'Save row',
+      fieldHelp: 'About {field}',
+      editGroupIdentity: 'Name and protocol',
+      editGroupCapacity: 'Capacity',
+      editUnknownOverrides: 'This row also carries overrides this page cannot edit ({keys}); clearing overrides removes the whole entry.',
+      pendingChanges: '{count} edits not written yet',
+      noPendingChanges: 'Matches the saved values',
+      saveRow: 'Save',
       clearOverrides: 'Clear overrides',
       cancelRow: 'Cancel',
       keyReasoningEfforts: 'reasoning efforts',
@@ -568,12 +694,6 @@ window.__ModuleLoader__.load({
       return String(value);
     }
 
-    /** ISO 时间戳 → 本地时间；宿主只报 ISO，时区是浏览器的事。 */
-    function formatTime(iso) {
-      const at = new Date(iso);
-      return Number.isNaN(at.getTime()) ? iso : at.toLocaleString();
-    }
-
     /** 事实来源 → 字典键；未知来源原样显示。 */
     const SOURCE_KEYS = {
       aperture: 'sourceAperture',
@@ -625,7 +745,7 @@ window.__ModuleLoader__.load({
 
     /**
      * 这份设置没有服务时用的替身：`configForms` 缺席时（注入表保证不会，但这一页不该因此整页消失）
-     * 让 `SettingsFormModel` 读到 `unavailable` 快照，官方表单自己会画那句「读不到」，报告那半块
+     * 让 `SettingsFormModel` 读到 `unavailable` 快照，官方表单自己会画那句「读不到」，模型那一段
      * 照旧。写入一律回绝——没有服务时没有任何东西能接受它。
      */
     const UNSERVED = Object.freeze({
@@ -687,10 +807,11 @@ window.__ModuleLoader__.load({
     };
 
     /**
-     * 配置页：实例（地址、同步开关）与模型清单、发现报告。
+     * 配置页：实例（地址、同步开关）与模型清单。
      *
      * 表单状态读注入面里的 `useApertureCard`（官方 SettingsFormModel 的投影），报告、提示语与每行
-     * 草稿是局部状态——它们是这一页的视图状态，不是设置文档的一部分。
+     * 草稿是局部状态——它们是这一页的视图状态，不是设置文档的一部分。报告本身（`panel.status` 那一份
+     * 结构化数据）仍然要读：每一行的事实、覆盖与状态点都长在它上面，只是不再整块摊开给用户看。
      *
      * **effect 的依赖里刻意不放注入面**：`inject` 面由渲染器每次渲染重新组装，把它的身份放进依赖会
      * 让 effect 每渲染一次就重跑一次。因此报告用一个自增计数器当重读信号（依赖里只有那个数），注入
@@ -747,8 +868,8 @@ window.__ModuleLoader__.load({
        * 保存设置里那两个字段，然后等一轮重新发现落地再说话。
        *
        * 写入走官方表单模型的 `save()`：它自带 `revision` 围栏（期间别处改过就拒绝，而不是覆盖别人的
-       * 改动）并从宿主接受的那份重新播种，因此写完不重读设置——投影会自己变新。报告里的路由与模型
-       * 事实来自最近一次刷新，写完必须等一轮，否则就是「保存了却没变」。设置变更自己也会唤起同一轮
+       * 改动）并从宿主接受的那份重新播种，因此写完不重读设置——投影会自己变新。报告里的模型事实
+       * 与状态点来自最近一次刷新，写完必须等一轮，否则就是「保存了却没变」。设置变更自己也会唤起同一轮
        * 刷新（单飞判定按配置版本合并），因此这里通常并进那一轮。
        */
       const saveSettings = () => run('save', async () => {
@@ -832,7 +953,7 @@ window.__ModuleLoader__.load({
       const toggleRow = (model) => setOpened((current) => ({ ...current, [model.id]: current[model.id] !== true }));
 
       /**
-       * 保存这一行的改动。
+       * 写下这一行（一个模型）的改动。
        *
        * 一行一个保存按钮，写下去的就只有这一行，宿主那边的版本校验也只管这一次写入。成功后收起面板
        * ——这一行的覆盖标签与事实都会跟着变，收起才看得见。
@@ -893,32 +1014,47 @@ window.__ModuleLoader__.load({
         source: SOURCE_KEYS[fact] === undefined ? fact : t(SOURCE_KEYS[fact]),
       });
 
-      /** 「标签 + 值」的一行；没有标签时就是一个整行的值（错误什么的）。 */
-      const fact = (key, label, value) => h(
-        'div',
-        { className: 'dap-fact', key },
-        label === null ? null : h('dt', null, label),
-        h('dd', null, value),
-      );
+      /** 最近一轮写入过的路由名；`undefined` 是「这一轮没同步」，不是「没写」——同步关着的时候报告里
+       * 根本没有这一项，界面不能把「不知道」说成「没写」。
+       */
+      const writtenRoutes = report === null || report.refresh === undefined || report.refresh.sync === undefined
+        ? undefined
+        : report.refresh.sync.routes;
 
-      /** 一个模型那几项生效的事实，摊成一行。 */
-      const modelFacts = (model) => {
-        const facts = [model.route === undefined ? t('unservedTag') : model.route];
-        if (model.protocol !== undefined) facts.push(model.protocol);
+      /** 一行模型那几项生效的事实，一项一句；缺哪项就不提哪项。 */
+      const factItems = (model) => {
+        const facts = [];
+        if (model.route !== undefined) facts.push(t('factRoute', { route: model.route }));
+        if (model.protocol !== undefined) facts.push(t('factProtocol', { protocol: model.protocol }));
         if (model.contextWindow !== undefined) {
           facts.push(t('factContextWindow', { count: formatCount(model.contextWindow) }));
         }
         if (model.maxTokens !== undefined) facts.push(t('factMaxTokens', { count: formatCount(model.maxTokens) }));
-        facts.push(model.input.length === 0
-          ? t('modalityNone')
-          : model.input.map((item) => t(item === 'image' ? 'modalityImage' : 'modalityText')).join('+'));
-        facts.push(model.reasoning ? t('reasoningOn') : t('reasoningOff'));
+        facts.push(t('factInput', {
+          value: model.input.length === 0
+            ? t('modalityNone')
+            : model.input.map((item) => t(item === 'image' ? 'modalityImage' : 'modalityText')).join('+'),
+        }));
+        facts.push(t('factReasoning', { value: model.reasoning ? t('reasoningOn') : t('reasoningOff') }));
         if (model.alias !== undefined && model.alias !== '') facts.push(t('factAlias', { alias: model.alias }));
-        return facts.join(' · ');
+        return facts;
       };
 
-      /** 把覆盖键翻成给人看的一句话：只挂一句「已覆盖」，用户得自己猜是哪一项。 */
-      const overrideKeyNames = (model) => (model.overrideKeys ?? [])
+      /**
+       * 这一行的状态点：绿是写进去了、灰是没写进去、黄是根本没有路由能服务它。
+       *
+       * 点旁边那句 `title` 就是它的说法——官方 `StateDot` 自己是 `aria-hidden`，说给谁听得由这里给。
+       */
+      const publishState = (model) => {
+        if (model.route === undefined) return { state: 'warning', title: t('statusUnserved') };
+        if (writtenRoutes === undefined) return { state: 'idle', title: t('statusUnknown') };
+        return writtenRoutes.includes(model.route)
+          ? { state: 'done', title: t('statusPublished') }
+          : { state: 'idle', title: t('statusNotPublished') };
+      };
+
+      /** 把覆盖键翻成给人看的一句话：界面认得的键都有字段，认不得的只有这里说得出名字。 */
+      const overrideKeyNames = (keys) => keys
         .map((key) => (OVERRIDE_NAMES[key] === undefined ? key : t(OVERRIDE_NAMES[key])))
         .join(t('listSeparator'));
 
@@ -926,100 +1062,145 @@ window.__ModuleLoader__.load({
        * 一个文本类覆盖字段。
        *
        * 官方 `SettingsValueField` 的语义正好对得上：「已覆盖」= 用户层里有这个键（报告给的
-       * `overrideKeys`），「恢复默认」= 把草稿改回「不覆盖」，非法草稿只标出来、由保存拦住。`hint`
-       * 里挂的是这一项事实的来源，所以输入框下面那句总说得出「现在这个值是谁定的」。
+       * `overrideKeys`），「恢复默认」= 把草稿改回「不覆盖」，非法草稿只标出来、由保存拦住。
+       *
+       * 长解释进 `help`（官方那个「i」按钮），输入框下面只留一句来源；外面再套一层格子，官方字段行
+       * 那条「相邻就加上边框」在网格里会错开半格，隔开一层壳就不碰它了。
        */
-      const textField = (model, key, copy) => h(SettingsValueField, {
-        id: `dap-${model.id}-${key}`,
-        label: t(copy.label),
-        hint: `${t(copy.hint)} ${sourceOf(copy.source(model))}`,
-        ...(copy.placeholder === undefined ? {} : { placeholder: copy.placeholder(model) }),
-        ...(copy.numeric === true ? { numeric: true } : {}),
-        text: draftOf(model)[key],
-        overridden: declaredIn(model, key),
-        // 只有容量那两项用 `1M`/`384K` 的词汇，因此也只有它们会「读不出来」；文本字段写什么都算数。
-        invalid: copy.numeric === true && capacityBad(draftOf(model)[key]),
-        overriddenLabel: t('overridden'),
-        resetLabel: t('resetField'),
-        invalidLabel: t('invalidField'),
-        disabled: busy !== '',
-        onEdit: (text) => stage(model, { [key]: text }),
-        onReset: () => stage(model, { [key]: copy.cleared }),
-      });
+      const textField = (model, key, copy) => h(
+        'div',
+        { className: 'dap-fieldCell' },
+        h(SettingsValueField, {
+          id: `dap-${model.id}-${key}`,
+          label: t(copy.label),
+          help: { label: t('fieldHelp', { field: t(copy.label) }), content: t(copy.hint) },
+          hint: sourceOf(copy.source(model)),
+          ...(copy.placeholder === undefined ? {} : { placeholder: copy.placeholder(model) }),
+          ...(copy.numeric === true ? { numeric: true } : {}),
+          text: draftOf(model)[key],
+          overridden: declaredIn(model, key),
+          // 只有容量那两项用 `1M`/`384K` 的词汇，因此也只有它们会「读不出来」；文本字段写什么都算数。
+          invalid: copy.numeric === true && capacityBad(draftOf(model)[key]),
+          overriddenLabel: t('overridden'),
+          resetLabel: t('resetField'),
+          invalidLabel: t('invalidField'),
+          disabled: busy !== '',
+          onEdit: (text) => stage(model, { [key]: text }),
+          onReset: () => stage(model, { [key]: copy.cleared }),
+        }),
+      );
 
-      /** 一行模型的覆盖编辑器。 */
+      /** 一行模型的覆盖编辑器：只写这一行。 */
       const editor = (model) => {
         const draft = draftOf(model);
-        const overriddenKeys = model.overrideKeys ?? [];
+        const overrides = model.overrideKeys ?? [];
+        const changed = Object.keys(patchOf(draft, initialOf(model)).patch).length;
+        // 界面认不得的键（`reasoningEfforts` 之类）只有「清空覆盖」撤得掉，而那是整条删，得先说清楚。
+        const unknown = overrides.filter((key) => !EDITABLE_KEYS.includes(key));
         return h(
           'div',
           { className: 'dap-editor' },
           h(
             'div',
-            { className: 'dap-editorGrid' },
-            textField(model, 'name', {
-              label: 'editName',
-              hint: 'editNameHint',
-              source: (item) => item.provenance.name,
-              cleared: '',
-            }),
-            textField(model, 'api', {
-              label: 'editApi',
-              hint: 'editApiHint',
-              // 协议没有单独一项来源：写过就是配置，没写过就是从通告的端点推导出来的。
-              source: (item) => (declaredIn(item, 'api') ? 'config' : 'aperture'),
-              cleared: '',
-              placeholder: (item) => item.protocol ?? '',
-            }),
-            textField(model, 'contextWindow', {
-              label: 'editContextWindow',
-              hint: 'editCapacityHint',
-              source: (item) => item.provenance.limits,
-              cleared: '',
-              numeric: true,
-            }),
-            textField(model, 'maxTokens', {
-              label: 'editMaxTokens',
-              hint: 'editCapacityHint',
-              source: (item) => item.provenance.limits,
-              cleared: '',
-              numeric: true,
-            }),
-            textField(model, 'alias', {
-              label: 'editAlias',
-              hint: 'editAliasHint',
-              source: () => 'config',
-              cleared: '',
-            }),
+            { className: 'dap-editorHead' },
+            h('span', { className: 'dap-editorId', title: model.id }, model.id),
+            unknown.length === 0
+              ? null
+              : h(
+                  'span',
+                  { className: 'dap-warnNote' },
+                  t('editUnknownOverrides', { keys: overrideKeyNames(unknown) }),
+                ),
+            dirtyOf(model)
+              ? h(Tag, { tone: 'warning', className: 'dap-editorDirty' }, t('dirtyTag'))
+              : null,
           ),
           h(
             'div',
-            { className: 'dap-inline' },
+            { className: 'dap-editGroup' },
+            h('span', { className: 'dap-editGroupTitle' }, t('editGroupIdentity')),
             h(
               'div',
-              { className: 'dap-control' },
-              h('span', { className: 'dap-controlLabel' }, t('editInput')),
-              h(Checkbox, {
-                checked: draft.text,
-                onChange: (next) => stage(model, { text: next }),
-                label: t('modalityText'),
-                disabled: busy !== '',
+              { className: 'dap-fields' },
+              textField(model, 'name', {
+                label: 'editName',
+                hint: 'editNameHint',
+                source: (item) => item.provenance.name,
+                cleared: '',
               }),
-              h(Checkbox, {
-                checked: draft.image,
-                onChange: (next) => stage(model, { image: next }),
-                label: t('modalityImage'),
-                disabled: busy !== '',
+              textField(model, 'alias', {
+                label: 'editAlias',
+                hint: 'editAliasHint',
+                source: () => 'config',
+                cleared: '',
               }),
-              overriddenKeys.includes('input')
-                ? h('span', { className: 'dap-badges' }, h(Tag, { tone: 'info' }, t('overridden')))
-                : null,
-              h('span', { className: 'dap-hint' }, `${t('editInputHint')} ${sourceOf(model.provenance.input)}`),
+              textField(model, 'api', {
+                label: 'editApi',
+                hint: 'editApiHint',
+                // 协议没有单独一项来源：写过就是配置，没写过就是从通告的端点推导出来的。
+                source: (item) => (declaredIn(item, 'api') ? 'config' : 'aperture'),
+                cleared: '',
+                placeholder: (item) => item.protocol ?? '',
+              }),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'dap-editGroup' },
+            h('span', { className: 'dap-editGroupTitle' }, t('editGroupCapacity')),
+            h(
+              'div',
+              { className: 'dap-fields' },
+              textField(model, 'contextWindow', {
+                label: 'editContextWindow',
+                hint: 'editCapacityHint',
+                source: (item) => item.provenance.limits,
+                cleared: '',
+                numeric: true,
+                // 清空之后回落到的就是发现到的那个数，摆在占位符里最省事。
+                placeholder: (item) => formatCapacity(item.contextWindow),
+              }),
+              textField(model, 'maxTokens', {
+                label: 'editMaxTokens',
+                hint: 'editCapacityHint',
+                source: (item) => item.provenance.limits,
+                cleared: '',
+                numeric: true,
+                placeholder: (item) => formatCapacity(item.maxTokens),
+              }),
+            ),
+          ),
+          // 模态与推理并排：它们都是「一个开关加一句话」，横着放比竖着叠省一半高度。
+          h(
+            'div',
+            { className: 'dap-grid2' },
+            h(
+              'div',
+              { className: 'dap-editGroup' },
+              h('span', { className: 'dap-editGroupTitle' }, t('editInput')),
+              h(
+                'div',
+                { className: 'dap-control' },
+                h(Checkbox, {
+                  checked: draft.text,
+                  onChange: (next) => stage(model, { text: next }),
+                  label: t('modalityText'),
+                  disabled: busy !== '',
+                }),
+                h(Checkbox, {
+                  checked: draft.image,
+                  onChange: (next) => stage(model, { image: next }),
+                  label: t('modalityImage'),
+                  disabled: busy !== '',
+                }),
+                overrides.includes('input') ? h(Tag, { tone: 'neutral' }, t('overridden')) : null,
+              ),
+              h('span', { className: 'dap-hint' }, sourceOf(model.provenance.input)),
             ),
             h(
               'div',
-              { className: 'dap-control' },
-              h('span', { className: 'dap-controlLabel' }, t('editReasoning')),
+              { className: 'dap-editGroup' },
+              h('span', { className: 'dap-editGroupTitle' }, t('editReasoning')),
               h(SegmentedControl, {
                 id: `dap-${model.id}-reasoning`,
                 label: t('editReasoning'),
@@ -1032,30 +1213,38 @@ window.__ModuleLoader__.load({
                 onChange: (next) => stage(model, { reasoning: next }),
                 disabled: busy !== '',
               }),
-              h(
-                'span',
-                { className: 'dap-hint' },
-                `${t('editReasoningHint')} ${sourceOf(model.provenance.reasoning)}`,
-              ),
+              h('span', { className: 'dap-hint' }, sourceOf(model.provenance.reasoning)),
             ),
           ),
           model.endpoints.length === 0
             ? null
             : h(
-                'p',
-                { className: 'dap-mono' },
-                `${t('factEndpoints')}\n${model.endpoints.join('\n')}`,
+                'div',
+                { className: 'dap-endpoints' },
+                h('span', { className: 'dap-editGroupTitle' }, t('factEndpoints')),
+                h(
+                  'ul',
+                  { className: 'dap-endpointList' },
+                  model.endpoints.map((endpoint) => h(
+                    'li',
+                    { className: 'dap-endpoint', key: endpoint },
+                    endpoint,
+                  )),
+                ),
               ),
           h(
             'div',
             { className: 'dap-actions' },
+            h('span', { className: 'dap-actionsNote' }, changed === 0
+              ? t('noPendingChanges')
+              : t('pendingChanges', { count: changed })),
             h(Button, {
-              variant: 'primary',
+              variant: 'ghost',
               size: 'sm',
-              onClick: () => submitRow(model),
+              onClick: () => cancelRow(model),
               disabled: busy !== '',
-            }, busy === 'edit' ? t('saving') : t('saveRow')),
-            overriddenKeys.length === 0
+            }, t('cancelRow')),
+            overrides.length === 0
               ? null
               : h(Button, {
                   variant: 'outline',
@@ -1064,102 +1253,102 @@ window.__ModuleLoader__.load({
                   disabled: busy !== '',
                 }, t('clearOverrides')),
             h(Button, {
-              variant: 'ghost',
+              variant: 'primary',
               size: 'sm',
-              onClick: () => cancelRow(model),
+              onClick: () => submitRow(model),
               disabled: busy !== '',
-            }, t('cancelRow')),
+            }, busy === 'edit' ? t('saving') : t('saveRow')),
           ),
         );
       };
 
-      /** 一行模型：折起来是事实，展开是覆盖编辑器。 */
-      const modelRow = (model) => h(
-        'li',
-        { key: model.id, className: 'dap-row' },
-        h(
-          DisclosureRow,
-          {
-            icon: h(StateDot, { state: model.route === undefined ? 'warning' : 'idle', size: 16 }),
-            title: model.name,
-            open: opened[model.id] === true,
-            expandable: true,
-            expandOnRowClick: true,
-            onToggle: () => toggleRow(model),
-            collapsedContent: h(
-              'div',
-              { className: 'dap-rowFacts' },
-              h('span', null, modelFacts(model)),
-              (model.overrideKeys ?? []).length === 0
-                ? null
-                : h(Tag, { tone: 'info' }, t('overriddenKeys', { keys: overrideKeyNames(model) })),
-              dirtyOf(model) ? h(Tag, { tone: 'warning' }, t('dirtyTag')) : null,
-            ),
-          },
-          opened[model.id] === true ? editor(model) : null,
-        ),
-      );
-
-      /** 已发布路由：写入与否来自最近一次刷新的写入结果。 */
-      const writtenRoutes = report === null || report.refresh === undefined || report.refresh.sync === undefined
-        ? undefined
-        : report.refresh.sync.routes;
-
-      const routeRow = (route) => h(
-        'li',
-        { key: route.provider, className: 'dap-route' },
-        h(
-          'div',
-          { className: 'dap-routeHead' },
-          h('span', null, route.provider),
-          route.api === undefined ? null : h(Tag, { tone: 'outline' }, route.api),
-          h(Tag, { tone: 'quiet' }, t('routeModels', { count: route.models })),
-          writtenRoutes === undefined
-            ? null
-            : h(Tag, { tone: writtenRoutes.includes(route.provider) ? 'success' : 'neutral' }, t(
-              writtenRoutes.includes(route.provider) ? 'routePublished' : 'routeNotPublished',
-            )),
-        ),
-        h('p', { className: 'dap-mono' }, route.baseURL ?? t('routeNoBaseUrl')),
-      );
-
-      /** 最近一次刷新决定了什么。 */
-      const reportFacts = (current) => {
-        const refresh = current.refresh;
-        if (refresh === undefined) return h('p', { className: 'dap-hint' }, t('neverRefreshed'));
+      /**
+       * 一行模型：折起来是身份与状态，展开是这一行的覆盖编辑器。
+       *
+       * 行首那条按钮盖满整行（官方 `DisclosureRow` 是一根 24px 高、`overflow:hidden` 的横条，标题又
+       * 不许收缩，名字一长就把右边的事实和标签挤没了）。这里名字自己一行、过长省略，事实另起一行随
+       * 宽度换行，标签跟在名字后面。
+       */
+      const modelRow = (model) => {
+        const open = opened[model.id] === true;
+        const overrides = model.overrideKeys ?? [];
+        const status = publishState(model);
         return h(
-          'dl',
-          { className: 'dap-facts' },
-          fact('trigger', t('factTrigger'), refresh.trigger),
-          fact('time', t('factTime'), formatTime(refresh.at)),
-          fact('duration', t('factDuration'), `${refresh.durationMs}ms`),
-          fact('result', t('factResult'), refresh.ok ? t('refreshOk') : t('refreshFailed')),
-          refresh.error === undefined ? null : fact('error', null, refresh.error),
-          fact(
-            'catalog',
-            t('factCatalog'),
-            refresh.catalog.available
-              ? t('catalogEntries', { count: formatCount(refresh.catalog.entries) })
-              : t('catalogUnavailable', { reason: refresh.catalog.reason ?? '—' }),
+          'li',
+          { key: model.id, className: 'dap-card' },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dap-cardHead',
+              'aria-expanded': open ? 'true' : 'false',
+              onClick: () => toggleRow(model),
+            },
+            h(
+              'span',
+              { className: 'dap-status', role: 'img', 'aria-label': status.title, title: status.title },
+              h(StateDot, { state: status.state, size: 10 }),
+            ),
+            h(
+              'span',
+              { className: 'dap-identity' },
+              h(
+                'span',
+                { className: 'dap-identityTop' },
+                h('span', { className: 'dap-name', title: model.name }, model.name),
+                model.route === undefined ? h(Tag, { tone: 'warning' }, t('unservedTag')) : null,
+                overrides.length === 0
+                  ? null
+                  : h(
+                      // 这一层只为挂 `title`：官方 `Tag` 除了 tone/className/children 什么都不透传，
+                      // 想让人 hover 看出「覆盖的是哪几项」就得自己在外面套一层。
+                      'span',
+                      { className: 'dap-tagWrap', title: overrideKeyNames(overrides) },
+                      h(Tag, { tone: 'neutral' }, t('overriddenCount', { count: overrides.length })),
+                    ),
+                dirtyOf(model) ? h(Tag, { tone: 'warning' }, t('dirtyTag')) : null,
+              ),
+              h(
+                'span',
+                { className: 'dap-factRow' },
+                factItems(model).map((item, index) => h(
+                  'span',
+                  { className: 'dap-factItem', key: `${model.id}-fact-${String(index)}` },
+                  item,
+                )),
+              ),
+            ),
+            h(
+              'span',
+              { className: 'dap-chevron', 'data-open': open ? 'true' : 'false' },
+              h(IconChevronRightOutlineRegular, { size: 14 }),
+            ),
           ),
-          refresh.endpoint === undefined
-            ? null
-            : fact('endpoint', t('factEndpoint'), t('endpointListed', {
-              url: refresh.endpoint.url,
-              count: refresh.endpoint.listed,
-            })),
-          refresh.sync === undefined
-            ? null
-            : fact('sync', t('factSync'), refresh.sync.applied
-              ? t('syncApplied', {
-                count: refresh.sync.ops,
-                routes: refresh.sync.routes.join(t('listSeparator')) || t('syncOnlyRemoval'),
-              })
-              : t('syncSkipped', { reason: refresh.sync.reason ?? '—' })),
+          open ? editor(model) : null,
         );
+      };
+
+      /**
+       * 这一轮哪里不对：清单读不到、或者该写的东西没写进去。
+       *
+       * 「发现报告」那一块删掉之后，这些原本只写在报告事实表里的话得有地方落脚——否则清单挂了的时候，
+       * 用户看到的就只是「还没有发现任何模型」，没有任何理由。刷新整个失败（`ok: false`）不在这里说：
+       * 那句话由 `run()` 贴到提示语上，比这里更显眼。正常的一轮（同步关着 / 同步成功）什么都不说。
+       */
+      const roundProblem = (current) => {
+        const refresh = current === null ? undefined : current.refresh;
+        if (refresh === undefined) return null;
+        if (!refresh.catalog.available) {
+          return t('catalogUnavailable', { reason: refresh.catalog.reason ?? '—' });
+        }
+        if (refresh.sync !== undefined && !refresh.sync.applied) {
+          return t('syncSkipped', { reason: refresh.sync.reason ?? '—' });
+        }
+        return null;
       };
 
       const controlsDisabled = !state.available || !state.writable;
+      const problem = roundProblem(report);
 
       return h(
         'div',
@@ -1239,41 +1428,36 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'dap-groupHead' },
-            h('h3', { className: 'dap-groupTitle' }, t('modelsTitle')),
+            h(
+              'span',
+              { className: 'dap-titleWrap' },
+              h('h3', { className: 'dap-groupTitle' }, t('modelsTitle')),
+              report === null
+                ? null
+                : h('span', { className: 'dap-count' }, t('modelsCount', { count: report.models.length })),
+            ),
             h(Button, {
               variant: 'ghost',
               size: 'sm',
+              icon: h(IconRefreshOutlineRegular, { size: 14 }),
               onClick: refreshReport,
               disabled: busy !== '',
               title: t('refreshHint'),
             }, busy === 'refresh' ? t('refreshing') : t('refresh')),
           ),
           h('p', { className: 'dap-hint' }, t('modelsHint')),
+          problem === null ? null : h('p', { className: 'dap-warnNote' }, problem),
           report === null
             ? h('p', { className: 'dap-hint' }, t('loading'))
             : report.models.length === 0
-              ? h('p', { className: 'dap-hint' }, t('noModels'))
+              // 没有实例地址时发现根本不会跑，这时说「还没发现到模型」等于没说——那句话要说清为什么。
+              // 只在设置读得到的时候这么说：读不到时地址存不存在都不知道，那是另一件事（表单自己会说）。
+              ? h(
+                  'p',
+                  { className: 'dap-empty' },
+                  state.available && state.baseUrl.text === '' ? t('dormantHint') : t('noModels'),
+                )
               : h('ul', { className: 'dap-rows' }, report.models.map(modelRow)),
-        ),
-        h(
-          'section',
-          { className: 'dap-group' },
-          h('h3', { className: 'dap-groupTitle' }, t('reportTitle')),
-          report !== null && report.place.length === 0
-            ? h('p', { className: 'dap-hint' }, t('dormantHint'))
-            : null,
-          report === null
-            ? h('p', { className: 'dap-hint' }, t('loading'))
-            : h(
-                'div',
-                { className: 'dap-group' },
-                h('h4', { className: 'dap-groupTitle' }, t('routesTitle')),
-                report.routes.length === 0
-                  ? h('p', { className: 'dap-hint' }, t('noRoutes'))
-                  : h('ul', { className: 'dap-routes' }, report.routes.map(routeRow)),
-              ),
-          report === null ? null : reportFacts(report),
-          h('p', { className: 'dap-hint' }, t('reportHint')),
         ),
       );
     }
