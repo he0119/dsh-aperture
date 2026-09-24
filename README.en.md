@@ -259,6 +259,8 @@ npm run inspect            # print the generated settings.yaml and its resolutio
 DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live   # end-to-end: real harness stack + real gateway
 ```
 
+The two halves are built differently, which is easy to trip over: the browser half (`client/aperture.js`) is hand-written CJS that DSH serves straight from the file, so a page refresh is enough; the host half (`src/*.ts`) runs the compiled `lib/`, so a change needs `npm run build` **and a host restart** — otherwise the previous build keeps running. If `lib/` is older than `src/`, it has not been rebuilt.
+
 The release process and what the published package contains are in [docs/releasing.md](https://github.com/he0119/dsh-aperture/blob/main/docs/releasing.md) (Chinese).
 
 ## Acknowledgements
