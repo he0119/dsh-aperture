@@ -20,8 +20,7 @@
  */
 
 import type { SettingsDescriptor, SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
-import type { ResolvedConfig } from './config.ts';
-import { APERTURE_NAMESPACE } from './namespaces.ts';
+import { APERTURE_NAMESPACE, type ResolvedConfig } from './config.ts';
 import { buildReport, type DeclaredOverrides, type PanelReport } from './report.ts';
 import { message, type ApertureRuntime } from './runtime.ts';
 import type { Modality } from './types.ts';

@@ -12,13 +12,17 @@
  * 所以「全部 volatile」既是它的真实语义，也让 Loader 把每一次配置改动都当作就地换热
  * 引用的活更新——插件不重新挂载，正在跑的那一轮刷新也不会被掐断。
  *
+ * 两个设置命名空间没有单独的文件：自己的那一个就是本模块的用户层键名，适配器的那
+ * 一个（写出去的目标）住在 `sync.ts`，也就是唯一会写它的地方。
+ *
  * @module dsh-aperture/config
  */
 
 import z from '@deepseek-ai/schemastery';
 import { normalizeBaseUrl } from './url.ts';
 
-export { APERTURE_NAMESPACE, PI_AI_NAMESPACE } from './namespaces.ts';
+/** 本插件拥有、并可通过它配置的设置命名空间。 */
+export const APERTURE_NAMESPACE = 'aperture';
 
 /** 默认清单地址；参考实现用的是同一份文档。 */
 export const DEFAULT_MODEL_METADATA_URL = 'https://models.dev/models.json';

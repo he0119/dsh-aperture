@@ -21,8 +21,10 @@
  */
 
 import type { SettingsDescriptor, SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
-import { PI_AI_NAMESPACE } from './namespaces.ts';
 import type { RoutePlan } from './profile.ts';
+
+/** pi-ai 适配器注册的设置命名空间，也是本插件写入的那一个。 */
+export const PI_AI_NAMESPACE = 'llm-pi-ai';
 
 /** 一次发布尝试的结果。 */
 export interface SyncOutcome {

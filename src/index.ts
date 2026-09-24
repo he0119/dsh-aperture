@@ -55,7 +55,6 @@ export {
   APERTURE_NAMESPACE,
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MODEL_METADATA_URL,
-  PI_AI_NAMESPACE,
   resolveConfig,
 } from './config.ts';
 export type { Config as ApertureConfig, ConfigRef, ResolvedConfig } from './config.ts';
@@ -68,7 +67,7 @@ export type { ProfilePlan, ProfileOptions, RoutePlan } from './profile.ts';
 export { buildRegistry, classifyProtocol, isDeepSeekFamily } from './registry.ts';
 export type { RegistryResult } from './registry.ts';
 export { AperturePanelService, PANEL_CONTRIBUTION, PANEL_INVOCATIONS, PANEL_NAMESPACE, PANEL_PACKAGE } from './remote.ts';
-export { applySync, planSync } from './sync.ts';
+export { PI_AI_NAMESPACE, applySync, planSync } from './sync.ts';
 export type { SyncOutcome } from './sync.ts';
 export type { ConfiguredModel, DiscoveredModel, FactSource, Modality, ModelProvenance } from './types.ts';
 export { buildModelsEndpoint, buildRouteBaseUrl, normalizeBaseUrl } from './url.ts';
