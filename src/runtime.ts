@@ -1,19 +1,19 @@
 /**
  * 发现运行时：同一时刻只跑一次刷新，只记住一个结果。
  *
- * 刷新来自四个方向——插件加载、设置变更、刷新间隔，以及设置界面的标签页——其中两个
+ * 刷新来自四个方向——插件加载、设置变更、刷新间隔，以及设置界面的配置页——其中两个
  * 很容易重叠，因为本插件自己写入并提交的设置变更会唤醒触发这次写入的同一个 watcher。
  * 因此刷新是单飞（single-flight）的：在刷新过程中到达的请求，若正在跑的那一轮读的就是
  * 此刻这份配置，就并进它；否则排在它后面（见 {@link ApertureRuntime.refresh}）。排队者
  * 共享同一轮，因此再多的调用方也只多跑一轮。
  *
- * 记住的结果就是设置文档里那一份的影子：标签页报告的就是它，而真正服务请求的，是
+ * 记住的结果就是设置文档里那一份的影子：配置页报告的就是它，而真正服务请求的，是
  * 文档里已经生效的那一份。
  *
  * @module dsh-aperture/runtime
  */
 
-import type { SettingsProvider } from '@deepseek-ai/dsh-settings';
+import type { SettingsForms } from '@deepseek-ai/dsh-settings';
 import { fetchModelsListing } from './aperture.ts';
 import { ModelCatalog, type CatalogLoad } from './catalog.ts';
 import { type ResolvedConfig } from './config.ts';
@@ -63,7 +63,7 @@ export interface RuntimeDeps {
   /** 当前生效的配置，每次刷新都会重新读取。 */
   readonly config: () => ResolvedConfig;
   /** 设置服务；插件把它声明为必需注入。 */
-  readonly settings: SettingsProvider;
+  readonly settings: SettingsForms;
   /** 具名 logger。 */
   readonly logger: RuntimeLogger;
   /** models.dev 缓存，在各次刷新之间共享。 */
@@ -101,7 +101,7 @@ export class ApertureRuntime {
    *
    * 排队者因此只多跑一轮，而不是每人一轮：先醒来的那个起一轮，其余的并进它。
    *
-   * @param trigger - 触发来源；出现在标签页的状态段里。
+   * @param trigger - 触发来源；出现在配置页的状态段里。
    * @returns 本次调用所参与的那一轮刷新的结果。
    */
   async refresh(trigger: string): Promise<RefreshOutcome> {

@@ -16,9 +16,10 @@
  *
  * 它不转换任何协议格式。这正是重点。
  *
- * 界面在设置里：浏览器半边（`client/aperture.js`）在「插件」下挂一个 Aperture 标签页，
- * 用来改实例地址与同步开关、立刻刷新、以及把已经发布的路由撤下来。除此之外没有别的
- * 界面——发现本身发生在插件加载、配置变更与刷新间隔到点上。
+ * 界面在「插件」页里：浏览器半边（`client/aperture.js`）注册进插件管理页的
+ * `plugins.row.config` 槽位，于是本插件那一行多出一个「配置」入口，用来改实例地址与
+ * 同步开关、立刻刷新、以及把已经发布的路由撤下来。除此之外没有别的界面——发现本身发生
+ * 在插件加载、配置变更与刷新间隔到点上。
  *
  * ```yaml
  * - id: aperture
@@ -31,9 +32,16 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis';
+// 只为一个类型而来：`loader/volatile-update` 这个事件名由 cordis-plugin-loader 声明合并
+// 进 `Events`，而本包在运行时并不需要它——空导入让编译期能看见那条声明。
+import type {} from '@deepseek-ai/cordis-plugin-loader';
 import { fetchModelsListing } from './aperture.ts';
 import { ModelCatalog } from './catalog.ts';
-import { APERTURE_NAMESPACE, Config as ConfigSchema, memoizedConfig, resolveConfig, type Config } from './config.ts';
+import {
+  configValue,
+  memoizedConfig,
+  type ConfigRef,
+} from './config.ts';
 import { createPanelOps } from './panel.ts';
 import { buildProfilePlan } from './profile.ts';
 import { buildRegistry, classifyProtocol } from './registry.ts';
@@ -50,7 +58,7 @@ export {
   PI_AI_NAMESPACE,
   resolveConfig,
 } from './config.ts';
-export type { Config as ApertureConfig, ResolvedConfig } from './config.ts';
+export type { Config as ApertureConfig, ConfigRef, ResolvedConfig } from './config.ts';
 export { createPanelOps } from './panel.ts';
 export type { PanelAction, PanelConfiguration, PanelDeps, PanelModelPatch, PanelOps } from './panel.ts';
 export { buildReport } from './report.ts';
@@ -64,7 +72,7 @@ export { applySync, clearRoutes, planSync } from './sync.ts';
 export type { SyncOutcome } from './sync.ts';
 export type { ConfiguredModel, DiscoveredModel, FactSource, Modality, ModelProvenance } from './types.ts';
 export { buildModelsEndpoint, buildRouteBaseUrl, normalizeBaseUrl } from './url.ts';
-export { Config } from './config.ts';
+export { Config, configValue } from './config.ts';
 
 /** 出现在加载器诊断里的插件名。 */
 export const name = 'dsh-aperture';
@@ -75,7 +83,7 @@ export const name = 'dsh-aperture';
  * 意味着框架会把插件挂在 PENDING 直到 settings 就绪；provider 一旦被替换就卸载插件，
  * 恢复后再重新加载——而不是留下一个已经加载、却无处发布的实例。
  *
- * `typert` 则刻意**不**声明：设置界面上的标签页只是顺手提供的便利，没有它的部署（例如
+ * `typert` 则刻意**不**声明：设置界面上的配置页只是顺手提供的便利，没有它的部署（例如
  * headless profile）也应该照样获得发现能力，因此它在下面按需注入，不在就安静地跳过。
  */
 export const inject = ['settings'];
@@ -84,21 +92,20 @@ export const inject = ['settings'];
  * 发布网关的模型清单：现在发布，之后有任何变化也发布。
  *
  * @param ctx - 插件上下文，其中 `settings` 已就绪。
- * @param config - 组合层的 `aperture` 段，已按 {@link ConfigSchema} 校验并带上默认值。
+ * @param config - 组合层的 `aperture` 段，已按 `Config` schema 校验并带上默认值；根级
+ *   volatile 使它成为一个活引用，读值走 `config.get()`。
  * @throws Error 当配置自身矛盾（路由键不合文法或两条路由重复），或存储的 `aperture`
  *   段非法时抛出——框架的失败路径正是“坏配置要响亮”的实现方式。
  */
-export function apply(ctx: Context, config: Config): void {
+export function apply(ctx: Context, config: ConfigRef): void {
   const logger = ctx.logger as RuntimeLogger;
   const catalog = new ModelCatalog();
 
-  // `installSection` 交出来的是**活引用**（thunk）而不是快照：解析后的配置段每次被
-  // 编辑都是就地替换，所以只有持有这个 thunk，后续的配置变更才能抵达本插件。下面
-  // 所有读取都因此走它。
-  let source: () => Config = () => config;
-  // 解析结果按源缓存：设置服务每次提交都换一份深冻结的对象，因此这个 thunk 的返回值
-  // 身份就是**配置版本**——运行时靠它判断正在跑的那一轮读的是不是此刻这份配置。
-  const readConfig = memoizedConfig(() => source());
+  // 根级 volatile 让 `config` 是一个**活引用**，而不是一份快照：每次配置变更都是就地对
+  // 同一个引用来一次 `updateVolatile`，只有值真的变了才换一份深冻结的解析结果。下面所有
+  // 读取都因此走 `configValue`（`get()` 加一次空值兜底），而它给出的快照身份就是运行时要的
+  // 「配置版本」。
+  const readConfig = memoizedConfig(() => configValue(config));
 
   const runtime = new ApertureRuntime({
     config: readConfig,
@@ -134,6 +141,21 @@ export function apply(ctx: Context, config: Config): void {
     'aperture refresh interval',
   );
 
+  // 配置变更只有这一条来路：Loader 在一次 volatile-only 更新落地之后发这个事件，此时
+  // `get()` 已经是新值。配置页自己写入的变更也走这里——它写完会再显式刷一轮，而那一轮与
+  // 这里起的是同一轮（运行时的单飞判定按配置版本合并），不会多跑一遍发现。
+  ctx.on('loader/volatile-update', () => {
+    armInterval();
+    void runtime.refresh('配置变更');
+  });
+
+  // 本插件自己画配置页（浏览器半边注册进「插件」页的 `plugins.row.config` 槽位），因此
+  // 不让设置接缝再为它生成一个通用表单页。这只是页面归属的声明，不影响配置的读写能力。
+  ctx.effect(
+    () => ctx.settings.configure({ auto: false }, ctx.fiber),
+    'aperture settings presentation',
+  );
+
   const initial = readConfig();
   logger.info(
     'dsh-aperture: %s',
@@ -142,23 +164,11 @@ export function apply(ctx: Context, config: Config): void {
       : `正在监视 ${initial.instanceRoot} 的模型`,
   );
 
-  // 注册配置段本身也是启动发现的那个动作：`installSection` 在挂载时会先调用
-  // `setSource`、再通知一次 `onChange`，顺序如此，所以第一次刷新看到的就是叠加了
-  // 用户层的配置——只跑一遍，而不是先按组合层配置跑一遍、再补一遍去对齐。
-  ctx.settings.installSection(ctx, APERTURE_NAMESPACE, ConfigSchema, config, {
-    setSource(current) {
-      source = current;
-    },
-    onChange() {
-      armInterval();
-      void runtime.refresh('配置变更');
-    },
-    validate(value) {
-      resolveConfig(value);
-    },
-  });
+  // 插件加载本身就是启动发现的那个动作：走到这里配置已经解析完毕（组合层 + 用户层，默认
+  // 值全部补齐），所以第一轮刷新看到的就是生效配置，不必先按组合层跑一遍再补一遍去对齐。
+  void runtime.refresh('插件加载');
 
-  // 设置里那个标签页需要宿主半边的 Remote 面（报告、配置读写、立刻刷新、撤下路由），而
+  // 配置页需要宿主半边的 Remote 面（报告、配置读写、立刻刷新、撤下路由），而
   // Typert 注册表只有 Web 这类装配了网关的 profile 才有。其余 profile 里这一整块被跳过：
   // 发现照常运行，只是没有可点按的界面。
   ctx.inject(['typert'], (panelCtx) => {

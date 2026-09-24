@@ -1,13 +1,15 @@
 /**
- * `dsh-aperture` 浏览器半边：**设置 → 插件 → Aperture** 标签页。
+ * `dsh-aperture` 浏览器半边：**插件页里本插件那一行的配置页**。
  *
- * 扩展点与接线方式对齐参考实现 `@xiaoyuyu6420/dsh-backup`（`backupPanel` + 插件标签页）：
+ * 扩展点与接线方式对齐参考实现 `@xiaoyuyu6420/dsh-backup`（`backupPanel` + 插件页配置页）：
  *
- * - 用 `settings.plugins.tab` 注册一个**列表槽位**标签页，而不是往「插件配置」里塞卡片；
+ * - 用 `plugins.row.config` 注册一个**键控槽位**，键是 `<包名>#<行 id>`（`dsh-aperture#aperture`）：
+ *   插件页那一行由此长出「配置」入口，配置页由页面自己画标题、图标与面包屑，本模块只交内容；
  * - 注入面只有 `slots` / `locale` / `remote` 三个服务，**不注入设置传输**——配置读写与
- *   发现结果一样，都经自己的 `aperturePanel` Remote 命名空间往返，标签页因此不关心设置
- *   文档长什么样；
- * - 标签页只拿两个 prop：`panel`（端点集合）与 `t`（字典，因为注册时声明了 `locale`）。
+ *   发现结果一样，都经自己的 `aperturePanel` Remote 命名空间往返，页面因此不关心设置
+ *   文档长什么样（页主交过来的 `form` 也不用，理由见 `ApertureRowConfig`）；
+ * - 组件只拿 `panel`（端点集合）与 `t`（字典，因为注册时声明了 `locale`），外加页主交过来的
+ *   `view`（`summary` 要一行字，`page` 要整块内容）。
  *
  * **这个文件就是构建产物。** DSH 的客户端模块系统只要求一个经典脚本，用
  * `window.__ModuleLoader__.load({ id, factory })` 的握手把自己报上去；它不要求这份脚本
@@ -25,7 +27,7 @@ window.__ModuleLoader__.load({
     const React = require('react');
     const h = React.createElement;
 
-    /** 字典命名空间（本插件拥有）。标签页的 `locale` 声明与 `ctx.locale.bind` 都用它。 */
+    /** 字典命名空间（本插件拥有）。配置页的 `locale` 声明与 `ctx.locale.bind` 都用它。 */
     const NS = 'settings.aperturePanel';
     /** 宿主半边的 Remote 命名空间（`src/remote.ts`）。 */
     const PANEL = 'aperturePanel';
@@ -33,6 +35,8 @@ window.__ModuleLoader__.load({
     const PACKAGE = 'dsh-aperture';
     /** 样式表归属标记；卸载与热替换时按它回收。 */
     const STYLE_MARK = 'data-dsh-aperture';
+    /** `cordis.patch.yml` 里那一行的 id；「插件」页按 `<包名>#<行 id>` 找这一行的配置页。 */
+    const ROW_ID = 'aperture';
 
     // ---------------------------------------------------------------- 端点契约
 
@@ -266,7 +270,7 @@ window.__ModuleLoader__.load({
       })),
     });
 
-    /** 标签页要显示的整份报告。 */
+    /** 配置页要显示的整份报告。 */
     const STATUS = codec(`${PACKAGE}/types#status`, {
       place: 'string',
       refresh: opt(REFRESH),
@@ -358,9 +362,9 @@ window.__ModuleLoader__.load({
     // -------------------------------------------------------------------- 样式
 
     /**
-     * 注入标签页样式。
+     * 注入配置页样式。
      *
-     * 标签页在独立 bundle 里，用不了仓库的 CSS module 管线，因此样式随包分发、按 effect
+     * 配置页在独立 bundle 里，用不了仓库的 CSS module 管线，因此样式随包分发、按 effect
      * 生命周期注入，并在卸载时移除。选择器全部收在 `[data-dsh-aperture]` 之下；颜色只引用
      * dsh web 的主题 token（`--dsw-alias-*`，各带回落值），深浅色自动跟随。
      *
@@ -370,7 +374,10 @@ window.__ModuleLoader__.load({
      * 浅色面（`bg-module-platform`，`14px 16px` 内边距），参数排成 `minmax(160px, 1fr)` 的栅格，
      * 字段标签 12px/500 的 label-secondary，行内动作按钮 28px / 14px 圆角，正文按钮 36px 胶囊，
      * 编辑区底部的「取消 / 保存」右对齐。那份 CSS 是构建产物里的字面量，可以逐条对照，因此界面
-     * 不必赌一个没有类型声明的组件 API 也能与官方标签页长得一样。
+     * 不必赌一个没有类型声明的组件 API 也能与官方配置页长得一样。
+     *
+     * 根节点刻意**不设** `max-width`：这块界面现在挂在「插件」页里那一行的配置页下，而页面自己
+     * 把内容列收在 960px；再套一层更窄的度量只会让卡片比同一页上的描述与行窄一截。
      *
      * @returns {Function} 卸载时移除样式表的 disposer。
      */
@@ -379,7 +386,7 @@ window.__ModuleLoader__.load({
       const element = document.createElement('style');
       element.setAttribute(STYLE_MARK, '');
       element.textContent = `
-[${STYLE_MARK}] { display: flex; flex-direction: column; gap: 12px; max-width: 720px; min-width: 0; color: var(--dsw-alias-label-primary, inherit); }
+[${STYLE_MARK}] { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary, inherit); }
 [${STYLE_MARK}] .dap-title { font-size: 16px; font-weight: 500; line-height: 24px; }
 [${STYLE_MARK}] .dap-subtitle { margin: 0; font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-tertiary, rgba(127,127,127,.9)); }
 /* 卡片就是官方「模型」页的一张 rowCard：16px 圆角、.5px 的 l4 边框、12px 14px 内边距、
@@ -504,7 +511,6 @@ window.__ModuleLoader__.load({
      */
     const zh = {
       tab: 'Aperture',
-      title: 'Aperture 模型发现',
       subtitle: '把实例通告的模型发布成 llm-pi-ai 的 provider 路由。',
       loading: '正在读取状态…',
       addressLabel: '实例地址',
@@ -520,7 +526,7 @@ window.__ModuleLoader__.load({
       listSeparator: '、',
       syncOffTag: '不同步',
       reset: '恢复默认',
-      resetHint: '从设置文件里删掉这一项，回到组合层与默认值。',
+      resetHint: '从设置文件里删掉这一项，回落缺省值。',
       dotConfigured: '实例地址已配置',
       dotReady: '实例地址已配置，最近一次刷新成功',
       dotMissing: '没有实例地址',
@@ -607,7 +613,6 @@ window.__ModuleLoader__.load({
 
     const en = {
       tab: 'Aperture',
-      title: 'Aperture model discovery',
       subtitle: 'Publish the models your instance advertises as llm-pi-ai provider routes.',
       loading: 'Reading state…',
       addressLabel: 'Instance address',
@@ -623,7 +628,7 @@ window.__ModuleLoader__.load({
       listSeparator: ', ',
       syncOffTag: 'no sync',
       reset: 'Reset to default',
-      resetHint: 'Remove this key from your settings file and fall back to the composition layer and defaults.',
+      resetHint: 'Remove this key from your settings file and fall back to the default.',
       dotConfigured: 'instance address configured',
       dotReady: 'instance address configured and the last refresh succeeded',
       dotMissing: 'no instance address',
@@ -709,7 +714,7 @@ window.__ModuleLoader__.load({
     };
 
 
-    // ------------------------------------------------------------------ 标签页
+    // ------------------------------------------------------------------ 配置页
 
     /** 一个错误的人话形式。 */
     function textOf(error) {
@@ -798,16 +803,19 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 「Aperture」标签页。
+     * Aperture 面板：实例卡（地址、同步开关、立刻刷新、撤下路由）与模型清单。
      *
      * 只持有视图状态：配置与报告分别由一个 effect 拉取，动作按下后再拉一次。**effect 的
      * 依赖里刻意不放注入面**——`inject` 面由渲染器每次渲染重新组装，把它的身份放进依赖会
      * 让 effect 每渲染一次就重跑一次，进而无限循环。因此这里用自增计数器当刷新信号。
      *
+     * 面板不自画标题与描述：「插件」页那一行的配置页由页面画标题、图标与面包屑。只有
+     * 「没有实例地址」这句话留着——它是状态，不是介绍。
+     *
      * @param {object} props - 渲染器交过来的 `panel` 与 `t`。
-     * @returns {object} 标签页元素。
+     * @returns {object} 面板元素。
      */
-    function ApertureTab(props) {
+    function AperturePanel(props) {
       const panel = props.panel;
       const t = typeof props.t === 'function' ? props.t : (key, params) => interpolate(zh[key] ?? key, params);
 
@@ -1566,7 +1574,7 @@ window.__ModuleLoader__.load({
        * 撤销也按行做，一次管一整份清单的动作没有对应场景。
        *
        * 每张卡收起时是卡头加一条事实，点「编辑」在**这张卡里**展开那块浅色面（官方那张
-       * DeepSeek 卡也是这个形状）：报告是这张标签页的主要用途，不该被一地输入框淹掉。
+       * DeepSeek 卡也是这个形状）：报告是这个配置页的主要用途，不该被一地输入框淹掉。
        *
        * @param {object} current - 报告。
        * @returns {object} 模型段。
@@ -1642,12 +1650,9 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         { [STYLE_MARK]: '', 'aria-busy': busy !== '' ? 'true' : 'false' },
-        h(
-          'div',
-          null,
-          h('div', { className: 'dap-title' }, t('title')),
-          h('p', { className: 'dap-subtitle' }, dormant ? t('addressDormant') : t('subtitle')),
-        ),
+        // 「插件」页已经画过标题与描述了，这里只剩操作状态值得说一句：没有实例地址时发现
+        // 处于休眠——这句话是状态而不是介绍，因此留着。
+        dormant ? h('p', { className: 'dap-subtitle' }, t('addressDormant')) : null,
 
         h(
           'div',
@@ -1780,6 +1785,27 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * 「插件」页里本插件那一行的配置页。
+     *
+     * 页主按 `view` 问两次：`summary` 只要一行字（作为那一行描述缺失时的兜底），`page` 要那块
+     * 带自己保存动作的表单。两种视图共用同一个面板；标题、图标与面包屑整块由页面自己画。
+     *
+     * 页面随 `form` 一起交出来的 `state` / `mutate` 刻意**不用**：本插件的写入走自己的 Remote 面
+     * ——它带版本号校验、写完等一轮重新发现落地、并把结果说成一句人话（成功、冲突、还是发现失败），
+     * 那些都只有宿主半边知道。走两条写路径只会让「谁在什么时候写」变得说不清。
+     *
+     * @param {object} props - 页主交过来的 `view`（与仅 `page` 视图有的 `form`），以及注入的
+     *   `panel` 与 `t`。
+     * @returns {string|object} 一行摘要，或者配置页元素。
+     */
+    function ApertureRowConfig(props) {
+      const t = typeof props.t === 'function' ? props.t : (key, params) => interpolate(zh[key] ?? key, params);
+      // 摘要就是面板的副标题：同一个说法只写一遍，免得页面上那张卡与这一行各说各话。
+      if (props.view === 'summary') return t('subtitle');
+      return h(AperturePanel, { panel: props.panel, t });
+    }
+
     // ---------------------------------------------------------------- 插件本体
 
     /**
@@ -1813,10 +1839,14 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 浏览器插件主体：字典、样式、Remote 贡献，以及插件标签页。
+     * 浏览器插件主体：字典、样式、Remote 贡献，以及「插件」页里那一行的配置页。
      *
-     * `ctx.slots.inject` 是必需的，不是可选的：`settings.plugins.tab` 由设置区自己声明，
+     * `ctx.slots.inject` 是必需的，不是可选的：`plugins.row.config` 由插件管理页自己声明，
      * 那个声明完全可能在本插件 `apply` 之后才发生，直接 register 会撞上「槽位尚未声明」。
+     *
+     * 注册的键是 `<包名>#<行 id>`——`dsh-aperture` 的 `cordis.patch.yml` 里那一行的 id 是
+     * `aperture`。这一条注册就是那一行「配置」入口存在的原因：没有它，那一行只是插件列表里
+     * 一行不可编辑的配置。
      *
      * @param {object} ctx - 客户端根上下文。
      */
@@ -1836,14 +1866,12 @@ window.__ModuleLoader__.load({
           save: async (baseUrl, sync) => unwrap(await namespace().save(baseUrl, sync)),
           edit: async (id, patch) => unwrap(await namespace().edit(id, patch)),
         };
-        scope.slots.inject('settings.plugins.tab', () => scope.slots.register({
-          name: 'settings.plugins.tab',
-          id: 'aperture',
-          order: 40,
-          label: () => t('tab'),
+        scope.slots.inject('plugins.row.config', () => scope.slots.register({
+          name: 'plugins.row.config',
+          key: `${PACKAGE}#${ROW_ID}`,
           locale: NS,
           inject: () => ({ panel }),
-        }, ApertureTab));
+        }, ApertureRowConfig));
       });
     }
 

@@ -13,7 +13,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { SettingsProvider } from '@deepseek-ai/dsh-settings';
+import type { SettingsForms } from '@deepseek-ai/dsh-settings';
 import type { ModelCatalog } from '../src/catalog.ts';
 import { memoizedConfig, type Config } from '../src/config.ts';
 import { ApertureRuntime, type RuntimeLogger } from '../src/runtime.ts';
@@ -59,7 +59,7 @@ function gatedCatalog() {
 function makeRuntime(source: () => Config, catalog: ModelCatalog): ApertureRuntime {
   return new ApertureRuntime({
     config: memoizedConfig(source),
-    settings: {} as SettingsProvider,
+    settings: {} as SettingsForms,
     logger: quiet,
     catalog,
   });

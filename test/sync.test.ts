@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings';
+import type { SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
 import type { RoutePlan } from '../src/profile.ts';
 import { applySync, clearRoutes, deepEqualJson, planSync } from '../src/sync.ts';
 
@@ -60,15 +60,19 @@ describe('planSync', () => {
   });
 });
 
-/** 一个记录写入、并能拒绝一个带版本号的设置服务。 */
+/**
+ * 一个记录写入、并能拒绝一个带版本号的设置服务。
+ *
+ * 形状照着真实的 `SettingsForms`：**没有 `get(ns)`**，读一个命名空间只能从 `describe()`
+ * 里挑出那一条描述符；`value` 与 `revision` 就在描述符上。
+ */
 function fakeSettings(value: unknown, options: { conflictOnce?: boolean } = {}) {
   const writes: Array<readonly SettingsPathOp[]> = [];
   let revision = 1;
   let conflict = options.conflictOnce ?? false;
   let current = value;
   const service = {
-    get: () => current,
-    describe: () => [{ ns: 'llm-pi-ai', revision }],
+    describe: () => (current === undefined ? [] : [{ ns: 'llm-pi-ai', revision, value: current }]),
     mutate: async (_ns: string, ops: readonly SettingsPathOp[]): Promise<void> => {
       if (conflict) {
         conflict = false;
@@ -82,7 +86,7 @@ function fakeSettings(value: unknown, options: { conflictOnce?: boolean } = {}) 
       revision += 1;
     },
   };
-  return { service: service as unknown as SettingsProvider, writes };
+  return { service: service as unknown as SettingsForms, writes };
 }
 
 describe('applySync', () => {
@@ -118,12 +122,11 @@ describe('applySync', () => {
 
   it('上报非冲突的拒绝', async () => {
     const service = {
-      get: () => ({ providers: {} }),
-      describe: () => [{ ns: 'llm-pi-ai', revision: 1 }],
+      describe: () => [{ ns: 'llm-pi-ai', revision: 1, value: { providers: {} } }],
       mutate: async (): Promise<void> => {
         throw new Error('model "x" has an empty reasoningEfforts');
       },
-    } as unknown as SettingsProvider;
+    } as unknown as SettingsForms;
     await assert.rejects(() => applySync(service, [routePlan('aperture', 'a')], OWNED), /empty reasoningEfforts/);
   });
 });

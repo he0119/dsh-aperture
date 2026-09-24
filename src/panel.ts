@@ -1,25 +1,25 @@
 /**
- * 设置界面标签页的宿主半边。
+ * 设置界面配置页的宿主半边。
  *
- * 标签页本身在浏览器里跑（`client/aperture.js`），它能读到的只有这里暴露的端点——与参考
+ * 配置页本身在浏览器里跑（`client/aperture.js`），它能读到的只有这里暴露的端点——与参考
  * 实现（`@xiaoyuyu6420/dsh-backup` 的 `backupPanel`）同一种做法：界面不直接碰宿主存储，
  * 所有读写都经自己的 Remote 命名空间往返，因此客户端半边不必注入设置传输，也不必知道设置
  * 文档长什么样。
  *
  * 写入仍然是配置，所以它落在 `aperture` 命名空间的用户层：地址与同步开关用路径操作写，
- * 「撤销」是把字段从用户层移除、回落到组合层与默认值。单个模型的参数也走这里，只是它们更
+ * 「撤销」是把字段从用户层移除、回落到缺省值。单个模型的参数也走这里，只是它们更
  * 零碎——容量、模态、推理、协议落在 `models` 的对应条目上，清单别名落在 `modelAliases[id]`，
  * 而写入是按字段合并的：界面没提到的字段原样留着（`reasoningEfforts` 界面根本不编辑，也不该
  * 被顺手抹掉）。报告与两个动作则不是配置——把发现的模型塞进设置文档会让「用户写了什么」与
  * 「插件发现了什么」混成同一份账，而后者每轮刷新都会被重写。
  *
- * 端点都不抛异常：失败是界面要显示的结果之一，因此它是返回值里的字段，而不是需要标签页
+ * 端点都不抛异常：失败是界面要显示的结果之一，因此它是返回值里的字段，而不是需要配置页
  * 去分辨的 rejected promise。
  *
  * @module dsh-aperture/panel
  */
 
-import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings';
+import type { SettingsDescriptor, SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
 import type { ResolvedConfig } from './config.ts';
 import { APERTURE_NAMESPACE, PI_AI_NAMESPACE } from './namespaces.ts';
 import { buildReport, type DeclaredOverrides, type PanelReport } from './report.ts';
@@ -59,7 +59,7 @@ export interface PanelAction {
   readonly summary: string;
 }
 
-/** 标签页表单要显示的东西。 */
+/** 配置页表单要显示的东西。 */
 export interface PanelConfiguration {
   /** 生效的实例地址（schema 默认值 → 组合层 → 用户层）。 */
   readonly baseUrl: string;
@@ -80,10 +80,10 @@ export interface PanelDeps {
   /** 当前生效配置的活引用（thunk）。 */
   readonly config: () => ResolvedConfig;
   /** 设置服务：读 `aperture` 段的用户层，也写它。 */
-  readonly settings: SettingsProvider;
+  readonly settings: SettingsForms;
 }
 
-/** 标签页可以调用的端点。 */
+/** 配置页可以调用的端点。 */
 export interface PanelOps {
   /** 最近一次刷新做了什么；不触发任何工作。 */
   status(): PanelReport;
@@ -96,7 +96,7 @@ export interface PanelOps {
   /**
    * 写入配置。
    *
-   * 写完**等一轮重新发现落地**才返回：标签页拿到回答就会重读报告，而报告里的路由与模型事实
+   * 写完**等一轮重新发现落地**才返回：配置页拿到回答就会重读报告，而报告里的路由与模型事实
    * 来自最近一次刷新，不等它就还是旧配置那一份。
    *
    * @param baseUrl - 新地址；`null` 表示恢复默认（从用户层移除），`undefined` 表示不碰。
@@ -162,7 +162,7 @@ function prune(entry: Record<string, unknown>): Record<string, unknown> {
  * @param settings - 设置服务。
  * @returns `aperture.models` 的原样条目，以及写过别名的模型 id。
  */
-function declaredOverrides(settings: SettingsProvider): DeclaredOverrides {
+function declaredOverrides(settings: SettingsForms): DeclaredOverrides {
   const user = readSection(settings).user;
   return {
     models: (Array.isArray(user.models) ? user.models : []).map(asRecord),
@@ -179,8 +179,15 @@ function declaredOverrides(settings: SettingsProvider): DeclaredOverrides {
  * @param settings - 设置服务。
  * @returns 解析视图；命名空间尚未注册或描述符读不到时给出空值。
  */
-function readSection(settings: SettingsProvider): ApertureSection {
-  const descriptor = settings.describe({ redactSecrets: true }).find((entry) => entry.ns === APERTURE_NAMESPACE);
+function readSection(settings: SettingsForms): ApertureSection {
+  let descriptor: SettingsDescriptor | undefined;
+  try {
+    descriptor = settings.describe({ redactSecrets: true }).find((entry) => entry.ns === APERTURE_NAMESPACE);
+  } catch {
+    // `describe()` 会为**每个** entry 跑一遍解析，所以某个不相干的 entry 自己坏掉也会让整次
+    // 读取抛异常。页面宁可显示「未注册」也不要整块打不开——写入路径另有它自己的报错。
+    descriptor = undefined;
+  }
   return {
     value: asRecord(descriptor?.value),
     user: asRecord(descriptor?.user),
@@ -320,13 +327,13 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
       try {
         // 带着刚读到的版本号写入：期间有别人改过就拒绝，而不是覆盖他的改动。
         await deps.settings.mutate(APERTURE_NAMESPACE, ops, readSection(deps.settings).revision);
-        // 写完等这一轮刷新落地再回答：标签页拿到回答就会重读报告，而报告里的模型事实来自最近
+        // 写完等这一轮刷新落地再回答：配置页拿到回答就会重读报告，而报告里的模型事实来自最近
         // 一次刷新——不等它，界面就会「保存了却没变」（地址换了，模型清单还是旧地址那一份）。
-        // 设置变更本身也会唤起同一轮刷新（`installSection` 的 onChange），因此这里通常是并进
-        // 那一轮，而不是另跑一轮。
+        // 配置变更本身也会唤起同一轮刷新（Loader 的 `loader/volatile-update`），因此这里通常是
+        // 并进那一轮，而不是另跑一轮。
         const outcome = await deps.runtime.refresh('配置变更');
         // 写入成功了，但重新发现可能失败——两件事不能混成一句话说。
-        const wrote = withdrawOnly ? '已恢复默认，回落到组合层与默认值' : '已写入设置';
+        const wrote = withdrawOnly ? '已恢复默认，回落到缺省值' : '已写入设置';
         return {
           ok: true,
           summary: outcome.ok
@@ -408,7 +415,7 @@ export function createPanelOps(deps: PanelDeps): PanelOps {
         // 与 `save` 同一条路径：带着刚读到的版本号写入，期间别人改过就拒绝。
         await deps.settings.mutate(APERTURE_NAMESPACE, ops, section.revision);
         // 等这一轮刷新落地再回答（理由见 `save`）：这一行的容量、模态、协议都是刷新算出来的
-        // 事实，不等它，标签页重读报告时看到的还是旧值——「保存了却没变」就是这么来的。
+        // 事实，不等它，配置页重读报告时看到的还是旧值——「保存了却没变」就是这么来的。
         const outcome = await deps.runtime.refresh('配置变更');
         const saved = revoked
           ? `已撤销 "${modelId}" 的全部覆盖，回落到发现值与清单`

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Aperture model discovery",
+    "description": "Publish the models your instance advertises as llm-pi-ai provider routes."
+  }
+}

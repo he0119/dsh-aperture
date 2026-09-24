@@ -45,14 +45,15 @@ npx @deepseek-ai/dsh plugin --profile web add /path/to/dsh-aperture
 ### 2. Point it at your instance
 
 ```yaml
-# ~/.dsh/settings.yaml
-aperture:
-  baseUrl: https://ai.example.ts.net
+# ~/.dsh/profiles/web/cordis.patch.yml
+- id: aperture
+  config:
+    baseUrl: https://ai.example.ts.net
 ```
 
-You may put this in the profile's `cordis.patch.yml` (composition layer) instead; the user layer wins.
+This layer (the profile patch document, i.e. the user layer) is this plugin's settings namespace, `aperture`. The `cordis.patch.yml` this package ships (the composition layer) only declares the row and writes no `config`: every key's default lives in the schema, so writing only the keys you want to change is enough and the rest fall back to the defaults. Note that patch layers **replace the whole row** rather than deep-merging — this row's `config` supersedes the composition row's outright, and because the composition row has none, what you write is all there is.
 
-After a restart you can also set it in the GUI: the **Aperture** tab under **Settings → Plugins** (alongside "Plugin configuration"). Its "实例地址" field edits the same `aperture.baseUrl`.
+You can also fill it in from the GUI: on the **Plugins** page find the `dsh-aperture` row and press Configure; the "实例地址" field on that configuration page writes the same `aperture.baseUrl`, and saving lands in the same file.
 
 ### 3. Restart DSH
 
@@ -64,7 +65,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # should show a "# == dsh-ape
 
 ### 4. Confirm
 
-The models appear in the selector under the route `Aperture`. To see what the last refresh did, look at the **Aperture** tab under **Settings → Plugins**: the status block lays every fact out on its own row, and the models are listed per route underneath.
+The models appear in the selector under the route `Aperture`. To see what the last refresh did, look at **Plugins → dsh-aperture → Configure**: the status block lays every fact out on its own row, and the models are listed per route underneath.
 
 ```
 ▾ Aperture  ●                        [Refresh now] [Withdraw published routes]
@@ -106,25 +107,25 @@ Unserved  4 models  ●                                      [▸ Edit]
 
 Collapsed, the first level is just the route card head and the second just one row of facts (id, display name, capacities); "Edit" expands the level inside it, where every source sits next to the field it describes ("in effect 1,048,576 · from aperture"). Each row gets its own Save and Cancel: Save writes that row only, Cancel throws that row's edits away.
 
-(The tab itself is bilingual; the labels above are its English wording.)
+(The configuration page itself is bilingual; the labels above are its English wording.)
 
 ## Usage
 
-The interface is the **Aperture** tab under **Settings → Plugins**: it shows your instance address and what the last refresh did, lists the discovered models per route, and lets you edit the address, toggle `sync`, discover and republish now, withdraw the published routes from the `llm-pi-ai` section, and edit model parameters in place. The address and the toggle stay drafts until you press Save; the save is handed to the host half, which writes through the settings seam, so it is revision-fenced — a form that has drifted from the settings document is refused rather than overwriting someone else's edit. Model parameters work the same way, **one row at a time**: an expanded row edits a draft (the row shows an "unsaved" tag), Save writes that row only, and Cancel drops it. There is no batch edit.
+The interface is at **Plugins → dsh-aperture → Configure** (press Configure on this plugin's row on the Plugins page). The page header's name and icon and the row's one-line description come from the package's `locale/*.json` and `package.json`'s `icon`, while the page chrome itself is drawn by the Plugins page. It shows your instance address and what the last refresh did, lists the discovered models per route, and lets you edit the address, toggle `sync`, discover and republish now, withdraw the published routes from the `llm-pi-ai` section, and edit model parameters in place. The address and the toggle stay drafts until you press Save; the save is handed to the host half, which writes through the settings seam, so it is revision-fenced — a form that has drifted from the settings document is refused rather than overwriting someone else's edit. Model parameters work the same way, **one row at a time**: an expanded row edits a draft (the row shows an "unsaved" tag), Save writes that row only, and Cancel drops it. There is no batch edit.
 
 | Where | Effect |
 | --- | --- |
-| Tab · 实例卡 | the instance address, sync toggle and last refresh; the head's dot says whether the address is usable and whether the last round succeeded, naming which one on hover |
-| Tab · 实例地址 | edits `baseUrl` (written through the settings seam; when it says "Overridden", the "Reset to default" beside it falls back to the composition layer and defaults) |
-| Tab · 同步开关 | edits `sync`: off discovers without writing `llm-pi-ai`; carries the same "Overridden / Reset to default" pair |
-| Tab · 保存 | bottom right of the editor (Cancel sits to its left): writes the address and toggle drafts into the settings document; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
-| Tab · 最近一次刷新 | the read-only diagnosis in the lower half of the card body: what the last refresh did, what triggered it, and the catalog, endpoint and settings-write results |
-| Tab · 立即刷新 | an action on the Instance card head: discover and republish now, then show that round's report |
-| Tab · 撤掉已发布的路由 | an action on the Instance card head: withdraw this plugin's two routes from the `llm-pi-ai` section |
-| Tab · 模型与路由 | one page-level section: an expandable card per route (its head carrying `provider · api`, the model count and a dot saying whether this round wrote it into `llm-pi-ai`), whose body holds the address and the model list; models no route can serve get their own Unserved card |
-| Tab · 编辑 | the pill button in a card head: expands the next level inside that card. A route card expands the model list; a model row expands its own parameter panel — display name, catalog alias, capacities, modalities, reasoning, protocol, each source next to the field it describes |
-| Tab · 保存 / 取消 | write that row only, or throw that row's edits away; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
-| Tab · 恢复默认 | sits next to whatever is overridden: clear only the fields the report says really were overridden, falling back to discovery and the catalog right away |
+| Configuration page · 实例卡 | the instance address, sync toggle and last refresh; the head's dot says whether the address is usable and whether the last round succeeded, naming which one on hover |
+| Configuration page · 实例地址 | edits `baseUrl` (written through the settings seam; when it says "Overridden", the "Reset to default" beside it falls back to the default) |
+| Configuration page · 同步开关 | edits `sync`: off discovers without writing `llm-pi-ai`; carries the same "Overridden / Reset to default" pair |
+| Configuration page · 保存 | bottom right of the editor (Cancel sits to its left): writes the address and toggle drafts into the settings document; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
+| Configuration page · 最近一次刷新 | the read-only diagnosis in the lower half of the card body: what the last refresh did, what triggered it, and the catalog, endpoint and settings-write results |
+| Configuration page · 立即刷新 | an action on the Instance card head: discover and republish now, then show that round's report |
+| Configuration page · 撤掉已发布的路由 | an action on the Instance card head: withdraw this plugin's two routes from the `llm-pi-ai` section |
+| Configuration page · 模型与路由 | one page-level section: an expandable card per route (its head carrying `provider · api`, the model count and a dot saying whether this round wrote it into `llm-pi-ai`), whose body holds the address and the model list; models no route can serve get their own Unserved card |
+| Configuration page · 编辑 | the pill button in a card head: expands the next level inside that card. A route card expands the model list; a model row expands its own parameter panel — display name, catalog alias, capacities, modalities, reasoning, protocol, each source next to the field it describes |
+| Configuration page · 保存 / 取消 | write that row only, or throw that row's edits away; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
+| Configuration page · 恢复默认 | sits next to whatever is overridden: clear only the fields the report says really were overridden, falling back to discovery and the catalog right away |
 
 In-place edits are configuration: capacities and modalities land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. Capacities accept the `1M` / `100K` spelling (decimal suffixes, the same vocabulary as the official Models page: `1M` is 1000000, not 1048576); what gets stored is still a plain token count, and the field spells it back in the shortest form that survives a round trip (`384000` → `384K`, while `1048576` is not a whole thousand and stays written out). The protocol field is the only way out for an unserved model: filling it in publishes a model that only answers on its native endpoint under the matching route.
 
@@ -132,7 +133,7 @@ In-place edits are configuration: capacities and modalities land on the matching
 
 ## Configuration
 
-Every key may live in the `aperture:` section of `~/.dsh/settings.yaml` (user layer) or in the profile's `cordis.patch.yml` (composition layer). `baseUrl` and `sync` can also be edited on the GUI's Aperture tab, and so can the per-model parameters inside `models` and `modelAliases`; every other key needs the file.
+Every key lives under that row's `config:` in the profile patch document (user layer). The `cordis.patch.yml` this package ships (composition layer) only installs the row and writes no `config`, so any key you leave out falls back to the defaults below. `baseUrl` and `sync` can also be edited on the configuration page, and so can the per-model parameters inside `models` and `modelAliases`, in place there; every other key needs the file.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -151,7 +152,7 @@ Every key may live in the `aperture:` section of `~/.dsh/settings.yaml` (user la
 | `defaultContextWindow` | `128000` | Context capacity when nothing sizes a model |
 | `images` | `ignore` | `metadata` adopts models.dev input modalities (images) |
 | `reasoning` | `auto` | `off` declares every model non-reasoning |
-| `sync` | `true` | `false` discovers without writing (the tab still reports) |
+| `sync` | `true` | `false` discovers without writing (the configuration page still reports) |
 | `refreshIntervalMinutes` | `0` | Periodic refresh; `0` refreshes only at load and on change |
 | `timeoutMs` | `20000` | Per-request timeout for the gateway and the catalog |
 
@@ -175,7 +176,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
 **Some models never show up in the selector?**
-Look at 模型与路由 on the tab (the `未服务` line). Models that only offer Gemini's native `generateContent` endpoint cannot be attached — `llm-pi-ai` speaks OpenAI-compatible and Anthropic Messages only. Using the wrong endpoint fails loudly, and Aperture names the right one:
+Look at 模型与路由 on the configuration page (the `未服务` line). Models that only offer Gemini's native `generateContent` endpoint cannot be attached — `llm-pi-ai` speaks OpenAI-compatible and Anthropic Messages only. Using the wrong endpoint fails loudly, and Aperture names the right one:
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat
@@ -186,40 +187,55 @@ Look at 模型与路由 on the tab (the `未服务` line). Models that only offe
 Only two conservative levels are offered by default (DeepSeek family `off/high/max`, every other reasoning model `off/high`). Add your own:
 
 ```yaml
-aperture:
-  models:
-    - id: deepseek-v4-pro
-      reasoningEfforts:
-        off: disabled
-        minimal: minimal
-        low: low
-        medium: medium
-        high: high
-        max: max
+# ~/.dsh/profiles/web/cordis.patch.yml
+- id: aperture
+  config:
+    models:
+      - id: deepseek-v4-pro
+        reasoningEfforts:
+          off: disabled
+          minimal: minimal
+          low: low
+          medium: medium
+          high: high
+          max: max
 ```
 
 **Want a model the gateway did not list?**
 Add it explicitly with `models` — for instance those four Gemini models, if you know they work on an OpenAI-compatible endpoint after all:
 
 ```yaml
-aperture:
-  models:
-    - id: gemini-2.5-pro
-      api: openai-completions
+# ~/.dsh/profiles/web/cordis.patch.yml
+- id: aperture
+  config:
+    models:
+      - id: gemini-2.5-pro
+        api: openai-completions
 ```
 
 **Capacity or reasoning flags were not filled in?**
 Gateways rename things, and models.dev may not match (in practice `deepseek-flash` and `k3` are `deepseek/deepseek-v4-flash` and `moonshotai/kimi-k3` there). Bridge it explicitly:
 
 ```yaml
-aperture:
-  modelAliases:
-    deepseek-flash: deepseek/deepseek-v4-flash
-    k3: moonshotai/kimi-k3
+# ~/.dsh/profiles/web/cordis.patch.yml
+- id: aperture
+  config:
+    modelAliases:
+      deepseek-flash: deepseek/deepseek-v4-flash
+      k3: moonshotai/kimi-k3
 ```
 
-**The tab says `设置：未写入（已处于同步状态）`?**
+**The configuration page says `设置：未写入（已处于同步状态）`?**
 That is the normal steady state: the settings already hold the current catalog.
+
+**Saved but not in effect, and the GUI says a higher-priority configuration overrides it?**
+DSH's patch layers stack: above the profile patch document sit higher-priority layers such as `$DSH_HOME/cordis.patch.yml`. If the `aperture` row is written there too, a save from the configuration page lands in the profile patch document but is shadowed by that layer. Delete the row from the higher-priority layer, or edit it there instead.
+
+**Upgrading from 0.2 — where did my `settings.yaml` go?**
+As of 0.1.7 settings no longer live in a file of their own; they live in the profile patch document. On the first start `$DSH_HOME/settings.yaml` is renamed to `settings.yaml.imported` and each section is moved into the patch document under its settings namespace — the `aperture:` section moves as-is, and every key and value that still passes the schema is unchanged, so the address and the per-model overrides are all still there. From then on only the patch document is read, and `settings.yaml.imported` is just an archive; editing it does nothing. A section whose values no longer validate stays in that archive too, with a line in the log saying so.
+
+**No Plugins page / no GUI in this deployment?**
+The configuration page only exists in the Web GUI (it works over Typert Remote endpoints). A headless profile still discovers and still writes, it just has no clickable page. If the deployment has no manageable profile at all, the `settings` service does not exist and the plugin stays `PENDING` on its hard dependency — its only job is writing settings, so with nowhere to write it deliberately does nothing.
 
 **Need a real key instead of the placeholder header?**
 Aperture authenticates by network identity (Tailscale) and needs none; the plugin writes `authorization: Bearer dsh-aperture` / `x-api-key: dsh-aperture` only to make the adapter willing to send the request. It is **not a key**. When a real credential is needed, point `apiKeyEnv` at a credential-seam record and no placeholder is written.
@@ -240,7 +256,7 @@ GET {baseUrl}/v1/models
         ├─ capacity:  Aperture fields ─► models.dev ─► default
         ├─ reasoning: Aperture fields ─► models.dev ─► off
         │
-        └─ llm-pi-ai providers.<route>, written to settings.yaml by revision
+        └─ llm-pi-ai providers.<route>, written into the profile patch document by revision
 ```
 
 Writes touch only the two keys under `llm-pi-ai.providers` that this plugin owns: an unchanged section is not rewritten; writes are path-addressed so your hand-written providers survive untouched; a failed discovery never wipes the published catalog; a route that lost its models is removed.
@@ -253,10 +269,17 @@ Design notes — why two routes, where each fact comes from, lifecycle and depen
 npm install                # if the machine-level npm cache is not writable: npm install --cache ./.npm-cache --ignore-scripts
 npm run build              # tsc -> lib/
 npm run typecheck          # includes test/, and parses the browser half with node --check
-npm test                   # offline unit tests (119; devDependencies must be installed)
-npm run inspect            # print the generated settings.yaml and its resolutions
+npm test                   # offline unit tests (172; devDependencies must be installed)
 
 DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live   # end-to-end: real harness stack + real gateway
+DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run inspect     # manual walkthrough: the written patch document and the LLM resolutions (build first)
+```
+
+Away from the Tailscale network with no real instance, both of those can run against a fake gateway (payload described in the file header):
+
+```sh
+node scripts/fake-aperture-gateway.mjs 54117
+DSH_APERTURE_LIVE_URL=http://127.0.0.1:54117 npm run test:live
 ```
 
 The two halves are built differently, which is easy to trip over: the browser half (`client/aperture.js`) is hand-written CJS that DSH serves straight from the file, so a page refresh is enough; the host half (`src/*.ts`) runs the compiled `lib/`, so a change needs `npm run build` **and a host restart** — otherwise the previous build keeps running. If `lib/` is older than `src/`, it has not been rebuilt.
@@ -266,7 +289,7 @@ The release process and what the published package contains are in [docs/releasi
 ## Acknowledgements
 
 - [he0119/vscode-aperture-for-copilot](https://github.com/he0119/vscode-aperture-for-copilot): the reference implementation this plugin follows for Aperture model discovery.
-- [xiaoyuyu6420/dsh-backup](https://github.com/xiaoyuyu6420/dsh-backup): the reference implementation this plugin follows for the interface wiring — the settings-tab registration and the Remote endpoint shape both come from it.
+- [xiaoyuyu6420/dsh-backup](https://github.com/xiaoyuyu6420/dsh-backup): the reference implementation this plugin follows for the interface wiring — the Remote endpoint shape comes from it, while the way the configuration page is mounted now comes from the Plugins page's slot contract as of 0.1.7.
 - [Aperture](https://tailscale.com/kb/1542/aperture) (Tailscale): the gateway being discovered.
 - [models.dev](https://models.dev): enriches capacity and capabilities Aperture does not declare.
 - `@deepseek-ai/dsh-llm-pi-ai`: this plugin only discovers; the adapter does the protocol work.

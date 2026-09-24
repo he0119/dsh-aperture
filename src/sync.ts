@@ -20,7 +20,7 @@
  * @module dsh-aperture/sync
  */
 
-import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings';
+import type { SettingsDescriptor, SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
 import { PI_AI_NAMESPACE } from './namespaces.ts';
 import type { RoutePlan } from './profile.ts';
 
@@ -34,6 +34,38 @@ export interface SyncOutcome {
   readonly routes: readonly string[];
   /** 未写入任何内容时，说明原因。 */
   readonly reason?: string;
+}
+
+/**
+ * 找一个 entry 的 descriptor。
+ *
+ * 设置接缝没有「按命名空间取值」这种读法：`describe()` 是唯一的入口，它按 Loader 里的
+ * entry 逐个报告（`ns` 就是 entry id）。目标 entry 不存在时——比如
+ * `@deepseek-ai/dsh-llm-pi-ai` 没挂载——这里什么也读不到。
+ *
+ * @param settings - 设置服务。
+ * @param ns - 目标 entry id。
+ * @returns 该 entry 的 descriptor；没有这个 entry 时为 `undefined`。
+ */
+function sectionDescriptor(settings: SettingsForms, ns: string): SettingsDescriptor | undefined {
+  try {
+    return settings.describe().find((descriptor) => descriptor.ns === ns);
+  } catch {
+    // describe() 会为每个 entry 跑一遍解析，某个 entry 自己坏掉时它会抛。这里把「读不到」
+    // 与「不存在」一视同仁：调用方拿到 undefined，照常得出「未注册」的结论。
+    return undefined;
+  }
+}
+
+/**
+ * 读一个 entry 的生效值。
+ *
+ * @param settings - 设置服务。
+ * @param ns - 目标 entry id。
+ * @returns 该 entry 的生效值（深冻结快照）；没有这个 entry 时为 `undefined`。
+ */
+function sectionValue(settings: SettingsForms, ns: string): unknown {
+  return sectionDescriptor(settings, ns)?.value;
 }
 
 /**
@@ -86,11 +118,11 @@ export function planSync(
  * @returns 发生了什么；未写入任何内容时包含原因。
  */
 export async function applySync(
-  settings: SettingsProvider,
+  settings: SettingsForms,
   routes: readonly RoutePlan[],
   ownedRoutes: readonly string[],
 ): Promise<SyncOutcome> {
-  const current = settings.get(PI_AI_NAMESPACE);
+  const current = sectionValue(settings, PI_AI_NAMESPACE);
   if (current === undefined) {
     return {
       applied: false,
@@ -118,7 +150,7 @@ export async function applySync(
     if (!isConflict(error)) {
       throw error;
     }
-    const retryOps = planSync(settings.get(PI_AI_NAMESPACE), routes, ownedRoutes);
+    const retryOps = planSync(sectionValue(settings, PI_AI_NAMESPACE), routes, ownedRoutes);
     if (retryOps.length === 0) {
       return { applied: false, ops: 0, routes: routes.map((route) => route.provider), reason: '已处于同步状态' };
     }
@@ -134,8 +166,8 @@ export async function applySync(
  * @param ownedRoutes - 要移除的路由键。
  * @returns 发生了什么。
  */
-export async function clearRoutes(settings: SettingsProvider, ownedRoutes: readonly string[]): Promise<SyncOutcome> {
-  const current = settings.get(PI_AI_NAMESPACE);
+export async function clearRoutes(settings: SettingsForms, ownedRoutes: readonly string[]): Promise<SyncOutcome> {
+  const current = sectionValue(settings, PI_AI_NAMESPACE);
   if (current === undefined) {
     return {
       applied: false,
@@ -178,12 +210,8 @@ function readProviders(current: unknown): Record<string, unknown> | undefined {
 }
 
 /** pi-ai 配置段的当前版本号；provider 未暴露时为空。 */
-function currentRevision(settings: SettingsProvider): number | undefined {
-  try {
-    return settings.describe().find((descriptor) => descriptor.ns === PI_AI_NAMESPACE)?.revision;
-  } catch {
-    return undefined;
-  }
+function currentRevision(settings: SettingsForms): number | undefined {
+  return sectionDescriptor(settings, PI_AI_NAMESPACE)?.revision;
 }
 
 /** 判断某个可抛出对象是否为设置接缝的陈旧版本号冲突。 */

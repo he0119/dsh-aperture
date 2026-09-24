@@ -1,11 +1,16 @@
 /**
  * 配置 schema 与解析。
  *
- * 本插件拥有一个设置命名空间 `aperture`：它的组合层是 bundle 里
- * `cordis.patch.yml` 的那一行，用户层是 `$DSH_HOME/settings.yaml` 里的
- * `aperture:` 段。而它发布出去的一切都写进**另一个**命名空间 `llm-pi-ai`——
- * 真正提供这些路由的适配器。这个分工就是整个设计：本插件决定有哪些模型，
- * 那个适配器决定怎么跟它们说话。
+ * 本插件拥有一个可配置的 plugin entry：组合层是 bundle 里 `cordis.patch.yml` 的那
+ * 一行，用户层是当前 profile 的 patch 里同名 entry 的 `config` 段。而它发布出去的一切
+ * 都写进**另一个** entry `llm-pi-ai`——真正提供这些路由的适配器。这个分工就是整个
+ * 设计：本插件决定有哪些模型，那个适配器决定怎么跟它们说话。
+ *
+ * 整份 schema 都是 volatile 的，理由是两条。设置接缝（`ctx.settings`）**只**暴露
+ * volatile 字段：解析结果里没有 volatile 节点的 entry 根本不会出现在 `describe()` 里，
+ * 界面也就无从编辑它。而本插件的每个字段都只影响下一轮发现，没有任何一项需要重启，
+ * 所以「全部 volatile」既是它的真实语义，也让 Loader 把每一次配置改动都当作就地换热
+ * 引用的活更新——插件不重新挂载，正在跑的那一轮刷新也不会被掐断。
  *
  * @module dsh-aperture/config
  */
@@ -97,7 +102,14 @@ export interface Config {
   timeoutMs?: number;
 }
 
-/** {@link Config} 的运行时 schema。 */
+/**
+ * {@link Config} 的运行时 schema。
+ *
+ * 根节点上的 `.volatile()` 让整份配置成为一个活引用：Loader 交到 `apply` 手里的
+ * `config` 是一个 `Ref`，读值走 `config.get()`，而每次配置变更都是对同一个引用的
+ * `updateVolatile`。校验与默认值照旧——volatile 只改变结果如何被持有一段活引用，
+ * 不改变解析（见 schemastery 的 `Schema.resolve`）。
+ */
 export const Config = z.object({
   baseUrl: z.string().default(''),
   route: z.string().default('aperture'),
@@ -117,7 +129,38 @@ export const Config = z.object({
   sync: z.boolean().default(true),
   refreshIntervalMinutes: z.number().min(0).max(24 * 60).default(0),
   timeoutMs: z.number().step(1).min(1).default(20_000),
-});
+}).volatile();
+
+/**
+ * Loader 交到 `apply` 手里的配置：根级 volatile 的活引用。
+ *
+ * 读当前值走 `.get()`；它返回的是深冻结快照，且只在值真的变了之后才换引用——这一点
+ * 正是 {@link memoizedConfig} 与运行时单飞判定所依赖的「配置版本」。
+ */
+export type ConfigRef = ReturnType<typeof Config>;
+
+/**
+ * 取活引用里的那份普通配置值。
+ *
+ * 根级 volatile 只改变配置**怎么被持有**：schema 的返回值从普通对象变成活引用，读值走
+ * `.get()`。解析与校验照旧——非法值仍然在 `Config(raw)` 当场抛出，默认值也已经补齐——
+ * 所以这里只把活引用读成一份快照，交给不关心「活」的那几层（跨字段解析、运行时判定）。
+ *
+ * @param ref - Loader 交到 `apply` 手里的配置活引用。
+ * @returns 当前那份深冻结的普通配置值。
+ */
+export function configValue(ref: ConfigRef): FilledConfig {
+  return (ref.get() ?? {}) as FilledConfig;
+}
+
+/**
+ * 默认值补齐之后的配置。
+ *
+ * {@link Config} 是**用户可写**的形状：每个键都可选，读的人自己兜底。schema 输出的那一份
+ * 不是这样——每个字段都带 `.default()`，`configValue` 交出的每个键都已经有值。把这个事实
+ * 写进类型，调用方就不必对着一堆其实必然存在的字段写 `??` 或 `!`。
+ */
+export type FilledConfig = Required<Config>;
 
 /** 校验过的配置：默认值已全部补齐，根地址已归一化。 */
 export interface ResolvedConfig {
@@ -151,6 +194,8 @@ export interface ResolvedConfig {
  * `baseUrl` 缺失或不可用**不**算错误：插件照常挂载但处于休眠，这样 profile 可以在
  * 还没人填地址时就先带着这一行——这也正是该设置命名空间能变得可编辑的原因。
  * 路由键则必须拒绝，因为写错的路由键无法靠后续写入补救：插件会静默地什么都不发布。
+ *
+ * 入参是**补齐默认值之后的普通值**（`configValue` 的返回值），不是活引用。
  *
  * @param config - 解析好的 `aperture` 段。
  * @returns 校验过的配置。
@@ -222,11 +267,12 @@ export function resolveConfig(config: Config): ResolvedConfig {
 /**
  * 把「解析当前的配置段」包成一个按源缓存的 thunk。
  *
- * 设置服务每次提交都换一份**深冻结**的解析结果（`scope.get()`），没变就还是同一个对象；因此
- * 这个 thunk 的返回值可以直接当**配置版本**用——运行时靠它判断正在跑的那一轮读的是不是此刻
- * 这份配置。不缓存的话每次调用都是新对象，那个判断永远不成立，于是每次刷新都会多排一轮。
+ * 配置活引用的 `get()` 只在值真的变了之后才换一份**深冻结**快照，没变就还是同一个对象；
+ * 因此这个 thunk 的返回值可以直接当**配置版本**用——运行时靠它判断正在跑的那一轮读的是
+ * 不是此刻这份配置。不缓存的话每次调用都是新对象，那个判断永远不成立，于是每次刷新都会
+ * 多排一轮。
  *
- * @param source - 生效配置段的活引用（设置服务每次编辑都会就地换掉它）。
+ * @param source - 生效配置段的活引用（每次编辑都就地换掉它的内容）。
  * @returns 解析后的配置；源没换时返回同一个对象。
  */
 export function memoizedConfig(source: () => Config): () => ResolvedConfig {

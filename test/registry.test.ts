@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { Config, resolveConfig } from '../src/config.ts';
+import { Config, configValue, resolveConfig } from '../src/config.ts';
 import { buildCatalogLookup } from '../src/metadata/modelsdev.ts';
 import { buildRegistry, classifyProtocol } from '../src/registry.ts';
 import { apertureEntries, catalogDocument, options } from './helpers.ts';
@@ -141,7 +141,7 @@ describe('buildRegistry 的配置行为', () => {
     // buildRegistry 眼里就成了「声明这个模型不接受任何模态」，还会谎称来源是配置。这条用例
     // 特意**先过一遍 schema**：单元测试里手写的选项对象没有这个缺省值，正是这一点让这个 bug
     // 一直躲着。
-    const validated = Config({ models: [{ id: 'mimo-v2.6-flash' }] });
+    const validated = configValue(Config({ models: [{ id: 'mimo-v2.6-flash' }] }));
     assert.deepEqual(validated.models[0]?.input, [], '前提：schema 确实填了空数组');
 
     const { models } = buildRegistry(

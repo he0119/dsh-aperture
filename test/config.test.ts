@@ -5,6 +5,10 @@
  * 失败，而不是静默降级。这两半只有在被钉死时才成立，因此本文件检验 schema 的默认值
  * 与拒绝行为，以及 `resolveConfig` 在其之上添加的跨字段规则。
  *
+ * 根级 volatile 把 schema 的返回值变成活引用，但**没有**把校验挪走：非法值仍然在
+ * `Config(raw)` 当场抛出。因此这里读值统一走 `configValue`（`get()` 加空值兜底），而
+ * 拒绝用例照旧只看调用是否抛出。
+ *
  * @module dsh-aperture/test/config
  */
 
@@ -14,13 +18,25 @@ import {
   Config,
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MODEL_METADATA_URL,
+  configValue,
   memoizedConfig,
   resolveConfig,
+  type FilledConfig,
 } from '../src/config.ts';
 
+/**
+ * 把一段手写的配置段（YAML 里那一行 `config:` 的内容）解析成补齐默认值的普通值。
+ *
+ * @param value - schema 接受的原始配置段。
+ * @returns 补齐默认值后的配置值。
+ */
+function configured(value: Parameters<typeof Config>[0]): FilledConfig {
+  return configValue(Config(value));
+}
+
 /** 一条裸组合行所产生的、全部取默认值的配置。 */
-function defaults() {
-  return Config({});
+function defaults(): FilledConfig {
+  return configured({});
 }
 
 /**
@@ -62,7 +78,7 @@ describe('配置 schema', () => {
   });
 
   it('保留部署所设置的内容', () => {
-    const value = Config({
+    const value = configured({
       baseUrl: 'https://ai.example.ts.net',
       reasoning: 'off',
       images: 'metadata',
@@ -98,7 +114,7 @@ describe('配置 schema', () => {
 
 describe('resolveConfig', () => {
   it('规范化实例根地址并拆分两个路由', () => {
-    const resolved = resolveConfig(Config({ baseUrl: 'https://ai.example.ts.net/v1/' }));
+    const resolved = resolveConfig(configured({ baseUrl: 'https://ai.example.ts.net/v1/' }));
     assert.equal(resolved.instanceRoot, 'https://ai.example.ts.net');
     assert.equal(resolved.rawBaseUrl, 'https://ai.example.ts.net/v1/');
     assert.equal(resolved.route, 'aperture');
@@ -108,35 +124,35 @@ describe('resolveConfig', () => {
   it('在 baseUrl 缺失时让插件保持休眠，而不是失败', () => {
     // profile 可以在任何人填写之前就带有该行 —— 这也正是设置命名空间最初变得可编辑的方式。
     assert.equal(resolveConfig(defaults()).instanceRoot, undefined);
-    assert.equal(resolveConfig(Config({ baseUrl: 'not a url' })).instanceRoot, undefined);
+    assert.equal(resolveConfig(configured({ baseUrl: 'not a url' })).instanceRoot, undefined);
   });
 
   it('拒绝永远无法匹配 provider 语法的路由键', () => {
-    assert.throws(() => resolveConfig(Config({ route: 'Aperture Route' })), /必须是小写连字符形式的 provider 路由名/);
-    assert.throws(() => resolveConfig(Config({ anthropicRoute: '-x' })), /anthropicRoute/);
+    assert.throws(() => resolveConfig(configured({ route: 'Aperture Route' })), /必须是小写连字符形式的 provider 路由名/);
+    assert.throws(() => resolveConfig(configured({ anthropicRoute: '-x' })), /anthropicRoute/);
   });
 
   it('拒绝两个路由使用同一个键', () => {
-    assert.throws(() => resolveConfig(Config({ anthropicRoute: 'aperture' })), /不能相同/);
+    assert.throws(() => resolveConfig(configured({ anthropicRoute: 'aperture' })), /不能相同/);
   });
 
   it('拒绝重复或为空的模型 id', () => {
     assert.throws(
-      () => resolveConfig(Config({ models: [{ id: 'a' }, { id: 'a' }] })),
+      () => resolveConfig(configured({ models: [{ id: 'a' }, { id: 'a' }] })),
       /重复列出了 "a"/,
     );
-    assert.throws(() => resolveConfig(Config({ models: [{ id: '   ' }] })), /不能为空/);
+    assert.throws(() => resolveConfig(configured({ models: [{ id: '   ' }] })), /不能为空/);
   });
 
   it('拒绝被钉到无人可服务协议上的模型', () => {
     assert.throws(
-      () => resolveConfig(Config({ models: [{ id: 'gemini-2.5-pro', api: 'gemini' }] })),
+      () => resolveConfig(configured({ models: [{ id: 'gemini-2.5-pro', api: 'gemini' }] })),
       /无法服务/,
     );
   });
 
   it('把空白的 apiKeyEnv 与空白显示名视为未设置', () => {
-    const resolved = resolveConfig(Config({ apiKeyEnv: '   ', displayName: '  ', anthropicDisplayName: '' }));
+    const resolved = resolveConfig(configured({ apiKeyEnv: '   ', displayName: '  ', anthropicDisplayName: '' }));
     assert.equal(resolved.apiKeyEnv, undefined);
     assert.equal(resolved.displayName, 'Aperture');
     assert.equal(resolved.anthropicDisplayName, 'Aperture (Anthropic)');
@@ -144,7 +160,7 @@ describe('resolveConfig', () => {
 
   it('保留真实凭据引用并修剪传入的名称', () => {
     const resolved = resolveConfig(
-      Config({ apiKeyEnv: ' APERTURE_API_KEY ', displayName: ' Aperture ', anthropicDisplayName: 'Aperture (A)' }),
+      configured({ apiKeyEnv: ' APERTURE_API_KEY ', displayName: ' Aperture ', anthropicDisplayName: 'Aperture (A)' }),
     );
     assert.equal(resolved.apiKeyEnv, 'APERTURE_API_KEY');
     assert.equal(resolved.displayName, 'Aperture');
@@ -152,21 +168,22 @@ describe('resolveConfig', () => {
   });
 
   it('把已禁用的清单 URL 默认为空值，而非内置值', () => {
-    assert.equal(resolveConfig(Config({ modelMetadataUrl: '' })).modelMetadataUrl, '');
+    assert.equal(resolveConfig(configured({ modelMetadataUrl: '' })).modelMetadataUrl, '');
     assert.equal(resolveConfig(defaults()).modelMetadataUrl, DEFAULT_MODEL_METADATA_URL);
   });
 });
 
 describe('memoizedConfig', () => {
   it('源没换时给同一个对象，换了就是新版本', () => {
-    let current = Config({ baseUrl: 'https://ai.example.ts.net' });
+    // 活引用的 `get()` 只在值真的变了之后才换一份快照：这正是这里当作「配置版本」的东西。
+    let current = configured({ baseUrl: 'https://ai.example.ts.net' });
     const read = memoizedConfig(() => current);
 
     const first = read();
     assert.equal(read(), first, '设置服务没提交时，解析结果还是同一份');
 
     // 设置服务每次提交都换一份深冻结的解析结果；换了对象才是新版本。
-    current = Config({ baseUrl: 'https://other.example.ts.net' });
+    current = configured({ baseUrl: 'https://other.example.ts.net' });
     const second = read();
     assert.notEqual(second, first, '换了源就得重新解析');
     assert.equal(second.rawBaseUrl, 'https://other.example.ts.net');

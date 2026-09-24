@@ -1,5 +1,5 @@
 /**
- * 标签页与宿主之间的 Typert Remote 面：`aperturePanel` 命名空间。
+ * 配置页与宿主之间的 Typert Remote 面：`aperturePanel` 命名空间。
  *
  * 描述符是手工登记的，因为生成它们的 Typert 生成器并不随 DSH 发布，而这一步的规范本身
  * 很小：宿主半边用 `src-json` 编解码器，浏览器半边带 strict 校验，两端共享同一组端点名。
@@ -110,7 +110,7 @@ export class AperturePanelService extends TypertRemoteService {
     return this.ops.withdraw();
   }
 
-  /** 标签页表单要显示的配置。 */
+  /** 配置页表单要显示的配置。 */
   configuration(): PanelConfiguration {
     return this.ops.configuration();
   }

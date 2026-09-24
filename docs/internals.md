@@ -7,18 +7,21 @@
 参考实现 [he0119/vscode-aperture-for-copilot](https://github.com/he0119/vscode-aperture-for-copilot) 需要自己实现一套 provider；而 DSH 里已经有 `@deepseek-ai/dsh-llm-pi-ai`，它本来就讲 OpenAI Chat Completions 和 Anthropic Messages——正好是 Aperture 唯一暴露的两种协议。所以本插件**不做任何 API 格式转换**：它把探测结果翻译成 `llm-pi-ai` 的 provider profiles，剩下的交给现成的适配器。
 
 ```yaml
-# ~/.dsh/settings.yaml —— 由插件自动写入，不需要手写
-llm-pi-ai:
-  providers:
-    aperture:
-      api: openai-completions
-      baseURL: https://ai.example.ts.net/v1
-      models:
-        - id: deepseek-flash
-          name: DeepSeek V4.1 Flash
-          contextWindow: 1048576
-          maxTokens: 384000
+# ~/.dsh/profiles/web/cordis.patch.yml —— 插件写进去的内容，不需要手写
+- id: llm-pi-ai
+  config:
+    providers:
+      aperture:
+        api: openai-completions
+        baseURL: https://ai.example.ts.net/v1
+        models:
+          - id: deepseek-flash
+            name: DeepSeek V4.1 Flash
+            contextWindow: 1048576
+            maxTokens: 384000
 ```
+
+（设置命名空间就是 profile 里那一行的 `id`——`llm-pi-ai` 那一行由官方基础 profile 声明，本插件这一行是 `aperture`。`dsh-llm-pi-ai` 自己也是这么取命名空间的：`ctx.fiber.entry?.options.id ?? 'llm-pi-ai'`。）
 
 ## 为什么有两条路由
 
@@ -81,11 +84,19 @@ Anthropic 路由**默认不给推理档位**：Anthropic 的 thinking 是另一�
 
 ## 生命周期与依赖
 
-- `settings` 是**硬依赖**（`inject = ['settings']`）。本插件的职责就是往设置里写，没有它发布对象都不存在，所以宁可让框架把插件挂在 `PENDING`，provider 被替换时自动卸载、恢复后重新加载，而不是留着一个无处发布的实例。
-- `typert` **不声明**，也只用于界面：Aperture 标签页需要的五个端点（报告、配置读写、立刻刷新、撤下路由）经 Typert Remote 暴露，而 Typert 注册表只有 Web 这类装配了网关的 profile 才有。headless profile 里这一整块被跳过，发现照常运行，只是没有可点按的界面。
-- 定时刷新用 `ctx.effect` 注册，卸载自动清理；配置变更会按新值重新计算间隔。
-- **注册配置段本身就是第一次发现的触发器**：`installSection` 挂载时先 `setSource` 再通知 `onChange`，所以首次刷新看到的就是叠加了用户层的配置，不需要为了对齐两份配置再刷一遍。
-- 配置段是**活引用**（thunk）而不是快照：改 `~/.dsh/settings.yaml` 里的 `aperture:` 段，下一次刷新立刻用新值，不必重启、也不必重载插件。
+- `settings` 是**硬依赖**（`inject = ['settings']`）。本插件的职责就是往设置里写，没有它发布对象都不存在，所以宁可让框架把插件挂在 `PENDING`，provider 被替换时自动卸载、恢复后重新加载，而不是留着一个无处发布的实例。（`settings` 本身要求 `configEditor` 与 `profileContext`，因此这一层依赖等于说「这个部署得有一个可管理的 profile」。）
+- `typert` **不声明**，也只用于界面：配置页需要的五个端点（报告、配置读写、立刻刷新、撤下路由）经 Typert Remote 暴露，而 Typert 注册表只有 Web 这类装配了网关的 profile 才有。headless profile 里这一整块被跳过，发现照常运行，只是没有可点按的界面。
+- 定时刷新用 `ctx.effect` 注册，卸载自动清理。
+- **配置段的第一次发现不靠注册动作触发**：`aperture:` 这一段由 profile 的补丁层给出（本包组合层 + 用户层），插件挂载时读到的就已经是叠加后的结果，不需要为了对齐两份配置再刷一遍。配置变化经 Loader 的 `loader/volatile-update` 事件通知（`index.ts` 里那一个 `ctx.on`），据此重算定时刷新间隔并唤起一轮刷新。
+- 配置是**活引用**（`Volatile`）而不是快照：改 profile 补丁文档里的 `aperture:` 段，下一次刷新立刻用新值，不必重启、也不必重载插件。
+
+## 为什么整段配置都是 volatile 的
+
+`schema.volatile()` 标在整段 `Config` 上，而不是逐个字段。0.1.7 的设置面只把 **volatile** 字段当成可以就地生效的配置：`volatileForm()` 遇到整体 volatile 的 schema 会把整段原样交出去（`isVolatilePath()` 于是对每条路径都为真），`projectForm()` 也会投影每个声明的字段，因此「改配置 → Loader 发 `loader/volatile-update` → 不重挂插件」这条路对每个键都成立，而设置面看到的仍是一份有 schema、有默认值的完整表单。
+
+逐个字段标也做得到，但那等于把「哪些键改完需要重挂插件」写进 schema，而本插件每个键都只被下一轮刷新读取——重挂只会白掉一次发现。整段 volatile 的代价与收益都在 Loader 那边：`equalExceptVolatile()` 判定为纯 volatile 变化时，新配置直接生效、不重载；提交失败只记一条 `logger.warn`，旧值继续用。
+
+volatile 只改**配置怎么被持有**，不改校验：非法值仍然在 `Config(raw)` 就抛（`ValidationError`，带 `$.models[0].id missing required value` 这种路径），缺省值仍然会补齐，`accepts()` 那类用例一个都不用动；只有**读值**要改成 `configValue(ref)`（内部一句 `ref.get()`）。
 
 ## 写入行为
 
@@ -97,25 +108,54 @@ Anthropic 路由**默认不给推理档位**：Anthropic 的 thinking 是另一�
 - **带 revision 写**——与其它写入者（比如模型页）冲突时重读一次再写；
 - **路由没模型了就删掉**——避免留下指向旧目录的空路由。
 
-标签页上说 `设置：未写入（已处于同步状态）` 是正常状态。
+配置页上说 `设置：未写入（已处于同步状态）` 是正常状态。
+
+插件自己的配置（`aperture` 段）则写在 profile 的补丁文档里，也就是「插件」页里这一行点
+「配置」之后编辑的那个文件。本包自带的 `cordis.patch.yml`（组合层）**故意不写 `config`**：
+缺省值只有 schema 一处；而补丁层是**整行替换**，`config-editor` 写下去的是整份 `next`、
+不会把与继承层相同的键逐个剔掉——组合层只要把缺省值摆出来，用户第一次在界面上保存就会把
+它们全量抄进自己的文件，「已覆盖」的判据（键在不在用户层里）于是凭空为真，将来改动某个
+缺省值也会被那份文件钉死。
 
 ## 界面：一条契约、两半实现
 
-界面是 **设置 → 插件 → Aperture** 上的一个标签页。接线方式对齐生态里可用的参考实现
-（[`@xiaoyuyu6420/dsh-backup`](https://github.com/xiaoyuyu6420/dsh-backup)）：**仓库之外**的插件要往设置里挂东西，这是被证明能跑通的那
-一种。它把三类东西分得很清：
+配置页是**插件页**里本插件那一行的一张子页。页头（面包屑、图标、名字、`aperture` 与
+`dsh-aperture` 两行代码、那句描述）由插件页自己画，只有正文是我们的：插件页把
+`plugins.row.config` 槽位上注册的组件放进「这一行的配置」那一节。名字、图标与描述不是我画的，
+而是插件页从包元数据里读的——`locale/*.json` 的 `meta.title` / `meta.description`（文件名就是
+语言 id，`readPluginMeta` 读整个目录）与 `package.json` 的 `icon`（清单目录内的 SVG，≤256 KiB，
+读成 `data:` URL）。所以注册只给四件事：
 
-- **界面不碰宿主设置。** 浏览器半边只注入 `slots` / `locale` / `remote` 三个服务；`baseUrl`
-  与 `sync` 的读取、写入和报告一样经自己的 `aperturePanel` 命名空间往返，宿主半边再用
-  `ctx.settings` 带着版本号写进 `aperture` 段。于是标签页不必知道设置文档长什么样，也不必
-  参与它的并发控制；「已覆盖」看的是字段在不在用户层里（`describe()` 返回的 `user`），而不是
-  值等不等于组合层——这两件事不是一回事。
+```js
+scope.slots.inject('plugins.row.config', () => scope.slots.register(
+  { name: 'plugins.row.config', key: 'dsh-aperture#aperture', locale: NS, inject: () => ({ panel }) },
+  ApertureRowConfig,
+))
+```
+
+键是 `<包名>#<行 id>`，必须与 `cordis.patch.yml` 那一行的 `id` 对上，插件页才知道把这段界面
+挂到哪一行。同一个组件按 `view` 分两种用法：`'summary'` 只回一行字（包元数据没给描述时插件页
+拿它当这一行的简介），`'page'` 才是配置页本体。
+
+浏览器半边只注入 `slots` / `locale` / `remote` 三个服务；`baseUrl` 与 `sync` 的读取、写入和报告
+一样经自己的 `aperturePanel` 命名空间往返，宿主半边再用 `ctx.settings` 带着版本号写进 `aperture`
+段——配置页因此不必知道设置文档长什么样，也不必参与它的并发控制；「已覆盖」看的是字段在不在
+用户层里（`describe()` 返回的 `user`），而不是值等不等于组合层，这两件事不是一回事。
+
+Remote 端点的形状来自参考实现
+（[`@xiaoyuyu6420/dsh-backup`](https://github.com/xiaoyuyu6420/dsh-backup)）。除此之外：
+
+- **页面递来的 `form` 故意不用。** 槽位在 `view: 'page'` 时会递来插件页自己那份表单状态与
+  `mutate`（`ConfigPageForm`），本插件不接：写入要走自己的 Remote（带 revision、等一轮刷新落地、
+  回一句人能读的话），接了它就有第二条写路径与第二套并发控制。宿主侧对应地用
+  `ctx.settings.configure({ auto: false }, ctx.fiber)` 声明「这一行自己出页面」——这一句必须在
+  `ctx.effect` 里注册（`configure` 重复注册会抛），于是插件页不再给它多画一份通用表单。
 - **发现结果也走 Remote。** 报告、立刻刷新、撤下路由、配置读写与逐模型编辑一样，都挂在
   `aperturePanel` 命名空间上（`src/remote.ts` 的宿主服务 + `src/panel.ts` 的六个端点）。发现
   结果不是配置：把它塞进设置文档会让「用户写了什么」与「插件发现了什么」混成同一份账，而后者
   每轮刷新都会被重写。
 - **报告是数据，不是句子。** `src/report.ts` 只组装结构（哪个模型属于哪条路由、每条事实来自
-  哪里、用户写了哪些覆盖），措辞与排版都在浏览器半边按语言组织——标签页是双语的，把中文句子
+  哪里、用户写了哪些覆盖），措辞与排版都在浏览器半边按语言组织——配置页是双语的，把中文句子
   拼在宿主半边等于让英文界面显示中文。
 - **逐模型编辑按字段合并，一次只写一个模型。** `edit` 收 `(id, patch)`：界面上一行一个「保存」，
   写下去的就只有那一行，版本校验也只管这一次写入。补丁是**稀疏**的：界面只发它改动过的字段，
@@ -141,11 +181,12 @@ Anthropic 路由**默认不给推理档位**：Anthropic 的 thinking 是另一�
   与官方同一条判据；界面不编辑的键（`reasoningEfforts`）也在名单里，因此「恢复默认」知道自己该
   整条撤，而不是只清认得的那几项。写回时同理（`panel.ts` 的 `prune`）：生效值里的空值不会被搬进
   用户层，否则一次「保存」就等于替用户写下他从未写过的覆盖。
-- **写完等一轮刷新落地才回答。** 标签页拿到回答就会重读报告，而报告里的路由与模型事实来自
+- **写完等一轮刷新落地才回答。** 配置页拿到回答就会重读报告，而报告里的路由与模型事实来自
   **最近一次刷新**（只有「已覆盖」与别名来自实时配置）。因此 `save` 与 `edit` 在写入之后
   `await runtime.refresh('配置变更')`；不等它，界面重读到的还是旧配置算出来的那一份——地址换了、
   模型清单还是旧地址那一份，容量改了、那一行还写着旧值，也就是「保存了却没变」。这里不必担心
-  多跑一轮：设置变更本身就会唤起同一轮刷新（`installSection` 的 `onChange`），而 `refresh` 的
+  多跑一轮：设置变更本身就会唤起同一轮刷新（Loader 的 `loader/volatile-update`，也就是
+  `index.ts` 里那一个 `ctx.on`），而 `refresh` 的
   承诺是「返回的那一轮读的是**此刻**的配置」——正在跑的那一轮读的就是此刻这份配置时调用方并进
   它，读的是更早的配置时才排到它后面（排队者共享排上的那一轮）。配置的身份可以直接比：设置服务
   每次提交都换一份深冻结的解析结果，没变就还是同一个对象（`memoizedConfig` 按源缓存，那个对象
@@ -206,7 +247,7 @@ state、按卡记（官方也是 `?? true`），因此每一轮刷新重渲染�
 这件事讲清楚了，不必每行重复一遍。
 
 **两级折叠，编辑按行提交。** 官方那张卡片一屏都是可以改的字段，因为它的职责就是编辑模型清单；
-这张标签页的主要职责是**报告**，一屏输入框会把「这一轮刷新发现了什么」淹掉。因此这里第一层收起
+这张配置页的主要职责是**报告**，一屏输入框会把「这一轮刷新发现了什么」淹掉。因此这里第一层收起
 时只有路由卡头（身份、模型数与状态点），第二层收起时只有一行事实（id、名字、容量与标签），点
 「编辑」才展开**它自己里面**那一层，面板里是这一行自己的「保存 / 取消」——展开几行互不牵连，也
 不存在跨行的提交。官方的「改完点卡片底部的应用」在只有一个编辑对象时很自然，而在这里，一份草稿
@@ -284,11 +325,14 @@ state、按卡记（官方也是 `?? true`），因此每一轮刷新重渲染�
 - 用 `createElement` 而不是 JSX，于是不需要打包器，也不需要把编译产物提交进版本库；
 - 运行时只 `require('react')`（平台基线模块），槽位、字典与 Remote 都从 `ctx` 上取服务，
   因此 `dsh.client.external` 是空的；`dsh.client.inject` 是给宿主客户端模块系统的声明
-  （`dsh-client-locale` 提供字典、`dsh-client-ui-settings` 声明标签页槽位），宿主只校验它是
-  字符串数组，因此这份清单与参考实现保持一致，不另立一套；
-- 标签页注册必须走 `ctx.slots.inject('settings.plugins.tab', …)`：这个槽位由设置区自己声明，
+  （`dsh-client-locale` 提供字典、`dsh-client-ui-plugin-manager` 是声明 `plugins.row.config`
+  那个槽位的插件页；Remote 的运行面来自宿主那层壳，不是一个包），宿主只校验它是
+  字符串数组，因此这份清单与插件页自己声明的槽位保持一致，不另立一套。清单里写一个客户端
+  模块图里没有的 id 不会报错、也不会连出边（`arriveGraphRow` 找不到就跳过），所以它只是
+  一份容易过期的注释，不值得把猜出来的名字留在里面；
+- 配置页注册必须走 `ctx.slots.inject('plugins.row.config', …)`：这个槽位由**插件页**自己声明，
   而那个声明完全可能晚于本插件的 `apply`，直接 `register` 会撞上「槽位尚未声明」；
-- 字典用 `ctx.locale.register(NS, { zh, en })` 注册，两种语言必须一次交齐；注册标签页时声明
+- 字典用 `ctx.locale.register(NS, { zh, en })` 注册，两种语言必须一次交齐；注册配置页时声明
   `locale: NS`，槽位渲染器才会把绑定好的 `t` 交给组件；
 - 样式在 `apply` 的 effect 里注入 `<style data-dsh-aperture>`，选择器收在这个属性之下、颜色
   只引用 dsh web 的主题 token，卸载时由 effect 的 disposer 移除。**填了底色的元素必须自己
@@ -308,6 +352,8 @@ state、按卡记（官方也是 `?? true`），因此每一轮刷新重渲染�
 - models.dev 是尽力而为的补全：拉不到就是拉不到，发现本身照常成功。
 - 本插件不注册任何 provider 目录（`registerConfigurableProviders`）——`llm-pi-ai` 已经认领了那件事，重复注册会抛错。
 - **改了 `route` / `anthropicRoute` 的路由名之后，旧键会留在 `llm-pi-ai.providers` 里**（插件只认自己当前拥有的两个键，无法知道历史上用过哪些名字）。它不会报错，只是不再刷新；要清理就手动删掉那一行。
-- **标签页只存在于 Web 界面**，而且需要 Typert 注册表；没有它的部署里发现照常，只是没有可点按的界面。从非本机来源打开的页面拿不到宿主设置，标签页会把失败原因摆在页面上（而不是假装可编辑）；设置文档本身不接受写入时，表单会置灰并说明原因。
+- **配置页只存在于 Web 界面**（插件页 + Typert 注册表）；没有它的部署里发现照常，只是没有可点按的界面。从非本机来源打开的页面拿不到宿主设置，配置页会把失败原因摆在页面上（而不是假装可编辑）；设置文档本身不接受写入时（`settings.writable === false`），表单会置灰并说明原因。
+- **更高优先级的补丁层能盖住写入**：profile 的补丁文档之上还有 `$DSH_HOME/cordis.patch.yml` 这类层。同一行在那里也被写过时，配置页上的保存会写进 profile 的补丁文档、却不生效（插件页的文案是「已保存，但被更高优先级的配置覆盖，当前未生效」）；此时得去那一层改。
+- **peer 范围收得很紧**（`^0.1.7-rc.1`）：0.1.7 之前的宿主会被 peer 预检挡下——这一版起 `installSection` / `SettingsProvider` 这套接缝已经不存在，本插件的界面代码在旧宿主上无法工作。`0.3.0` 因此是一个有意的破坏性版本。
 - **「撤掉已发布的路由」只撤这一次**：下一次刷新会按当前配置重新发布。想让撤下长期生效，先把同步开关关掉（等价于 `sync: false`）。
 - **动作端点的一句结论仍是中文**：`PanelAction.summary` 由宿主半边写好（「已保存…」「撤下 2 条路由…」），因此英文界面里那一行也是中文。报告已经不走这条路（它是结构化数据），但这几个动作用的还是「宿主说一句话」的形态；要让它跟着语言走，得把 `summary` 换成「码 + 实参」再由界面渲染。

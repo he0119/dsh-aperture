@@ -1,7 +1,7 @@
 /**
- * 标签页背后的六个端点。
+ * 配置页背后的六个端点。
  *
- * 标签页本身在浏览器里，无法在这里执行；能在这里钉住的是它依赖的那份契约：报告是结构化数据
+ * 配置页本身在浏览器里，无法在这里执行；能在这里钉住的是它依赖的那份契约：报告是结构化数据
  * （哪个模型属于哪条路由、每条事实来自哪里、用户写了哪些覆盖），刷新用界面这个来源触发，
  * 撤下路由只动本插件拥有的键，配置读写落在 `aperture` 段并带上版本号，模型的参数按字段合并
  * 且非法值在写入前就被挡下来，并且六个端点都不抛异常——失败是要显示的结果，不是要分辨的
@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings';
+import type { SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
 import type { ModelCatalog } from '../src/catalog.ts';
 import { memoizedConfig, resolveConfig, type Config } from '../src/config.ts';
 import { createPanelOps, type PanelDeps, type PanelModelPatch } from '../src/panel.ts';
@@ -87,10 +87,9 @@ function fakeSettings(
   const writes: Write[] = [];
   let revision = 1;
   const service = {
-    get: () => value,
     writable: options.writable ?? true,
     describe: () => [
-      { ns: 'llm-pi-ai', revision },
+      { ns: 'llm-pi-ai', revision, value },
       ...(options.aperture === undefined
         ? []
         : [{
@@ -106,7 +105,7 @@ function fakeSettings(
       revision += 1;
     },
   };
-  return { service: service as unknown as SettingsProvider, writes };
+  return { service: service as unknown as SettingsForms, writes };
 }
 
 /** 一个只记住触发的运行时替身。 */
@@ -131,8 +130,9 @@ function fakeRuntime(first?: RefreshOutcome, next?: RefreshOutcome) {
  * 一个真的会落盘的设置服务替身。
  *
  * 两件事照真的来：`mutate` 把路径操作应用到 `aperture` 段上，并且**每次提交都换一份新的解析
- * 结果**（身份变了才是新版本，运行时靠它判断一轮刷新读的是不是此刻的配置）；通知也照
- * `installSection` 的接法交给调用方去唤起刷新。
+ * 结果**（身份变了才是新版本，运行时靠它判断一轮刷新读的是不是此刻的配置）；通知也照真的来路
+ * ——宿主半边监听 Loader 的 `loader/volatile-update` 来唤起刷新，这里把那个「该刷新了」交给
+ * 调用方去接。
  *
  * @param options - `aperture` 段的起点。
  * @returns 设置服务、读当前配置段的 thunk，以及登记变更通知的地方。
@@ -150,7 +150,6 @@ function liveSettings(options: { baseUrl?: string; models?: unknown[] } = {}) {
 
   const service = {
     writable: true,
-    get: () => section,
     describe: () => [{ ns: 'aperture', revision, value: section, user }],
     mutate: async (_ns: string, ops: readonly SettingsPathOp[]): Promise<void> => {
       const next = { ...section };
@@ -175,7 +174,7 @@ function liveSettings(options: { baseUrl?: string; models?: unknown[] } = {}) {
     },
   };
   return {
-    service: service as unknown as SettingsProvider,
+    service: service as unknown as SettingsForms,
     source: (() => section) as () => Config,
     onChange: (fn: () => void) => {
       notify = fn;
@@ -247,7 +246,7 @@ describe('panel.status', () => {
     assert.equal(first?.maxTokens, 384_000);
     assert.deepEqual(first?.input, ['text']);
     assert.equal(first?.reasoning, false);
-    // 每条事实的来源就是这张标签页存在的理由，因此它必须在数据里。
+    // 每条事实的来源就是这个配置页存在的理由，因此它必须在数据里。
     assert.deepEqual(first?.provenance, {
       limits: 'aperture',
       reasoning: 'models.dev',
@@ -645,7 +644,7 @@ describe('panel.refresh', () => {
     assert.deepEqual(triggers, ['设置界面']);
     assert.equal(action.ok, true);
     assert.match(action.summary, /已重新发现并发布/u);
-    // 报告随之更新，标签页再读一次就能看到新一轮来源。
+    // 报告随之更新，配置页再读一次就能看到新一轮来源。
     assert.equal(ops.status().refresh?.trigger, '设置界面');
   });
 
@@ -706,7 +705,7 @@ describe('panel.withdraw', () => {
 describe('写完等一轮刷新落地', () => {
   it('保存之后重读报告，拿到的是新配置算出来的那一份', async () => {
     const original = globalThis.fetch;
-    // 让发现慢一拍：不等刷新的实现会在这里露出来——它返回时报告还是旧的那一份，而标签页
+    // 让发现慢一拍：不等刷新的实现会在这里露出来——它返回时报告还是旧的那一份，而配置页
     // 拿到回答就会重读，于是「保存了却没变」。
     globalThis.fetch = (async () => {
       await new Promise((resolve) => setTimeout(resolve, 1));
@@ -722,7 +721,8 @@ describe('写完等一轮刷新落地', () => {
         // 清单只报可用性：这一条看的不是 models.dev，而是配置里的覆盖。
         catalog: { load: async () => ({ entries: 0 }) } as unknown as ModelCatalog,
       });
-      // 照 `index.ts` 的接法：设置一变就唤起一轮刷新。
+      // 照 `index.ts` 的接法：配置一变就唤起一轮刷新（宿主那边是 Loader 的
+      // `loader/volatile-update`）。
       store.onChange(() => void runtime.refresh('配置变更'));
       const ops = createPanelOps({ runtime, config, settings: store.service });
 

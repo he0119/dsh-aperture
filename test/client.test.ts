@@ -2,8 +2,8 @@
  * 浏览器半边的接线与行为。
  *
  * 这个文件不走打包器，因此没有编译器替它检查「握手 id 对不对」「端点与宿主是否同名」
- * 「字典是不是双语齐备」「标签页注册在哪个槽位上」。用例把这些逐个钉住，然后更进一步：
- * 用 `support/mini-react.ts` 真的把标签页渲染出来，走一遍
+ * 「字典是不是双语齐备」「配置页注册在哪个槽位上」。用例把这些逐个钉住，然后更进一步：
+ * 用 `support/mini-react.ts` 真的把配置页渲染出来，走一遍
  * 挂载 → 拉配置 → 改地址 → 保存 → 读报告 的路径。
  *
  * 渲染次数也在被钉住的范围内：注入面每轮渲染都是新对象，effect 依赖一旦写到它上面就会
@@ -56,16 +56,14 @@ interface Codec {
 interface Registration {
   options: {
     name: string;
-    id: string;
-    order: number;
-    label: () => string;
+    key: string;
     locale: string;
     inject: () => { panel: PanelFace };
   };
   component: (props: Record<string, unknown>) => unknown;
 }
 
-/** `inject` 面交给标签页的端点集合。 */
+/** `inject` 面交给配置页的端点集合。 */
 interface PanelFace {
   status: () => Promise<Report>;
   refresh: () => Promise<{ ok: boolean; summary: string }>;
@@ -330,12 +328,14 @@ function loadClient(): Harness {
  * 驱动一次 `apply`，并把作用域回调也走完。
  *
  * @param options - 假端点选项。
- * @returns 记账容器、注入面、替身与标签页元素工厂。
+ * @param view - 页主问的那一种视图：`page` 要整块内容，`summary` 只要一行字。
+ * @returns 记账容器、注入面、替身、配置页组件与元素工厂。
  */
-function driveClient(options: FakePanelOptions = {}): {
+function driveClient(options: FakePanelOptions = {}, view: 'page' | 'summary' = 'page'): {
   harness: Harness;
   face: PanelFace;
   mini: MiniReact;
+  component: Registration['component'];
   element: unknown;
   t: (key: string, params?: Record<string, unknown>) => string;
 } {
@@ -383,7 +383,7 @@ function driveClient(options: FakePanelOptions = {}): {
   harness.exports.apply(ctx);
 
   const registration = harness.registrations[0];
-  assert.ok(registration, 'apply 必须在 settings.plugins.tab 上注册标签页');
+  assert.ok(registration, 'apply 必须在 plugins.row.config 上注册本行的配置页');
   // 与 locale 服务同一套规则：`{name}` 插值；否则字典模板会原样漏进断言里。
   const t = (key: string, params?: Record<string, unknown>): string =>
     (harness.dictionaries['settings.aperturePanel']?.zh[key] ?? key)
@@ -394,7 +394,12 @@ function driveClient(options: FakePanelOptions = {}): {
     harness,
     face: registration.options.inject().panel,
     mini,
-    element: mini.createElement(registration.component, { panel: registration.options.inject().panel, t }),
+    component: registration.component,
+    element: mini.createElement(registration.component, {
+      panel: registration.options.inject().panel,
+      t,
+      view,
+    }),
     t,
   };
 }
@@ -589,7 +594,7 @@ describe('浏览器半边', () => {
     }
   });
 
-  it('注册双语字典与样式，并挂在 settings.plugins.tab 上', () => {
+  it('注册双语字典与样式，并把本行的配置页挂在 plugins.row.config 上', () => {
     const { harness } = driveClient();
     assert.deepEqual(harness.localeNamespaces, ['settings.aperturePanel']);
     const dictionary = harness.dictionaries['settings.aperturePanel'];
@@ -597,13 +602,18 @@ describe('浏览器半边', () => {
     assert.deepEqual(Object.keys(dictionary.zh).sort(), Object.keys(dictionary.en).sort(), '两种语言的键必须一致');
     assert.equal(dictionary.zh.tab, 'Aperture');
 
-    assert.deepEqual(harness.slotInjections, ['settings.plugins.tab']);
+    // 键控槽位：键是 `<包名>#<行 id>`，也就是 `cordis.patch.yml` 里那一行；插件页据此把配置页
+    // 挂到那一行上。
+    assert.deepEqual(harness.slotInjections, ['plugins.row.config']);
     const registration = harness.registrations[0]!;
-    assert.equal(registration.options.name, 'settings.plugins.tab');
-    assert.equal(registration.options.id, 'aperture');
+    assert.equal(registration.options.name, 'plugins.row.config');
+    assert.equal(registration.options.key, 'dsh-aperture#aperture');
     assert.equal(registration.options.locale, 'settings.aperturePanel');
-    assert.equal(typeof registration.options.order, 'number');
-    assert.equal(registration.options.label(), 'Aperture');
+    // 列表式槽位那几个选项（id / order / label）在这里都不存在，写了也不会被读。
+    const options = registration.options as unknown as Record<string, unknown>;
+    assert.equal(options.id, undefined, '键控槽位没有 id');
+    assert.equal(options.order, undefined, '键控槽位没有顺序');
+    assert.equal(options.label, undefined, '行的标题由包元数据给出，不由组件给');
 
     assert.equal(harness.styles.length, 1);
     assert.equal(harness.styles[0]?.mark, 'data-dsh-aperture');
@@ -611,6 +621,11 @@ describe('浏览器半边', () => {
     // 卸载时必须把样式表撤掉，否则重载会累积。
     harness.disposers['dsh-aperture: stylesheet']?.();
     assert.equal(harness.styles[0]?.removed, true);
+  });
+
+  it('页主问一行字时只给一行字：与包元数据里那句描述同义', () => {
+    const { component, t } = driveClient({}, 'summary');
+    assert.equal(component({ view: 'summary', t }), '把实例通告的模型发布成 llm-pi-ai 的 provider 路由。');
   });
 
   it('主按钮自带对比文字色，不靠继承', () => {
@@ -665,8 +680,10 @@ describe('浏览器半边', () => {
     assert.equal(text(findAll(heads[1]!, (node) => node.props.className === 'dap-name')[0]), 'aperture');
     assert.equal(text(findAll(heads[2]!, (node) => node.props.className === 'dap-name')[0]), '未服务');
 
+    // 面板不自画标题：「插件」页已经画过本行的标题与描述，这里只留段自己那一个标题
+    // （`t('title')` 因此从字典里删掉了——同一个说法由包元数据那份 locale 给出）。
     const title = findAll(tree, (node) => node.props.className === 'dap-title');
-    assert.deepEqual(title.map((node) => text(node)), ['Aperture 模型发现', '模型与路由']);
+    assert.deepEqual(title.map((node) => text(node)), ['模型与路由']);
     // 计数标签：实例卡的两枚（覆盖 + 写入方向）、整节一个、两张卡各一个。
     assert.deepEqual(
       findAll(tree, (node) => node.props.className === 'dap-tag').map((node) => text(node)),
@@ -910,7 +927,7 @@ describe('浏览器半边', () => {
     assert.match(text(mini.tree()), /最近一次刷新/u);
   });
 
-  it('标签页挂载后先显示加载态，再渲染出配置与报告', async () => {
+  it('配置页挂载后先显示加载态，再渲染出配置与报告', async () => {
     const { harness, mini, element } = driveClient();
     mini.mount(element);
 

@@ -1,22 +1,26 @@
 {
   "name": "dsh-aperture",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Discover the models an Aperture gateway advertises and publish them to DeepSeek Harness as llm-pi-ai provider routes. 探测 Aperture 网关暴露的模型，并自动写入 DSH 的 llm-pi-ai 设置，使其出现在模型选择器中。",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "icon": "./icon.svg",
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
     "./client": "./client/aperture.js",
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
   "files": [
     "lib",
     "client",
+    "locale/*.json",
+    "icon.svg",
     "cordis.patch.yml",
     "README.md",
     "README.en.md",
@@ -56,26 +60,28 @@
       "platform": "web",
       "inject": [
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-settings"
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
       ]
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-settings": "^0.1.5-rc.2",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.2",
-    "@deepseek-ai/schemastery": "^3.18.2"
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/cordis-plugin-loader": "^1.0.5",
+    "@deepseek-ai/dsh-settings": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.7-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.4"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-llm": "0.1.5-rc.3",
-    "@deepseek-ai/dsh-llm-pi-ai": "0.1.5-rc.3",
-    "@deepseek-ai/dsh-settings": "0.1.5-rc.3",
-    "@deepseek-ai/dsh-settings-file": "^0.1.5-rc.3",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
-    "@deepseek-ai/dsh-typert-registry": "^0.1.5-rc.3",
-    "@deepseek-ai/schemastery": "3.18.2",
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.5",
+    "@deepseek-ai/dsh-app-boot": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-config-editor": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-llm": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-settings": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-typert-registry": "0.1.7-rc.1",
+    "@deepseek-ai/schemastery": "3.18.4",
     "@types/node": "^22.20.0",
     "typescript": "^5.9.0"
   }
