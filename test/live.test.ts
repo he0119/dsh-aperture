@@ -13,6 +13,11 @@
  * 把这一行挂在 Loader 上，`ctx.settings.mutate()` 的写入才有「就地换热引用还是重建 entry」
  * 这个区别可以断言 —— 那正是本测试盯着的性质。
  *
+ * 同一条路还决定**写入落地落不落得下来**：真实部署里的设置写入在 `hmr` 的事务里，而事务里同步
+ * 发出的 `loader/volatile-update` 会把它那条 AsyncLocalStorage 印记交给本插件起的刷新。本 profile
+ * 因此也带着一个 `hmr` 的替身（见 `hmrSeam`）：少了它，本插件在事件里起的刷新写到一半就会被判成
+ * 事务嵌套，而这三份用例全绿的样子看起来与成功没有区别。
+ *
  * 它是唯一能证明该*写入*合法而非看似合理的测试，因此它连的是一个**真的**网关：`baseUrl` 指向
  * 哪里，`llm-pi-ai` 就真的去那里取清单、真的把模型解出来。网关默认由它自己起
  * （`test/fake-gateway.ts`，由内核给一个空闲端口），因此 CI 与不在 Tailscale 网里的机器也能跑；
@@ -27,6 +32,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -153,6 +159,10 @@ describe('live Aperture discovery', () => {
       readProfilePatches('dsh-aperture-live', profileContext),
       (root) => {
         root.provide('profileContext', profileContext);
+        // 真实部署还有一个 `hmr`：base bundle 在有 profileContext 时把它挂起来（`root: []`），
+        // 而设置写入正落在它的事务里。真身要 `--expose-internals` 与 `timer` 服务才挂得起来，
+        // 本 profile 两样都没有，因此这里给一个只留那条约定的替身（见 `hmrSeam`）。
+        root.provide('hmr', hmrSeam());
         root.logger.exporter({
           levels: { default: 4 },
           export: ({ name, type, args }) => {
@@ -244,6 +254,10 @@ describe('live Aperture discovery', () => {
     // 补丁文档，再由 Loader 就地提交进那份活引用。`loader/volatile-update` 只发给拥有
     // 该 entry 的 fiber，所以监听器挂在它的 fiber 上下文上，而不是根上下文——根上什么
     // 都收不到。
+    //
+    // 这一行 `mutate` 同时是那件容易漏掉的事的现场：它整次都在 `hmr` 的事务里，事件因此也
+    // 从事务里发出来，而这一轮刷新结束时必须**真的把新清单写进 `llm-pi-ai` 段**——下面断言
+    // 的是发布出去的结果，而不只是本插件的配置读到了新值。
     const entry = apertureEntry(ctx);
     assert.ok(entry !== undefined && entry.fiber !== undefined, 'expected the aperture entry to be running');
     const { fiber } = entry;
@@ -283,6 +297,35 @@ describe('live Aperture discovery', () => {
 /** 本插件在 Loader 里的那一行。 */
 function apertureEntry(context: Context): Entry | undefined {
   return [...context.loader.entries()].find((entry) => entry.options.id === APERTURE);
+}
+
+/**
+ * `@deepseek-ai/dsh-hmr` 的替身，只留 `runExclusive` 那一件事。
+ *
+ * 它值得一份替身，是因为它决定了本插件的写入能不能落地：`dsh-config-editor` 把**整次**设置写入
+ * 包在 `hmr.runExclusive()` 里，而这条事务的 AsyncLocalStorage 印记会跟着事务里同步发出的
+ * `loader/volatile-update` 一路走下去——本插件发现完的那次写入若从事件处理器那条链上发起，就会
+ * 被判成事务嵌套而拒绝，配置页上显示成「没写（HMR transactions cannot be nested）」。串行
+ * （`operations`）也要照抄：那条写入必须排在当前事务后面，而不是与它并发。
+ *
+ * 两个字段的语义逐字来自 `dsh-hmr` 的 `runExclusive()`：事务里再来一次 → 拒绝；否则排在上一件
+ * 工作后面，并在自己的上下文里跑。
+ *
+ * @returns 一个只有 `runExclusive` 的 `hmr` 服务。
+ */
+function hmrSeam(): { runExclusive(operation: () => Promise<unknown>): Promise<unknown> } {
+  const executing = new AsyncLocalStorage<boolean>();
+  let operations: Promise<unknown> = Promise.resolve();
+  return {
+    runExclusive(operation) {
+      if (executing.getStore()) {
+        return Promise.reject(new Error('HMR transactions cannot be nested'));
+      }
+      const task = operations.then(() => executing.run(true, operation));
+      operations = task.catch(() => undefined);
+      return task;
+    },
+  };
 }
 
 /** 插件在其 OpenAI 兼容路由上已发布的 id。 */

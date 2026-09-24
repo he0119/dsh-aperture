@@ -39,6 +39,7 @@ import {
 } from './config.ts';
 import { createPanelOps } from './panel.ts';
 import { buildProfilePlan } from './profile.ts';
+import { outside } from './relay.ts';
 import { buildRegistry, classifyProtocol } from './registry.ts';
 import { AperturePanelService, PANEL_CONTRIBUTION, PANEL_NAMESPACE, PANEL_PACKAGE } from './remote.ts';
 import { ApertureRuntime, type RuntimeLogger } from './runtime.ts';
@@ -117,7 +118,7 @@ export function apply(ctx: Context, config: ConfigRef): void {
     }
     const { refreshIntervalMinutes } = readConfig();
     if (refreshIntervalMinutes > 0) {
-      timer = setInterval(() => void runtime.refresh('定时'), refreshIntervalMinutes * 60_000);
+      timer = setInterval(() => void outside(() => runtime.refresh('定时')), refreshIntervalMinutes * 60_000);
       timer.unref?.();
     }
   };
@@ -137,9 +138,12 @@ export function apply(ctx: Context, config: ConfigRef): void {
   // 配置变更只有这一条来路：Loader 在一次 volatile-only 更新落地后发这个事件，此时 `get()`
   // 已是新值。配置页自己写入的变更也走这里——它写完会再显式刷一轮，而那一轮与这里起的是同一轮
   // （运行时的单飞判定按配置版本合并），不会多跑一遍发现。
+  //
+  // 这一轮非经 `outside` 不可：事件是在设置写入那个**事务里**同步发出来的，直接在这里刷新的话，
+  // 那一轮里本插件对 `llm-pi-ai` 的写入会被 HMR 判成事务嵌套而拒绝（见 `relay.ts`）。
   ctx.on('loader/volatile-update', () => {
     armInterval();
-    void runtime.refresh('配置变更');
+    void outside(() => runtime.refresh('配置变更'));
   });
 
   // 本插件自己画设置表单（浏览器半边在包级配置页上拿 `configForms` 那份作用域手写这一页），
@@ -158,8 +162,9 @@ export function apply(ctx: Context, config: ConfigRef): void {
   );
 
   // 插件加载本身就是启动发现的那个动作：走到这里配置已解析完毕（组合层 + 用户层，默认值全部
-  // 补齐），所以第一轮刷新看到的就是生效配置。
-  void runtime.refresh('插件加载');
+  // 补齐），所以第一轮刷新看到的就是生效配置。第一轮照样走 `outside`：插件本身可能是被源码热重载
+  // 在事务里重建的，而那一代实例的发现同样要能写设置。
+  void outside(() => runtime.refresh('插件加载'));
 
   // 配置页需要宿主半边的 Remote 面（报告、按行写模型参数、立刻刷新），而 Typert 注册表只有 Web
   // 这类装配了网关的 profile 才有。其余 profile 里这一整块被跳过：发现照常运行，只是没有可点按
