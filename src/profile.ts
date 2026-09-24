@@ -1,19 +1,13 @@
 /**
  * 发布阶段：把发现的模型变成 `llm-pi-ai` provider profile。
  *
- * 这里不做任何负载转换。本插件发布的两种协议——`openai-completions` 与
- * `anthropic-messages`——都由已安装的 `dsh-llm-pi-ai` 适配器实现，因此剩下的工作只是
- * 逐模型陈述该适配器无法通过一个无法识别的网关 URL 推断出的事实：模型有多大、接受
+ * 这里不做任何负载转换：发布的两种协议都由已安装的 `dsh-llm-pi-ai` 适配器实现，剩下的
+ * 工作只是逐模型陈述适配器无法从一个无法识别的网关 URL 推断出的事实——模型有多大、接受
  * 什么，以及它的推理控制如何在协议格式上传输。
  *
- * 该适配器的两个怪癖塑造了本模块。
- *
- * 未在其清单中随附的路由必须声明 `api`、`baseURL` 以及**非空**的 `models` 列表，因此
- * 空无一物的协议完全不产生路由，而不是产生一条空路由。
- *
- * 它的 OpenAI 兼容路径在既无凭据、又无非空 `authorization` 头时拒绝派发。经 Tailscale
- * 认证的网关两者都不需要，因此没有配置 `apiKeyEnv` 的路由会携带一个占位头——有文档
- * 记载、非机密，并且可以通过改为配置一个凭据引用来移除。
+ * 该适配器的两个怪癖塑造了本模块：未随附在它清单里的路由必须声明 `api`、`baseURL` 与
+ * **非空**的 `models`，因此空无一物的协议不产生路由；它的 OpenAI 兼容路径在既无凭据、又
+ * 无非空 `authorization` 头时拒绝派发，所以没有配 `apiKeyEnv` 的路由会带上一个占位头。
  *
  * @module dsh-aperture/profile
  */
@@ -32,10 +26,10 @@ const DEEPSEEK_EFFORTS = { off: 'disabled', high: 'high', max: 'max' } as const;
 /**
  * 为其他所有推理模型提供的推理档位。
  *
- * `off` 无值——适配器把它映射为「什么都不发」，对 OpenAI 兼容端点而言这就是把思考
- * 交给模型自行决定的方式——而它之上的那一档，是 Aperture 在其所代理的全部模型上都能
- * 接受的最宽写法。`minimal`、`xhigh` 与 `max` 都至少被某一个上游以 HTTP 400 拒绝过，
- * 因此发现的模型绝不会提供它们；更了解的部署可以在 `models` 中逐模型声明。
+ * `off` 无值——适配器把它映射为「什么都不发」，对 OpenAI 兼容端点而言这就是把思考交给
+ * 模型自行决定。它之上的那一档是 Aperture 在它所代理的全部模型上都能接受的最宽写法；
+ * `minimal`、`xhigh`、`max` 都至少被某个上游以 400 拒绝过，因此发现的模型绝不提供，
+ * 更了解的部署可以在 `models` 里逐模型声明。
  */
 const GENERIC_EFFORTS = { off: null, high: 'high' } as const;
 
@@ -133,8 +127,8 @@ function buildProfile(
 /**
  * 一条路由发送的头。
  *
- * 已配置的 `apiKeyEnv` 会完全取代占位头——此后由凭据接缝提供该头。插件自身配置中的
- * 部署头在两种情况下都优先于占位头，需要真实静态令牌的网关正是借此拿到它。
+ * 已配置的 `apiKeyEnv` 完全取代占位头——此后由凭据接缝提供。插件自身配置里的部署头在两种
+ * 情况下都优先于占位头，需要真实静态令牌的网关正是借此拿到它。
  *
  * @param protocol - 该路由的协议。
  * @param options - 配置。
@@ -189,10 +183,10 @@ function resolveReasoning(
   protocol: ApertureProtocol,
   configured: ConfiguredModel | undefined,
 ): Pick<PiAiModelProfile, 'reasoningEfforts' | 'compat'> {
-  // 空字典等于什么都没声明。`llm-pi-ai` 适配器会以「reasoningEfforts 是空的」为由拒绝**整段**
-  // 写入——于是三条路由一条都发布不出去，而用户写下 `{}` 想说的显然不是「这条模型没有任何推理
-  // 档位」（那该写 `false`）。适配器自己的建议就是「省略这个字段以沿用已安装清单的能力」，
-  // 这里照它办：当作没声明，继续往下按模型推导。
+  // 空字典等于什么都没声明。适配器会以「reasoningEfforts 是空的」为由拒绝**整段**写入——
+  // 于是所有路由一条都发布不出去，而用户写下 `{}` 想说的显然不是「这条模型没有任何推理
+  // 档位」（那该写 `false`）。适配器自己的建议是省略这个字段以沿用已安装清单的能力，
+  // 这里照它办。
   const declared = configured?.reasoningEfforts;
   if (declared !== undefined && Object.keys(declared).length > 0) {
     return { reasoningEfforts: { ...declared }, ...compatFor(model, protocol) };
@@ -201,9 +195,8 @@ function resolveReasoning(
     return {};
   }
 
-  // Anthropic 传输通过 token 预算而非推理档位来驱动思考，而网关的列表完全没有说明
-  // 上游接受哪种预算。因此除非部署另有声明，发现的 Anthropic 模型一律按不具备推理
-  // 能力处理。
+  // Anthropic 传输通过 token 预算而非推理档位驱动思考，而网关的列表完全没说上游接受哪种
+  // 预算。因此除非部署另有声明，发现的 Anthropic 模型一律按不具备推理能力处理。
   if (protocol === 'anthropic-messages' && configured?.thinking !== true) {
     return {};
   }
@@ -220,9 +213,8 @@ function resolveReasoning(
  * 推理模型所需的 compat 块。
  *
  * pi-ai 从 provider id 与 base URL 推断协议格式兼容性，而 Aperture 的 URL 对它说明不了
- * 什么，因此必须直接声明 DeepSeek 方言。`supportsReasoningEffort` 也要声明：URL 无法被
- * pi-ai 归位的网关目前会被默认为 true，但真正让 `reasoning_effort` 传输出去的是这个
- * 开关，而一条路由不应依赖默认值。
+ * 什么，因此 DeepSeek 方言必须直接声明。`supportsReasoningEffort` 也要声明：URL 无法被
+ * pi-ai 归位的网关目前默认为 true，但真正让 `reasoning_effort` 传输出去的是这个开关。
  *
  * @param model - 被描述的模型。
  * @param protocol - 该路由的协议。

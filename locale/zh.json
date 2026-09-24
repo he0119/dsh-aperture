@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Aperture 模型发现",
+    "title": "Aperture",
     "description": "把实例通告的模型发布成 llm-pi-ai 的 provider 路由。"
   }
 }

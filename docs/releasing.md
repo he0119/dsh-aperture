@@ -10,11 +10,10 @@ npm stage list dsh-aperture        # 送审后拿 stage-id
 npm stage approve <stage-id>       # 2FA 放行；也可以在 npmjs.com 的 Staged Packages 页点 Approve
 ```
 
-为什么是暂存而不是直发：这个包的 trusted publisher 只放行了 `npm stage publish`（`createStagedPackage`）这一个动作，
-直发 `npm publish`（`createPackage`）会拿到 `403 ... OIDC permission denied for this action`——注意这条错误出现在 OIDC
-换 token **成功之后**，所以别把它当成工作流或标签的毛病。想回到「推标签就直接上 npm」，就去 npm 包设置里给那个
-trusted publisher 勾上 `npm publish`，再把工作流里的 `npm stage publish` 换回 `npm publish`；两个动作是各自独立的开关。
-暂存不需要 2FA，放行才需要，这个人工确认点是有意留的。
+为什么是暂存而不是直发：这个包的 trusted publisher 只放行了 `npm stage publish`（`createStagedPackage`），直发
+`npm publish`（`createPackage`）会拿到 `403 ... OIDC permission denied for this action`——它出现在 OIDC 换 token
+**成功之后**，别当成工作流或标签的毛病。想回到直发，就在 npm 包设置里给 trusted publisher 勾上 `npm publish`，再把
+工作流换回 `npm publish`（两个动作是各自独立的开关）。暂存不需要 2FA，放行才需要，这个人工确认点是有意留的。
 
 包里的两半边来源不同：`lib/`（宿主半边）不入库，由 `prepare`（`tsc -p tsconfig.json`）在安装与发布时现场编译；
 `client/aperture.js`（浏览器半边）是手写的经典脚本，原样随包分发、不经过构建——原因见
@@ -41,23 +40,21 @@ trusted publisher 勾上 `npm publish`，再把工作流里的 `npm stage publis
 | 其余（`chore` / `ci` / `refactor` …） | 🧰 维护 | patch |
 
 留给人工的只有三个标签：`major` / `minor` 强制升版本（多个规则命中取最高），`skip-changelog` 让这条 PR 整个不进草稿。
-PR 打开时 Autolabeler 会按标题与分支名补 `breaking-change` / `enhancement` / `bug` / `dependencies` 等标签，
-方便筛 PR——分组本身不依赖它们（fork 来的 PR 因写权限不足打不上标签，也不影响归类）。
+PR 打开时 Autolabeler 会按标题与分支名补标签，方便筛 PR——分组本身不依赖它们（fork 来的 PR 打不上标签也不影响归类）。
 
-**发布草稿就等于发版**：在 Releases 页面把草稿 Publish（或在 Actions 页对 Release Drafter 手动
-`workflow_dispatch` 并勾选 `publish`），生成的 `v*` 标签会触发 Publish 工作流，然后同样要人工 2FA 放行。
-于是两条路都汇到同一个 Publish：手动 `npm version` 推标签，或者发布草稿。
+**发布草稿就等于发版**：在 Releases 页面把草稿 Publish（或在 Actions 页对 Release Drafter 手动 `workflow_dispatch`
+并勾选 `publish`），生成的 `v*` 标签会触发 Publish 工作流，然后同样要人工 2FA 放行。于是两条路都汇到同一个 Publish：
+手动 `npm version` 推标签，或者发布草稿。
 
-不要混用这两条路：手动推了标签而 GitHub Release 里没有对应条目时，草稿仍按**上一个 GitHub Release**
-推算版本号，会和已经发到 npm 的错位。走手动路就把草稿改名成同一版本再发布（或删掉草稿），要么就只走草稿这一条。
+不要混用这两条路：手动推了标签而 GitHub Release 里没有对应条目时，草稿仍按**上一个 GitHub Release** 推算版本号，会和
+已经发到 npm 的错位。走手动路就把草稿改名成同一版本再发布（或删掉草稿），要么就只走草稿这一条。
 
-版本号以**标签为准**：`v0.1.1` 会把 `package.json` 与 lockfile 里的版本改写成 `0.1.1` 再发布，
-所以偶尔忘了先 `npm version` 也不会发错版本号。标签里的版本若不合法（如 `v1.2`），工作流直接失败。
-已在 npm 上的同版本会被识别为「已存在」并安全跳过，而不是把红叉留给一次无害的重跑；但**已暂存、还没放行**的版本
-在 registry 上查不到，放行前重推标签会重复送审一次，别这么干。
+版本号以**标签为准**：`v0.1.1` 会把 `package.json` 与 lockfile 里的版本改写成 `0.1.1` 再发布，所以偶尔忘了先
+`npm version` 也不会发错；标签里的版本不合法（如 `v1.2`）则工作流直接失败。已在 npm 上的同版本会被识别为「已存在」并
+安全跳过；但**已暂存、还没放行**的版本在 registry 上查不到，放行前重推标签会重复送审一次，别这么干。
 
-发布用 npm 的**可信发布**（Trusted Publishing）而不是长期 token——CI 里没有 `NPM_TOKEN` 可偷，
-暂存时就会把 provenance 证明签好。代价是每个新包要在 npm 上一次性登记，登记时还要选「允许哪些动作」：
+发布用 npm 的**可信发布**（Trusted Publishing）而不是长期 token——CI 里没有 `NPM_TOKEN` 可偷，暂存时就会把 provenance
+证明签好。代价是每个新包要在 npm 上一次性登记，登记时还要选「允许哪些动作」：
 
 | 字段 | 值 |
 | --- | --- |
@@ -68,7 +65,6 @@ PR 打开时 Autolabeler 会按标题与分支名补 `breaking-change` / `enhanc
 | Environment | 留空 |
 | Allowed actions | `npm stage publish`（想直发就再加上 `npm publish`） |
 
-`dsh-aperture` 在 0.1.0 时就登记过，但**只放行了暂存**，所以 0.2.0 的首次 CI 发布在 PUT 那一步被 403 挡下来；
-发新包或换工作流文件名时要连 Allowed actions 一起核对。名字对不上（大小写、`.yml` 后缀、仓库归属）会在
-OIDC 换 token 那一步失败，与上面那条 403 是不同的故障。`--provenance` 会一并附上构建来源证明，
-所以发布产物能追溯到具体的 commit 与工作流。
+`dsh-aperture` 在 0.1.0 时就登记过，但**只放行了暂存**，所以 0.2.0 的首次 CI 发布在 PUT 那一步被 403 挡下来；发新包或
+换工作流文件名时要连 Allowed actions 一起核对。名字对不上（大小写、`.yml` 后缀、仓库归属）会在 OIDC 换 token 那一步
+失败，与上面那条 403 是不同的故障。`--provenance` 会一并附上构建来源证明，所以发布产物能追溯到具体的 commit 与工作流。

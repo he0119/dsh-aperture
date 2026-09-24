@@ -1,12 +1,11 @@
 /**
  * 配置页与宿主之间的 Typert Remote 面：`aperturePanel` 命名空间。
  *
- * 描述符是手工登记的，因为生成它们的 Typert 生成器并不随 DSH 发布，而这一步的规范本身
- * 很小：宿主半边用 `src-json` 编解码器，浏览器半边带 strict 校验，两端共享同一组端点名。
- * 参数按描述符里的顺序位置传入宿主方法，因此两边的名字与顺序必须一致。
+ * 描述符是手工登记的，因为生成它们的 Typert 生成器并不随 DSH 发布，而这一步的规范本身很小：
+ * 宿主半边用 `src-json` 编解码器，浏览器半边带 strict 校验，两端共享同一组端点名；参数按描述符
+ * 里的顺序位置传入宿主方法，因此两边的名字与顺序必须一致。
  *
- * 端点 id 的 `#` 之前是包名，之后是 `<命名空间>/<方法>`；这与网关、注册表和客户端三方
- * 共用的文法一致。
+ * 端点 id 的 `#` 之前是包名，之后是 `<命名空间>/<方法>`。
  *
  * @module dsh-aperture/remote
  */
@@ -46,12 +45,11 @@ function panelDescriptor(method: string, parameters: readonly string[] = []): In
 /**
  * 本插件暴露给浏览器的全部端点。
  *
- * 端点名有一处不显眼的约束：api-gateway 在客户端为每个命名空间建一个
- * `RemoteNamespaceService`，端点会成为它的属性，因此与它自己的成员重名会被
- * `validateContribution` 拒绝，**整份贡献一起撤回**（浏览器里只剩一行 console.error，
- * 界面安静地什么都不出现）。它预置的名字是 `ctx` / `empty` / `invokeRemote` / `methods`
- * / `name` / `namespace` 与 `has` / `install` / `installDirect` / `installScoped` /
- * `assertMethodAvailable` / `remove` —— 新端点起名时先对一遍这份名单。
+ * 端点名有一处不显眼的约束：api-gateway 在客户端为每个命名空间建一个 `RemoteNamespaceService`，
+ * 端点会成为它的属性，因此与它自己的成员重名会被 `validateContribution` 拒绝，**整份贡献一起
+ * 撤回**（浏览器里只剩一行 console.error，界面安静地什么都不出现）。预置名有 `ctx` / `empty` /
+ * `invokeRemote` / `methods` / `name` / `namespace` 与 `has` / `install` / `installDirect` /
+ * `installScoped` / `assertMethodAvailable` / `remove`——新端点起名时先对一遍这份名单。
  */
 export const PANEL_INVOCATIONS: readonly InvocationDescriptor[] = [
   panelDescriptor('status'),
@@ -62,9 +60,8 @@ export const PANEL_INVOCATIONS: readonly InvocationDescriptor[] = [
 /**
  * 登记进 Typert 注册表的贡献。
  *
- * `schemas`/`model` 是生成器的产物，这里没有生成器，因此它们如实为空：本插件不导出可
- * 复用的 schema，也没有需要反射的业务类型。端点本身仍然完整——宿主注册 `src-json`、浏览器
- * 带 strict 校验，两者按同一份契约工作。
+ * `schemas`/`model` 是生成器的产物，这里没有生成器，因此它们如实为空：本插件不导出可复用的
+ * schema，也没有需要反射的业务类型。端点本身仍然完整。
  */
 export const PANEL_CONTRIBUTION: TypertContribution = {
   package: PANEL_PACKAGE,

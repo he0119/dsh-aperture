@@ -1,9 +1,9 @@
 /**
  * Aperture 发现流水线的共享词汇表。
  *
- * 该流水线是一条纯函数链 —— 端点响应进，provider profile 出 —— 因此每个阶段都
- * 在这里命名自己的类型，而不去碰 Cordis 或设置的接缝：只有 `src/index.ts` 和
- * `src/sync.ts` 会接触服务。
+ * 该流水线是一条纯函数链——端点响应进，provider profile 出——因此每个阶段都在这里
+ * 命名自己的类型，而不去碰 Cordis 或设置的接缝：只有 `src/index.ts` 和 `src/sync.ts`
+ * 会接触服务。
  *
  * @module dsh-aperture/types
  */

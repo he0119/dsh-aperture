@@ -1,19 +1,14 @@
 /**
  * 配置 schema 与解析。
  *
- * 本插件拥有一个可配置的 plugin entry：组合层是 bundle 里 `cordis.patch.yml` 的那
- * 一行，用户层是当前 profile 的 patch 里同名 entry 的 `config` 段。而它发布出去的一切
- * 都写进**另一个** entry `llm-pi-ai`——真正提供这些路由的适配器。这个分工就是整个
- * 设计：本插件决定有哪些模型，那个适配器决定怎么跟它们说话。
+ * 本插件拥有自己的 entry（`aperture`，用户层就是 profile patch 里那一行的 `config`），
+ * 但发布出去的一切都写进**另一个** entry `llm-pi-ai`：本插件决定有哪些模型，那个适配器
+ * 决定怎么跟它们说话。
  *
- * 整份 schema 都是 volatile 的，理由是两条。设置接缝（`ctx.settings`）**只**暴露
- * volatile 字段：解析结果里没有 volatile 节点的 entry 根本不会出现在 `describe()` 里，
- * 界面也就无从编辑它。而本插件的每个字段都只影响下一轮发现，没有任何一项需要重启，
- * 所以「全部 volatile」既是它的真实语义，也让 Loader 把每一次配置改动都当作就地换热
- * 引用的活更新——插件不重新挂载，正在跑的那一轮刷新也不会被掐断。
- *
- * 两个设置命名空间没有单独的文件：自己的那一个就是本模块的用户层键名，适配器的那
- * 一个（写出去的目标）住在 `sync.ts`，也就是唯一会写它的地方。
+ * 整份 schema 都是 volatile 的：设置接缝**只**暴露 volatile 字段（没有 volatile 节点的
+ * entry 不出现在 `describe()` 里，界面就无从编辑），而这里每个字段都只影响下一轮发现、
+ * 没有一项需要重启——于是配置改动被 Loader 当作就地换引用的活更新，插件不重新挂载，
+ * 正在跑的那轮刷新也不会被掐断。
  *
  * @module dsh-aperture/config
  */
@@ -60,10 +55,7 @@ const modelConfig = z.object({
 export interface Config {
   /** Aperture 实例根地址，例如 `https://ai.example.ts.net`。留空则关闭发现。 */
   baseUrl?: string;
-  /**
-   * 承载 OpenAI 兼容模型的路由键；Anthropic 那条路由与两者的显示名都从它推出来
-   * （见 {@link derivedNames}），因为一个部署要换的从来只是前缀。
-   */
+  /** 承载 OpenAI 兼容模型的路由键；Anthropic 那条路由与两者的显示名都从它推出来（{@link derivedNames}）。 */
   route?: string;
   /** 按请求解析的凭据引用；留空则改为发布一个占位请求头。 */
   apiKeyEnv?: string;
@@ -71,10 +63,7 @@ export interface Config {
   headers?: Record<string, string>;
   /** 非空时，只发现这些模型 id。 */
   enabledModelIds?: string[];
-  /**
-   * 网关模型 id → models.dev 模型 id，用于清单里写法不同的 id
-   * （`deepseek-flash` → `deepseek/deepseek-v4-flash`）。
-   */
+  /** 网关模型 id → models.dev 模型 id，用于两边写法不同的 id。 */
   modelAliases?: Record<string, string>;
   /** 覆盖与追加，按 id 合并。 */
   models?: Array<{
@@ -102,10 +91,9 @@ export interface Config {
 /**
  * {@link Config} 的运行时 schema。
  *
- * 根节点上的 `.volatile()` 让整份配置成为一个活引用：Loader 交到 `apply` 手里的
- * `config` 是一个 `Ref`，读值走 `config.get()`，而每次配置变更都是对同一个引用的
- * `updateVolatile`。校验与默认值照旧——volatile 只改变结果如何被持有一段活引用，
- * 不改变解析（见 schemastery 的 `Schema.resolve`）。
+ * 根节点上的 `.volatile()` 让整份配置成为活引用：`apply` 拿到的是 `Ref`，读值走
+ * `.get()`，每次变更都是对同一引用的 `updateVolatile`。校验与默认值照旧——volatile
+ * 只改变结果如何被持有。
  */
 export const Config = z.object({
   baseUrl: z.string().default(''),
@@ -123,19 +111,18 @@ export const Config = z.object({
 }).volatile();
 
 /**
- * Loader 交到 `apply` 手里的配置：根级 volatile 的活引用。
+ * Loader 交到 `apply` 手里的配置活引用。
  *
- * 读当前值走 `.get()`；它返回的是深冻结快照，且只在值真的变了之后才换引用——这一点
- * 正是 {@link memoizedConfig} 与运行时单飞判定所依赖的「配置版本」。
+ * `.get()` 返回深冻结快照，且只在值真的变了之后才换引用——这正是 {@link memoizedConfig}
+ * 与运行时单飞判定所依赖的「配置版本」。
  */
 export type ConfigRef = ReturnType<typeof Config>;
 
 /**
  * 取活引用里的那份普通配置值。
  *
- * 根级 volatile 只改变配置**怎么被持有**：schema 的返回值从普通对象变成活引用，读值走
- * `.get()`。解析与校验照旧——非法值仍然在 `Config(raw)` 当场抛出，默认值也已经补齐——
- * 所以这里只把活引用读成一份快照，交给不关心「活」的那几层（跨字段解析、运行时判定）。
+ * 根级 volatile 只改变配置**怎么被持有**，解析与校验照旧（非法值仍在 `Config(raw)` 当场
+ * 抛出，默认值也已补齐），所以这里只把活引用读成一份快照，交给不关心「活」的那几层。
  *
  * @param ref - Loader 交到 `apply` 手里的配置活引用。
  * @returns 当前那份深冻结的普通配置值。
@@ -147,9 +134,8 @@ export function configValue(ref: ConfigRef): FilledConfig {
 /**
  * 默认值补齐之后的配置。
  *
- * {@link Config} 是**用户可写**的形状：每个键都可选，读的人自己兜底。schema 输出的那一份
- * 不是这样——每个字段都带 `.default()`，`configValue` 交出的每个键都已经有值。把这个事实
- * 写进类型，调用方就不必对着一堆其实必然存在的字段写 `??` 或 `!`。
+ * {@link Config} 是**用户可写**的形状（每个键可选）；schema 输出的那份不是——每个字段
+ * 都带 `.default()`。把这个事实写进类型，调用方就不必对着一堆必然存在的字段写 `??`。
  */
 export type FilledConfig = Required<Config>;
 
@@ -179,9 +165,9 @@ export interface ResolvedConfig {
 /**
  * 从一个路由键推出这一对路由的名字与显示名。
  *
- * 三条路由事实此前是三个可写字段，但一个部署要换的从来只是前缀：Anthropic 那条按惯例
- * 加 `-anthropic` 后缀，显示名则是路由键的标题写法（`aperture` → `Aperture`）。让它们
- * 互相矛盾（两条路由同名、显示名为空）因此变成不可能，而不是要校验出来的错误。
+ * 这三条事实曾经是三个可写字段，但一个部署要换的从来只是前缀：Anthropic 那条加
+ * `-anthropic` 后缀，显示名是路由键的标题写法（`aperture` → `Aperture`）。让它们互相
+ * 矛盾因此变成不可能，而不是要校验出来的错误。
  *
  * @param route - 已经过文法校验的 OpenAI 兼容路由键。
  * @returns 三条推导出来的名字。
@@ -197,13 +183,11 @@ function derivedNames(route: string): { anthropicRoute: string; displayName: str
 /**
  * 解析一段配置，只拒绝那些自身就矛盾的错误。
  *
- * `baseUrl` 缺失或不可用**不**算错误：插件照常挂载但处于休眠，这样 profile 可以在
- * 还没人填地址时就先带着这一行——这也正是该设置命名空间能变得可编辑的原因。
- * 路由键则必须拒绝，因为写错的路由键无法靠后续写入补救：插件会静默地什么都不发布。
+ * `baseUrl` 缺失或不可用**不**算错误：插件照常挂载但处于休眠，这样 profile 可以在还没人
+ * 填地址时就先带着这一行。路由键则必须拒绝——写错的路由键无法靠后续写入补救，插件会静默地
+ * 什么都不发布。
  *
- * 入参是**补齐默认值之后的普通值**（`configValue` 的返回值），不是活引用。
- *
- * @param config - 解析好的 `aperture` 段。
+ * @param config - 已补齐默认值的 `aperture` 段（`configValue` 的返回值，不是活引用）。
  * @returns 校验过的配置。
  * @throws Error 当路由键不合文法、或模型覆盖自身重复/无法服务时抛出，并在消息里点名字段。
  */
@@ -257,10 +241,9 @@ export function resolveConfig(config: Config): ResolvedConfig {
 /**
  * 把「解析当前的配置段」包成一个按源缓存的 thunk。
  *
- * 配置活引用的 `get()` 只在值真的变了之后才换一份**深冻结**快照，没变就还是同一个对象；
- * 因此这个 thunk 的返回值可以直接当**配置版本**用——运行时靠它判断正在跑的那一轮读的是
- * 不是此刻这份配置。不缓存的话每次调用都是新对象，那个判断永远不成立，于是每次刷新都会
- * 多排一轮。
+ * 配置活引用的 `.get()` 只在值真的变了之后才换快照，没变就还是同一个对象，因此返回值可以
+ * 直接当**配置版本**用。不缓存的话每次调用都是新对象，运行时的版本判断永远不成立，于是每次
+ * 刷新都会多排一轮。
  *
  * @param source - 生效配置段的活引用（每次编辑都就地换掉它的内容）。
  * @returns 解析后的配置；源没换时返回同一个对象。

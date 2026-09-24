@@ -1,15 +1,14 @@
 /**
  * models.dev 清单的索引与查找。
  *
- * Aperture 会上报容量，但并不总是上报能力，而且在大多数 provider 上，其列表
- * 根本没有「这个模型是否会推理」的字段。models.dev 为同样的模型携带 `reasoning`、
- * `tool_call` 和输入模态，但 id 只是有时逐字节相同：网关会重命名上游（这里是
- * `x-ai/grok-4.5`，那里是 `xai/grok-4.5`），而其别名完全不带厂商前缀（`k3`）。
+ * Aperture 上报容量，但并不总是上报能力，在大多数 provider 上其列表根本没有「这个模型是否
+ * 会推理」的字段。models.dev 为同样的模型携带 `reasoning`、`tool_call` 和输入模态，但 id 只是
+ * 有时逐字节相同：网关会重命名上游（这里是 `x-ai/grok-4.5`，那里是 `xai/grok-4.5`），而其别名
+ * 完全不带厂商前缀（`k3`）。
  *
- * 因此查找是评分式的，而非精确匹配。模型 id 按完整写法、按最后一个斜杠之后的
- * 分段、以及两者折叠标点后的 slug 来匹配；一个清单条目贡献同样的三个键；而两侧
- * 匹配上的 provider 别名优先于任何键得分，因为跨厂商的重名正是孤立的模型 id
- * 唯一会说谎的地方。
+ * 因此查找是评分式的，而非精确匹配。模型 id 按完整写法、按最后一个斜杠之后的分段、以及两者折叠
+ * 标点后的 slug 来匹配；一个清单条目贡献同样的三个键；而两侧匹配上的 provider 别名优先于任何键
+ * 得分，因为跨厂商的重名正是孤立的模型 id 唯一会说谎的地方。
  *
  * @module dsh-aperture/metadata/modelsdev
  */
@@ -96,9 +95,8 @@ export class ModelCatalogIndex {
 /**
  * 在一份已解析的 models.dev 文档之上构建查找。
  *
- * 接受该文档发布过的所有形态：当前扁平的 `{ "<provider>/<model>": { … } }` 映射、
- * 值携带 `models` 的旧式 provider 键映射，以及在 `providers` 或 `models` 之下
- * 暴露上述任一形态的包装对象。
+ * 接受该文档发布过的所有形态：当前扁平的 `{ "<provider>/<model>": { … } }` 映射、值携带
+ * `models` 的旧式 provider 键映射，以及在 `providers` 或 `models` 之下包装上述任一形态的对象。
  *
  * @param document - 已解析的 JSON，或任何其他值。
  * @returns 该查找；文档不含可用条目时为 `undefined`。

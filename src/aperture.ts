@@ -1,9 +1,9 @@
 /**
  * 端点问询：`GET {instance}/v1/models`。
  *
- * 这是插件为发现过程发出的唯一网络调用，并且刻意与 `dsh-llm-pi-ai` 自己的
- * "fetch available models" 动作所读取的清单端点相同 —— 那个动作一次只采纳一份
- * 草稿，而本插件才是让清单自行刷新的东西。
+ * 这是插件为发现过程发出的唯一网络调用。它与 `dsh-llm-pi-ai` 自己的 "fetch available
+ * models" 动作读的是同一个端点——区别在于那个动作一次只采纳一份草稿，而本插件才是让
+ * 清单自行刷新的东西。
  *
  * @module dsh-aperture/aperture
  */
@@ -38,8 +38,7 @@ export interface FetchModelsOptions {
  * @param instanceRoot - 一个已归一化的实例根。
  * @param options - 请求头、超时与调用方取消信号。
  * @returns 按端点顺序排列的原始条目。
- * @throws 当请求失败、端点拒绝、应答过大，或响应体不是模型清单时，抛出带有端点
- *   名称的 Error。
+ * @throws 当请求失败、端点拒绝、应答过大，或响应体不是模型清单时，抛出带端点名的 Error。
  */
 export async function fetchModelsListing(
   instanceRoot: string,
@@ -92,9 +91,8 @@ export async function fetchModelsListing(
 /**
  * 从清单响应体中读取出模型行。
  *
- * 存在 `data` 数组时以它为准；否则读取 `models` 对象，且只有值为对象的属性才算
- * 模型。其他任何形状都会被拒绝，而不是被静默当作空清单读取，因为空清单会覆盖掉
- * 一份可用的清单。
+ * 存在 `data` 数组时以它为准；否则读取 `models` 对象，且只有值为对象的属性才算模型。
+ * 其他形状一律拒绝而不是当作空清单——空清单会覆盖掉一份可用的清单。
  *
  * @param body - 已解析的响应。
  * @param endpoint - 应答的 URL，用于诊断。

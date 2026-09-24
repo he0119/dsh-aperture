@@ -1,13 +1,11 @@
 /**
  * 提取 Aperture 模型条目对自身所述的事实。
  *
- * 网关的列表是容量的权威来源：它知道每个上游之前的代理会接受什么，并且在上游
- * 更换模型时依然正确。因此每个字段都会列出网关被观察到使用过的所有写法，第一个
- * 成立的答案胜出。
+ * 网关的列表是容量的权威来源：它知道每个上游之前的代理会接受什么，并且在上游更换模型时
+ * 依然正确。因此每个字段都列出网关被观察到用过的所有写法，第一个成立的答案胜出。
  *
- * 下面的写法是参考 VS Code 扩展清单的超集，再加上本插件在真实 Aperture 实例上
- * 实际观察到的几个（`context_window_tokens`、`max_output_tokens`、`display_name`），
- * 参考的清单早于它们。
+ * 下面的写法是参考 VS Code 扩展清单的超集，再加上本插件在真实 Aperture 实例上实际观察到的
+ * 几个（`context_window_tokens`、`max_output_tokens`、`display_name`），参考的清单早于它们。
  *
  * @module dsh-aperture/metadata/extract
  */
@@ -54,8 +52,7 @@ function containers(record: Record<string, unknown>): {
 }
 
 /**
- * 读取一个条目所述的容量，可位于顶层，或嵌套在 `metadata`、`limit`、`limits`
- * 之下。
+ * 读取一个条目所述的容量，可位于顶层，或嵌套在 `metadata`、`limit`、`limits` 之下。
  *
  * @param value - 一条原始模型条目。
  * @returns 所述的容量；两者都未给出时为 `undefined`。
@@ -164,9 +161,8 @@ export function extractProvider(value: unknown): { id?: string; name?: string } 
 /**
  * 读取一个条目所述的能力事实。
  *
- * `reasoning: true` 是参考扩展与 models.dev 的信号；`thinking` 标志和嵌套的
- * `capabilities` 块则是网关自己的词汇。视觉能力从 `modalities.input` 列表以及
- * `vision` / `supports_vision` 写法读取。
+ * `reasoning: true` 是参考扩展与 models.dev 的信号；`thinking` 标志和嵌套的 `capabilities`
+ * 块是网关自己的词汇。视觉能力从 `modalities.input` 以及 `vision` / `supports_vision` 读取。
  *
  * @param value - 一条原始模型条目。
  * @returns 所述的能力；未给出任何能力时为 `undefined`。

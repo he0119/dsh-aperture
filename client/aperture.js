@@ -1,30 +1,22 @@
 /**
  * `dsh-aperture` 浏览器半边：**「插件」页里本插件那个包页上的配置页**。
  *
- * 写法照官方插件：页面只交内容，控件用官方原语，**没有卡片**。
+ * 注册在包级配置槽位 `plugins.bundle.config` 上，键是包名 `dsh-aperture`：点开插件列表里的本
+ * 插件就是这一页。页面只交内容，控件用官方原语，**没有卡片**，标题与面包屑由页主画。
  *
- * - 注册在包级配置槽位 `plugins.bundle.config` 上，键是包名 `dsh-aperture`：点开插件列表里的本
- *   插件就直接是这一页，标题、图标与面包屑由页主画；
- * - 地址与同步开关交给官方那套设置表单（`SettingsForm` / `SettingsValueField` /
- *   `SettingsFormModel`）：草稿与生效值的差分、`revision` 围栏写入、保存失败保留草稿、只读与
- *   「命名空间没在服务」的说明都归它管，本模块只声明每个字段怎么在「存下来的值」与「输入框里的
- *   文本」之间换算；
- * - 模型清单是一列 `DisclosureRow`（展开就是这一行的覆盖编辑），路由与刷新事实是扁平的
- *   `dl` 配 `Tag` / `StateDot`；分组只靠小标题、字号与间距，不画边框与底色；
- * - 客户端模块系统把 `dsh.client.inject` 里列出的包注册成可 `require` 的模块，因此这里可以
- *   `require('@deepseek-ai/dsh-client-ui-primitives')`——官方客户端包就是这么用它的，本仓库
- *   不必为此引入打包器。
+ * 地址与同步开关交给官方设置表单（`SettingsForm` / `SettingsValueField` / `SettingsFormModel`）：
+ * 草稿与生效值的差分、`revision` 围栏写入、保存失败保留草稿、只读与「命名空间没在服务」都归它
+ * 管，本模块只声明每个字段怎么在「存下来的值」与「输入框文本」之间换算。
  *
- * 注入面是 `slots` / `locale` / `remote` / `configForms` 四个服务。报告与「立刻刷新」经自己的
+ * 注入面是 `slots` / `locale` / `remote` / `configForms`：报告与「立刻刷新」经自己的
  * `aperturePanel` Remote 往返；设置的读写面向 `configForms` 要——**包级**配置页页主只递
- * `view: 'page'`、不递 `form`（递 `form` 的是行级与条目级），所以这一份得按设置命名空间自己取。
- * 组件读宿主来的状态走官方的槽位钩子（注入面里的 `hooks`，渲染器把它变成 `useApertureCard`
- * 选择器钩子），动作走注入面里的普通函数。
+ * `view: 'page'`、不递 `form`（递 `form` 的是行级与条目级），所以得按设置命名空间自己取。状态走
+ * 注入面里的 `hooks`（渲染器把它变成 `useApertureCard` 选择器钩子），动作走普通函数。
  *
- * **这个文件就是构建产物。** DSH 的客户端模块系统只要求一个经典脚本，用
- * `window.__ModuleLoader__.load({ id, factory })` 的握手把自己报上去；它不要求这份脚本
- * 经过打包器，也不检查它是否被压缩过。因此这里直接写 CJS 工厂体，用 `createElement`
- * 而不是 JSX。
+ * 客户端模块系统把 `dsh.client.inject` 里列出的包注册成可 `require` 的模块，因此这里能直接
+ * require 官方客户端包，不必引入打包器。**这个文件就是构建产物**：模块系统只要求一个经典脚本，
+ * 用 `window.__ModuleLoader__.load({ id, factory })` 的握手报名，不要求打包器，因此这里直接写
+ * CJS 工厂体，用 `createElement` 而不是 JSX。
  *
  * @module dsh-aperture/client
  */
@@ -49,19 +41,17 @@ window.__ModuleLoader__.load({
 
     const h = React.createElement;
 
-    /** 字典命名空间（本插件拥有）。配置页的 `locale` 声明与 `ctx.locale.bind` 都用它。 */
+    /** 字典命名空间（本插件拥有）；配置页的 `locale` 声明与 `ctx.locale.bind` 都用它。 */
     const NS = 'settings.aperturePanel';
     /** 宿主半边的 Remote 命名空间（`src/remote.ts`）。 */
     const PANEL = 'aperturePanel';
-    /** 包名，取自 package.json。它同时是包级配置页的键。 */
+    /** 包名，取自 package.json；它同时是包级配置页的键。 */
     const PACKAGE = 'dsh-aperture';
     /** 样式表的归属标记；卸载与热替换时按它回收。 */
     const STYLE_OWNER = 'aperture/client.js';
     /**
-     * 设置命名空间（宿主半边 `src/config.ts` 里的 `APERTURE_NAMESPACE`，也是
-     * `cordis.patch.yml` 里那一行的 id）。
-     *
-     * 包级配置页页主不递 `form`，这一份表单就是按它向 `configForms` 服务要来的。
+     * 设置命名空间（宿主 `src/config.ts` 的 `APERTURE_NAMESPACE`，也是 `cordis.patch.yml` 里那一行
+     * 的 id）。包级配置页页主不递 `form`，这一份表单就是按它向 `configForms` 要来的。
      */
     const SETTINGS_NS = 'aperture';
     /** 这一页自己编辑的两个字段；其余配置键（`models` 除外）留给配置文件。 */
@@ -70,21 +60,20 @@ window.__ModuleLoader__.load({
     // ---------------------------------------------------------------- 端点契约
 
     /**
-     * 浏览器半边与宿主半边之间的那层线格式。
+     * 浏览器半边与宿主半边之间的线格式。
      *
-     * 这里只有一个直通编解码器，因为浏览器侧从不解析这些值：注册表
-     * （`@deepseek-ai/dsh-typert-registry`）只检查 `mode` 是 `strict`、`typeSymbol` 非空、
-     * `create` 是个函数；网关客户端只读参数上的 `mode` 与结果上可选的 `decode`/`encode`，
-     * **没有一处调用 `create()`**。逐字段手写一套 wire 校验因此永远不会执行——曾经那 300 行
-     * 文法还顺手埋了个雷：注册表要的是 `create` 工厂，`schema` 字段不被承认，于是 `$mount`
-     * 抛 `strict codec has no create() factory`，整份贡献被拒，界面安静地什么都不出现。
+     * 只有一个直通编解码器，因为浏览器侧从不解析这些值：注册表（`@deepseek-ai/dsh-typert-registry`）
+     * 只检查 `mode` 是 `strict`、`typeSymbol` 非空、`create` 是个函数，网关客户端只读参数上的
+     * `mode` 与结果上可选的 `decode`/`encode`，**没有一处调用 `create()`**，逐字段手写的 wire 校验
+     * 因此永远不会执行。曾经那 300 行文法还埋了个雷：注册表要的是 `create` 工厂，`schema` 字段不被
+     * 承认，于是 `$mount` 抛 `strict codec has no create() factory`，整份贡献被拒，界面安静地什么
+     * 都不出现。
      *
-     * 端点名不能与命名空间服务自己的成员重名：api-gateway 为每个命名空间建一个
-     * `RemoteNamespaceService`，端点会成为它的属性，撞上 `remove` / `has` / `install` /
-     * `name` / `ctx` 这类预置名字时校验会拒绝**整份**贡献，新端点起名时先对一遍名单。
+     * 端点名不能与命名空间服务自己的成员重名：api-gateway 为每个命名空间建的
+     * `RemoteNamespaceService` 会把端点收成自己的属性，撞上 `remove` / `has` / `install` / `name` /
+     * `ctx` 这类预置名字时校验会拒绝**整份**贡献。
      */
     const SCHEMA = Object.freeze({ parse: (value) => value });
-    /** 每个参数与结果共用的直通编解码器。 */
     const CODEC = Object.freeze({
       mode: 'strict',
       typeSymbol: `${PACKAGE}/types#any`,
@@ -95,12 +84,10 @@ window.__ModuleLoader__.load({
      * 一个端点的浏览器侧描述符。
      *
      * 参数按宿主方法的形参顺序给出；调用点按位置传参，网关按 `wire` 映射，并且**自动省掉
-     * `undefined` 实参**（`if (value !== void 0) args[parameter.wire] = value`），所以「没提到
-     * 的参数」天然就是「不碰」，不需要描述符额外声明什么。
+     * `undefined` 实参**（`if (value !== void 0) args[parameter.wire] = value`），所以「没提到的
+     * 参数」天然就是「不碰」。
      *
-     * @param {string} method - 端点方法名（也是宿主服务上的方法名）。
      * @param {Array<string>} parameters - 参数名，顺序与宿主方法一致。
-     * @returns {object} 描述符。
      */
     function descriptor(method, parameters = []) {
       return Object.freeze({
@@ -137,12 +124,7 @@ window.__ModuleLoader__.load({
      */
     const EDITABLE_KEYS = Object.freeze(['name', 'api', 'contextWindow', 'maxTokens', 'input', 'thinking', 'alias']);
 
-    /**
-     * 把 `RemoteResult` 拆成值，失败则抛人话。
-     *
-     * @param {{ok: boolean}} result - 端点应答。
-     * @returns {object} 端点值。
-     */
+    /** 把 `RemoteResult` 拆成值，失败则抛人话。 */
     function unwrap(result) {
       if (result.ok) return result.value;
       const detail = result.error && result.error.message ? result.error.message : '未知原因';
@@ -154,13 +136,12 @@ window.__ModuleLoader__.load({
     /**
      * 配置页样式。
      *
-     * 页面在独立 bundle 里，用不了仓库的 CSS module 管线，因此样式随包分发、按 effect 生命周期
-     * 注入，卸载时移除；元素按 `data-plugin-css` 认领，与自己重名的那份先删掉（热替换）。
+     * 页面在独立 bundle 里，用不了仓库的 CSS module 管线，因此样式随包分发、按 effect 生命周期注入，
+     * 卸载时移除；元素按 `data-plugin-css` 认领，与自己重名的那份先删掉（热替换）。
      *
      * 选择器全部收在根节点的 `[data-dsh-aperture]` 之下，颜色只引用 dsh web 的主题 token
-     * （`--dsw-alias-*`，各带回落值），深浅色自动跟随。布局照官方设置页的口径：分组之间 20px、
-     * 组内 12px，字段排成 `minmax(200px, 1fr)` 的栅格，说明文字 12px，正文字号 13px。**没有
-     * 卡片**：分组靠小标题与间距分开，只有模型清单那种「一列可展开的行」才用一条细边框收着。
+     * （`--dsw-alias-*`，各带回落值），深浅色自动跟随。**没有卡片**：分组靠小标题与间距分开，只有
+     * 模型清单那种「一列可展开的行」才用一条细边框收着。
      *
      * @returns {Function} 卸载时移除样式表的 disposer。
      */
@@ -554,12 +535,9 @@ window.__ModuleLoader__.load({
     const CAPACITY_SCALE = { k: 1e3, m: 1e6 };
 
     /**
-     * 读输入框里的容量，好让人写 `1M`、`100K` 而不必去数零。
+     * 读输入框里的容量，好让人写 `1M`、`100K` 而不必去数零。与官方「模型」页同一套写法（它的
+     * `parseCapacity`）：空串是「这一项不覆盖」，读不出来的返回 `NaN`，由调用方在本地挡下来。
      *
-     * 与官方「模型」页同一套写法（它的 `parseCapacity`）：空串是「这一项不覆盖」，读不出来的
-     * 返回 `NaN`——由调用方在本地挡下来，不让它写进设置文档。
-     *
-     * @param {string} text - 输入框里的原文。
      * @returns {number|undefined} token 数；空串给 `undefined`，读不出来给 `NaN`。
      */
     function parseCapacity(text) {
@@ -577,13 +555,10 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 把存下来的 token 数写回输入框，取能原样读回来的最短写法。
+     * 把存下来的 token 数写回输入框，取能原样读回来的最短写法：`1000000` 写成 `1M`、`384000`
+     * 写成 `384K`，`1048576` 不是整千就照原样写——官方 `formatCapacity` 同此，两边是一套词汇。
      *
-     * `1000000` 写成 `1M`、`384000` 写成 `384K`；`1048576` 不是整千，就照原样写出来——官方
-     * `formatCapacity` 同此，两边读写的是一套 K/M 词汇。
-     *
-     * @param {number|undefined} value - 存下来的容量。
-     * @returns {string} 输入框里的文本；没有值时是空串。
+     * @returns {string} 输入框文本；没有值时是空串。
      */
     function formatCapacity(value) {
       if (value === undefined) return '';
@@ -607,27 +582,15 @@ window.__ModuleLoader__.load({
       default: 'sourceDefault',
     };
 
-    /**
-     * 一个键在不在用户层里。
-     *
-     * 这就是「有没有被覆盖」的判据：写了一个与默认值相同的值也是覆盖，因此只有键在不在算数。
-     *
-     * @param {unknown} layer - 用户层片段。
-     * @param {string} key - 字段名。
-     * @returns {boolean} 写过没有。
-     */
+    /** 一个键在不在用户层里——这就是「有没有被覆盖」的判据：写了与默认值相同的值也算覆盖。 */
     function hasKey(layer, key) {
       return typeof layer === 'object' && layer !== null && Object.prototype.hasOwnProperty.call(layer, key);
     }
 
     /**
-     * 把 `{name}` 占位符换成实参。
+     * 把 `{name}` 占位符换成实参。locale 服务自己做这件事，这里只是没有注入 `t` 时（测试、以及
+     * 渲染器还没绑定字典时）用同一套规则兜底——否则字典里的模板会原样漏到界面上。
      *
-     * locale 服务自己做这件事；这里只是为了在没有注入 `t` 时（测试、以及渲染器还没绑定字典时）
-     * 用同一套规则兜底——否则字典里的模板会原样漏到界面上。
-     *
-     * @param {string} template - 字典里的模板。
-     * @param {Record<string, *>} params - 实参。
      * @returns {string} 填好的字符串。
      */
     function interpolate(template, params) {
@@ -642,11 +605,9 @@ window.__ModuleLoader__.load({
     /**
      * 布尔字段的换算规格。
      *
-     * 官方的设置表单按「草稿文本」组织，`SettingsFieldSpec` 只要求给出两个方向：存下来的值怎么
-     * 写成文本，文本怎么变成一次写入。开关因此用 `'true'` / `'false'` 两个词当草稿，空串是
-     * 「这一项不写」（用户层里没这个键，值回落到组合层与 schema 默认）。
+     * 官方设置表单按「草稿文本」组织，规格只要求两个方向：值怎么写进文本、文本怎么变成一次写入。
+     * 开关用 `'true'` / `'false'` 当草稿，空串是「这一项不写」，值回落到组合层与 schema 默认。
      *
-     * @param {string} field - 命名空间段里的字段名。
      * @returns {object} 字段规格。
      */
     function booleanField(field) {
@@ -663,11 +624,9 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 这份设置没有服务时用的替身。
-     *
-     * `configForms` 缺席时（注入表保证不会，但这一页不该因此整页消失）照样要有一个可用的表单：
-     * 让 `SettingsFormModel` 读到一个 `unavailable` 的快照，官方表单自己会画那句「读不到」，
-     * 报告那半块照旧。写入一律回绝——没有服务时没有任何东西可以接受它。
+     * 这份设置没有服务时用的替身：`configForms` 缺席时（注入表保证不会，但这一页不该因此整页消失）
+     * 让 `SettingsFormModel` 读到 `unavailable` 快照，官方表单自己会画那句「读不到」，报告那半块
+     * 照旧。写入一律回绝——没有服务时没有任何东西能接受它。
      */
     const UNSERVED = Object.freeze({
       getSnapshot: () => ({
@@ -687,12 +646,8 @@ window.__ModuleLoader__.load({
     /**
      * 一个模型此刻在表单里长什么样。
      *
-     * 取的都是**生效值**，这样输入框里显示的永远是此刻真正在用的东西；提交时逐字段与这份
-     * 快照比较，只有改动过的字段才会被发出去（没提到的字段保持原样，因此界面不编辑的
-     * `reasoningEfforts` 之类不会被顺手抹掉）。
-     *
-     * @param {object} model - 报告里的一个模型。
-     * @returns {object} 各字段的初值（都是草稿文本或布尔）。
+     * 取的都是**生效值**，输入框里显示的永远是此刻真正在用的东西；提交时逐字段与这份快照比较，
+     * 只有改动过的字段才会发出去，因此界面不编辑的 `reasoningEfforts` 之类不会被顺手抹掉。
      */
     function initialOf(model) {
       return {
@@ -712,12 +667,8 @@ window.__ModuleLoader__.load({
     /**
      * 用户层里写没写过这个键——这就是「覆盖」的判据。
      *
-     * 报告里的 `overrideKeys` 直接来自用户层，因此不必拿生效值和默认值比：比出来的答案既会漏
-     * （写了与默认相同的值），也会多（schema 补出来的空值）。
-     *
-     * @param {object} model - 报告里的一个模型。
-     * @param {string} key - 字段名。
-     * @returns {boolean} 写过没有。
+     * 报告里的 `overrideKeys` 直接来自用户层，不必拿生效值和默认值比：比出来的答案既会漏（写了与
+     * 默认相同的值），也会多（schema 补出来的空值）。
      */
     function declaredIn(model, key) {
       return (model.overrideKeys ?? []).includes(key);
@@ -738,12 +689,12 @@ window.__ModuleLoader__.load({
     /**
      * 配置页：实例（地址、同步开关）与模型清单、发现报告。
      *
-     * 表单状态读注入面里的 `useApertureCard`（官方 SettingsFormModel 的投影），报告、提示语与
-     * 每行的草稿是本组件的局部状态——它们是这一页的视图状态，不是设置文档的一部分。
+     * 表单状态读注入面里的 `useApertureCard`（官方 SettingsFormModel 的投影），报告、提示语与每行
+     * 草稿是局部状态——它们是这一页的视图状态，不是设置文档的一部分。
      *
-     * **effect 的依赖里刻意不放注入面**：`inject` 面由渲染器每次渲染重新组装，把它的身份放进
-     * 依赖会让 effect 每渲染一次就重跑一次。因此报告用一个自增计数器当重读信号（依赖里只有
-     * 那个数），注入面里的函数在事件处理里调用，拿到的永远是当轮的那份。
+     * **effect 的依赖里刻意不放注入面**：`inject` 面由渲染器每次渲染重新组装，把它的身份放进依赖会
+     * 让 effect 每渲染一次就重跑一次。因此报告用一个自增计数器当重读信号（依赖里只有那个数），注入
+     * 面里的函数只在事件处理里调用，拿到的永远是当轮的那份。
      *
      * @param {object} props - 注入面：`useApertureCard`、`panel`（报告端点）、`save` / `edit` /
      *   `resetField` / `discard` / `failed`（设置表单）与 `t`（字典，注册时声明了 `locale`）。
@@ -795,11 +746,10 @@ window.__ModuleLoader__.load({
       /**
        * 保存设置里那两个字段，然后等一轮重新发现落地再说话。
        *
-       * 写入走官方表单模型的 `save()`：它自己带 `revision` 围栏（期间别处改过就拒绝，而不是覆盖
-       * 别人的改动）、自己从宿主接受的那份重新播种，因此这里写完不重读设置——投影会自己变新。
-       * 报告里的路由与模型事实来自最近一次刷新，写完必须等一轮：不等它，界面就会「保存了却没变」
-       * （地址换了，模型清单还是旧的那份）。设置变更自己也会唤起同一轮刷新，运行时的单飞判定按
-       * 配置版本合并，因此这里通常是并进那一轮，而不是另跑一轮。
+       * 写入走官方表单模型的 `save()`：它自带 `revision` 围栏（期间别处改过就拒绝，而不是覆盖别人的
+       * 改动）并从宿主接受的那份重新播种，因此写完不重读设置——投影会自己变新。报告里的路由与模型
+       * 事实来自最近一次刷新，写完必须等一轮，否则就是「保存了却没变」。设置变更自己也会唤起同一轮
+       * 刷新（单飞判定按配置版本合并），因此这里通常并进那一轮。
        */
       const saveSettings = () => run('save', async () => {
         await props.save();
@@ -821,10 +771,8 @@ window.__ModuleLoader__.load({
       };
 
       /**
-       * 改动的字段 → 补丁；没变的不进补丁，非法值只报字段名。
-       *
-       * 补丁里的空值就是「这一项不覆盖」：文本字段用空串或 `null`（别名用空串），模态用 `null`，
-       * 推理用 `null` 表示回落到发现。
+       * 改动的字段 → 补丁；没变的不进补丁，非法值只报字段名。补丁里的空值就是「这一项不覆盖」：
+       * 文本字段用空串或 `null`（别名用空串），模态用 `null`，推理用 `null` 表示回落到发现。
        */
       const patchOf = (draft, initial) => {
         const patch = {};
@@ -860,10 +808,9 @@ window.__ModuleLoader__.load({
       };
 
       /**
-       * 容量那一项的本地判定，输入框与保存走同一条规矩。
-       *
-       * 空串不是非法，是「这一项不覆盖」；其余必须是不小于 1 的整数——面板那一层只收这种值，
-       * 放过去只会换来一次没必要的往返与一句后端的话。`1G`、`1.5`、`0` 都在这里被挡下。
+       * 容量那一项的本地判定，输入框与保存走同一条规矩：空串不是非法，是「这一项不覆盖」；其余必须
+       * 是不小于 1 的整数——面板只收这种值，放过去只会换来一次没必要的往返。`1G`、`1.5`、`0` 都在
+       * 这里被挡下。
        */
       const capacityBad = (text) => {
         const value = parseCapacity(text);
@@ -887,8 +834,8 @@ window.__ModuleLoader__.load({
       /**
        * 保存这一行的改动。
        *
-       * 一行一个保存按钮，写下去的就只有这一行：多行同时开着也不会互相牵连，宿主那边的版本校验
-       * 也只管这一次写入。成功后收起面板——这一行的覆盖标签与事实都会跟着变，收起才看得见。
+       * 一行一个保存按钮，写下去的就只有这一行，宿主那边的版本校验也只管这一次写入。成功后收起面板
+       * ——这一行的覆盖标签与事实都会跟着变，收起才看得见。
        *
        * @param {object} model - 报告里的一个模型。
        */
@@ -919,10 +866,9 @@ window.__ModuleLoader__.load({
       /**
        * 撤销这一行的覆盖：只把**报告里写着确实被覆盖过**的字段清掉。
        *
-       * 不是整条删掉：`aperture.models` 里那条可能还有界面根本不编辑的键（例如
-       * `reasoningEfforts`），整条删掉等于把用户手写的东西一起扔掉。因此这里只把已知被覆盖的
-       * 字段逐个置空——与保存走同一个端点，只是补丁全是「不覆盖」。万一报告的覆盖里出现了界面
-       * 不认识的键（宿主以后加了字段），整条删掉是唯一能让这一行真的回落到发现值的做法。
+       * 不是整条删掉：`aperture.models` 里那条可能还有界面根本不编辑的键（例如 `reasoningEfforts`），
+       * 整条删掉等于把用户手写的东西一起扔掉，因此只把已知被覆盖的字段逐个置空。万一报告里出现了
+       * 界面不认识的键（宿主以后加了字段），整条删掉是唯一能让这一行真的回落到发现值的做法。
        *
        * @param {object} model - 报告里的一个模型。
        */
@@ -979,9 +925,9 @@ window.__ModuleLoader__.load({
       /**
        * 一个文本类覆盖字段。
        *
-       * 官方 `SettingsValueField` 的语义与这里正好对得上：「已覆盖」= 用户层里有这个键（报告给的
-       * `overrideKeys`），「恢复默认」= 把草稿改回「不覆盖」的那个值，非法草稿只标出来、由保存
-       * 拦住。`hint` 里挂的是这一项事实的来源，所以输入框下面那句总是说得出「现在这个值是谁定的」。
+       * 官方 `SettingsValueField` 的语义正好对得上：「已覆盖」= 用户层里有这个键（报告给的
+       * `overrideKeys`），「恢复默认」= 把草稿改回「不覆盖」，非法草稿只标出来、由保存拦住。`hint`
+       * 里挂的是这一项事实的来源，所以输入框下面那句总说得出「现在这个值是谁定的」。
        */
       const textField = (model, key, copy) => h(SettingsValueField, {
         id: `dap-${model.id}-${key}`,
@@ -1337,9 +1283,8 @@ window.__ModuleLoader__.load({
     /**
      * 把 `aperturePanel` 贡献挂到客户端的 Remote 服务上。
      *
-     * `apply` 必须保持同步：宿主 Cordis 会卸载 async apply 里 `await` 之后注册的
-     * `ctx.effect`。因此异步的 `$mount` 在一个**同步注册**的 effect 工厂内部完成，失败
-     * 落 console.error。
+     * `apply` 必须保持同步：宿主 Cordis 会卸载 async apply 里 `await` 之后注册的 `ctx.effect`。
+     * 因此异步的 `$mount` 在一个**同步注册**的 effect 工厂内部完成，失败落 console.error。
      *
      * @param {object} ctx - 客户端根上下文。
      */
@@ -1367,12 +1312,12 @@ window.__ModuleLoader__.load({
     /**
      * 浏览器插件主体：字典、样式、Remote 贡献，以及「插件」页里本插件那个包页的配置页。
      *
-     * `ctx.slots.inject` 是必需的，不是可选的：`plugins.bundle.config` 由插件管理页自己声明，
-     * 那个声明完全可能在本插件 `apply` 之后才发生，直接 register 会撞上「槽位尚未声明」。
+     * `ctx.slots.inject` 是必需的，不是可选的：`plugins.bundle.config` 由插件管理页自己声明，那个
+     * 声明完全可能在本插件 `apply` 之后才发生，直接 register 会撞上「槽位尚未声明」。
      *
-     * 注册的键是**包名**：键控槽位按它找贡献，点开插件列表里的本插件就是这一页。设置那一份表单
-     * 也在这里取——页主只递 `view`，`configForms.get(命名空间)` 才是这一页的配置读写面；服务
-     * 按命名空间缓存控制器，因此它与插件页自己取到的是同一份。
+     * 注册的键是**包名**：键控槽位按它找贡献，点开插件列表里的本插件就是这一页。设置那一份表单也
+     * 在这里取——页主只递 `view`，`configForms.get(命名空间)` 才是这一页的配置读写面；服务按命名
+     * 空间缓存控制器，因此它与插件页自己取到的是同一份。
      *
      * @param {object} ctx - 客户端根上下文。
      */

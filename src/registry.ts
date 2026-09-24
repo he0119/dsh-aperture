@@ -4,20 +4,16 @@
  *
  * 三个决策只在这里做出，别处没有。
  *
- * **模型从哪个端点应答。** Aperture 会报告每个模型可通过哪些路径访问，并用一个
- * 404 拒绝错误的路径、同时给出正确的路径。只通过原生 `generateContent`
- * 传输服务的 Gemini 模型，`dsh-llm-pi-ai` 根本够不到；把它发布到
- * OpenAI 兼容路由上，只会得到一个每个请求都失败的模型。因此由通告的端点决定
- * 路由，而没有路由可供本插件服务的模型会保留在报告里，但不发布到任何地方。
+ * **模型从哪个端点应答。** 端点由网关的 `supported_endpoints` 决定：只通过原生
+ * `generateContent` 服务的 Gemini 模型 `dsh-llm-pi-ai` 根本够不到，发布到 OpenAI 兼容
+ * 路由上只会得到一个每个请求都失败的模型。没有路由可服务的模型留在报告里，但不发布。
  *
- * **谁来决定模型的容量。** Aperture 优先，因为网关知道每个上游前面的代理接受
- * 什么；models.dev 只回答 Aperture 没有说明的部分；配置的兜底值最后回答。兜底
- * 值只设定 `contextWindow` —— 没人声明过的输出上限保持缺失，这样适配器会把路由
- * 兜底当作一种能力，而不是把每个请求都限制在一个凭空捏造的数字上。
+ * **谁来决定模型的容量。** Aperture 优先（网关知道每个上游前面的代理接受什么），
+ * models.dev 补它没说明的，配置兜底最后。兜底值只设定 `contextWindow`——没人声明过的
+ * 输出上限保持缺失，免得把每个请求都限制在一个凭空捏造的数字上。
  *
- * **谁来决定模型是否会推理。** 依次是 Aperture、models.dev、插件的 `reasoning`
- * 开关。错误的「是」会让用户选择推理档位时付出一个 400 的代价，因此不从模型名
- * 猜测任何东西。
+ * **谁来决定模型是否会推理。** 依次是 Aperture、models.dev、插件的 `reasoning` 开关。
+ * 错误的「是」会让用户选推理档位时付出一个 400 的代价，因此不从模型名猜测。
  *
  * @module dsh-aperture/registry
  */
@@ -172,9 +168,9 @@ function applyConfigured(model: DiscoveredModel, configured: ConfiguredModel, op
   const contextWindow = configured.contextWindow ?? model.contextWindow;
   const maxTokens = configured.maxTokens ?? model.maxTokens;
   const name = configured.name?.trim() || model.name;
-  // 运行时 schema 给 `models[].input` 的缺省值是空数组，而空数组在别处等于「这个模型不接受任何
-  // 模态」——没有谁会想要那个声明。因此空数组按**没写**处理，继续沿用发现到的模态（想声明纯
-  // 文本的是 `images: ignore`，不是 `input: []`）。
+  // 运行时 schema 给 `models[].input` 的缺省值是空数组，而空数组在别处等于「不接受任何
+  // 模态」。因此空数组按**没写**处理，继续沿用发现到的模态（要声明纯文本请用
+  // `images: ignore`，而不是 `input: []`）。
   const declaredInput = configured.input !== undefined && configured.input.length > 0
     ? configured.input
     : undefined;
@@ -271,9 +267,8 @@ function protocolFromConfigured(configured: ConfiguredModel): ApertureProtocol |
 /**
  * 决定一个模型通告的端点适配哪条路由。
  *
- * 完全没有通告任何端点的清单按 OpenAI 兼容处理，因为不上报自身传输方式的网关，
- * 绝大多数情况下就是一个普通的 Chat Completions 代理，而且没有路由的模型无论
- * 如何都不可用。
+ * 完全没有通告端点的清单按 OpenAI 兼容处理：不上报传输方式的网关绝大多数就是普通
+ * Chat Completions 代理，而没有路由的模型无论如何都不可用。
  *
  * @param endpoints - 通告的端点路径。
  * @returns 可服务的协议；没有适配的协议时为 `undefined`。

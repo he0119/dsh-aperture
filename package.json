@@ -1,7 +1,7 @@
 {
   "name": "dsh-aperture",
-  "version": "0.3.0",
-  "description": "Discover the models an Aperture gateway advertises and publish them to DeepSeek Harness as llm-pi-ai provider routes. 探测 Aperture 网关暴露的模型，并自动写入 DSH 的 llm-pi-ai 设置，使其出现在模型选择器中。",
+  "version": "0.2.0",
+  "description": "探测 Aperture 实例通告的模型，发布成 DSH 的 llm-pi-ai provider 路由。",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
