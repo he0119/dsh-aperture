@@ -245,32 +245,12 @@ Design notes — why two routes, where each fact comes from, lifecycle and depen
 ## Development
 
 ```sh
-npm install                # if the machine-level npm cache is not writable: npm install --cache ./.npm-cache --ignore-scripts
-npm run build              # tsc -> lib/
-npm run typecheck          # includes test/, and parses the browser half with node --check
-npm test                   # unit tests + end-to-end (229; offline, devDependencies must be installed)
-
-DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live   # end-to-end only, against a real instance
-DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run inspect     # manual walkthrough: the written patch document and the LLM resolutions (build first)
+npm install
+npm run build      # tsc -> lib/
+npm test           # unit tests + end-to-end (offline; devDependencies must be installed)
 ```
 
-The end-to-end half inside `npm test` (`test/live.test.ts`) needs no network: it starts a fake gateway on
-the loopback interface (`test/fake-gateway.ts`, on a kernel-chosen port), mounts the plugin into a real
-Cordis Loader, and asserts that what landed in the profile patch document resolves through the real
-`llm-pi-ai`. That is why CI can run it. To point it at a real instance, or to run that file alone, use
-`npm run test:live` with `DSH_APERTURE_LIVE_URL`.
-
-Away from the Tailscale network, to eyeball the generated config section by hand, put that fake gateway on
-a fixed port:
-
-```sh
-node scripts/fake-aperture-gateway.mjs 54117
-DSH_APERTURE_LIVE_URL=http://127.0.0.1:54117 npm run inspect
-```
-
-The two halves are built differently, which is easy to trip over: the browser half (`client/aperture.js`) is hand-written CJS that DSH serves straight from the file, so a page refresh is enough; the host half (`src/*.ts`) runs the compiled `lib/`, so a change needs `npm run build` **and a host restart** — otherwise the previous build keeps running. If `lib/` is older than `src/`, it has not been rebuilt.
-
-The release process and what the published package contains are in [docs/releasing.md](https://github.com/he0119/dsh-aperture/blob/main/docs/releasing.md) (Chinese).
+Working on the plugin — build, tests, and a dedicated development instance — is in [docs/development.md](https://github.com/he0119/dsh-aperture/blob/main/docs/development.md) (Chinese); the release process and what the published package contains are in [docs/releasing.md](https://github.com/he0119/dsh-aperture/blob/main/docs/releasing.md) (Chinese).
 
 ## Acknowledgements
 

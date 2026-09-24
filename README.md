@@ -243,30 +243,12 @@ GET {baseUrl}/v1/models
 ## 开发
 
 ```sh
-npm install                # 若机器级 npm 缓存不可写：npm install --cache ./.npm-cache --ignore-scripts
-npm run build              # tsc -> lib/
-npm run typecheck          # 含 test/，并用 node --check 解析浏览器半边
-npm test                   # 单元测试 + 端到端（229 个，离线运行；需要已安装的 devDependencies）
-
-DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live   # 只跑端到端，且指向真实实例
-DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run inspect     # 手动走查：打印写入后的补丁文档与 LLM 解析结果（先 npm run build）
+npm install
+npm run build      # tsc -> lib/
+npm test           # 单元测试 + 端到端（离线运行；需要已安装的 devDependencies）
 ```
 
-`npm test` 里的端到端那一份（`test/live.test.ts`）不依赖网络：它在本地起一个假网关
-（`test/fake-gateway.ts`，端口由内核挑），把插件挂到真的 Cordis Loader 上，再断言写进 profile
-补丁文档的东西能被真的 `llm-pi-ai` 解析出来。CI 因此跑得动它。想对着真实实例跑，或者只想跑这
-一份，就用 `npm run test:live` 加上 `DSH_APERTURE_LIVE_URL`。
-
-不在 Tailscale 网络里、又想手动看生成的配置段时，可以自己把那个假网关摆在固定端口上：
-
-```sh
-node scripts/fake-aperture-gateway.mjs 54117
-DSH_APERTURE_LIVE_URL=http://127.0.0.1:54117 npm run inspect
-```
-
-两半的构建方式不同，改代码时容易踩空：浏览器半边（`client/aperture.js`）是手写 CJS，DSH 按文件直接服务，改完刷新页面就见效；宿主半边（`src/*.ts`）跑的是编译产物 `lib/`，改完必须 `npm run build` **再重启宿主**，否则跑的还是上一次构建的代码。`lib/` 的 mtime 比 `src/` 旧就说明还没构建。
-
-发布流程与产物构成见 [docs/releasing.md](https://github.com/he0119/dsh-aperture/blob/main/docs/releasing.md)。
+改代码、跑测试与开发实例见 [docs/development.md](https://github.com/he0119/dsh-aperture/blob/main/docs/development.md)，发布流程与产物构成见 [docs/releasing.md](https://github.com/he0119/dsh-aperture/blob/main/docs/releasing.md)。
 
 ## 致谢
 
