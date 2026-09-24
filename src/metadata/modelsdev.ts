@@ -130,19 +130,19 @@ function readEntries(document: unknown): CatalogEntry[] {
     return [];
   }
 
-  const providers = asRecord(root.providers);
-  if (providers) {
-    return readProviderMap(providers);
-  }
-  const models = asRecord(root.models);
-  if (models) {
-    return readModelMap(models);
-  }
+  // 两种包装里装的都可能是「provider → { models }」或「模型键 → 模型」，因此不分开对待。
+  return readContainer(asRecord(root.providers) ?? asRecord(root.models) ?? root);
+}
 
-  // 扁平文档：通过观察各值是否携带 `models` 容器，区分「provider → { models }」
-  // 与「模型键 → 模型」。models.dev 实际发布的文档是第二种形态。
-  const providerShaped = Object.values(root).some((value) => asRecord(asRecord(value)?.models) !== undefined);
-  return providerShaped ? readProviderMap(root) : readModelMap(root);
+/**
+ * 读取一层容器。
+ *
+ * 通过观察各值是否携带 `models` 容器来区分「provider → { models }」与「模型键 → 模型」：
+ * models.dev 实际发布的扁平文档是第二种形态，而旧式文档把第一种直接铺在根上。
+ */
+function readContainer(map: Record<string, unknown>): CatalogEntry[] {
+  const providerShaped = Object.values(map).some((value) => asRecord(asRecord(value)?.models) !== undefined);
+  return providerShaped ? readProviderMap(map) : readModelMap(map);
 }
 
 /** 读取以 provider 为键的映射，并从其 provider 推导每个模型的别名。 */

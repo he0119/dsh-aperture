@@ -506,6 +506,9 @@ describe('浏览器半边', () => {
         assert.equal(parameter.codec, descriptor.result, '参数与结果共用同一个直通编解码器');
         assert.equal(parameter.source, 'json');
         assert.equal(parameter.wire, parameter.name);
+        // 网关按 `wire` 取值，因此它只能用 RPC 端点段允许的字符，且同一端点里不能重复。
+        assert.match(parameter.wire, /^[A-Za-z0-9_$.-]+$/u);
+        assert.equal(new Set(descriptor.parameters.map((entry) => entry.wire)).size, descriptor.parameters.length);
       }
     }
     // 参数名与顺序就是宿主方法的形参表：网关按位置传参、按 `wire` 映射，并且自动省掉
@@ -971,7 +974,7 @@ describe('浏览器半边', () => {
     assert.match(text(tree), /不接受写入/u);
   });
 
-  it('报告渲染成状态行与按路由分组的模型清单', async () => {
+  it('状态段把一次刷新决定了什么摊成一行一项', async () => {
     const { mini, element } = driveClient();
     mini.mount(element);
     await mini.flush();
@@ -986,52 +989,10 @@ describe('浏览器半边', () => {
     assert.match(body, /列出了 16 行/u);
     assert.match(body, /写入 2 个操作（aperture, aperture-anthropic）/u);
 
-    // 模型段：收起时只有页面级标题、那句「已覆盖几个」与两张卡头（路由 + 未服务）。
-    assert.match(body, /模型与路由/u);
+    // 模型段收起时只留先说那几句：模型行在路由卡里，第一层展开之前页面上没有它
+    // （展开之后长什么样由「两级展开」那条用例管）。
     assert.match(body, /已覆盖 1 个模型，其余沿用发现值与清单/u);
-    assert.match(body, /aperture/u);
-    assert.match(body, /openai-completions/u);
-    assert.match(body, /未服务/u);
-    // 模型行在路由卡里，第一层展开之前页面上没有它。
     assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-name').length, 0);
-
-    // 第一层：路由卡展开后是浅色面——地址一行，然后是这条路由承载的模型行。
-    click(findById(mini.tree(), 'dap-route-aperture-toggle'));
-    await mini.flush();
-    const listed = text(mini.tree());
-    assert.match(listed, /→ https:\/\/ai\.example\.ts\.net\/v1/u);
-    assert.match(listed, /deepseek-flash/u);
-    assert.match(listed, /DeepSeek Flash/u);
-    assert.match(listed, /1\D?048\D?576 上下文窗口/u);
-    assert.match(listed, /384\D?000 输出/u);
-    assert.match(listed, /文本\+图像/u);
-    assert.match(listed, /推理/u);
-    assert.match(listed, /清单别名 deepseek\/deepseek-v4-flash/u);
-    assert.match(listed, /已覆盖/u, '覆盖过的模型带标签');
-
-    // 「未服务」那张卡里是它通告的端点。
-    click(findById(mini.tree(), 'dap-route-unserved-toggle'));
-    await mini.flush();
-    const unserved = text(mini.tree());
-    assert.match(unserved, /未服务：没有本插件可发布的端点/u);
-    assert.match(unserved, /gemini-2\.5-flash/u);
-    assert.match(unserved, /通告的端点：\/v1beta\/models\/gemini-2\.5-flash:generateContent/u);
-    // 来源不堆在行尾：第一层展开时还没有这一行，第二层展开后每条来源跟着它描述的那个字段。
-    assert.doesNotMatch(unserved, /每项事实来自/u);
-    assert.doesNotMatch(unserved, /生效 1[,\s]?048[,\s]?576/u);
-
-    await openModel(mini, 'deepseek-flash');
-    assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-name').props.value, 'DeepSeek Flash');
-    assert.equal(findById(mini.tree(), 'dap-model-deepseek-flash-alias').props.value, 'deepseek/deepseek-v4-flash');
-    const opened = text(mini.tree());
-    assert.match(opened, /生效 1[,\s]?048[,\s]?576 · 来自 aperture/u, '容量旁边写着它从哪儿来');
-    assert.match(opened, /生效 文本\+图像 · 来自 配置/u);
-    assert.match(opened, /生效 开 · 来自 models\.dev/u);
-    assert.match(opened, /来自 models\.dev/u, '显示名那格只说来源，值在输入框里');
-    // 再点一次收起，面板连输入框一起消失。
-    await openModel(mini, 'deepseek-flash');
-    assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-model-deepseek-flash-name').length, 0);
-    assert.doesNotMatch(text(mini.tree()), /来自 aperture/u);
   });
 
   it('没有刷新过时不装作有报告', async () => {
@@ -1057,6 +1018,11 @@ describe('浏览器半边', () => {
     assert.equal(findById(tree, 'dap-model-deepseek-flash-reasoning').props.value, 'on', '有 thinking 覆盖就是它');
     // 面板是官方的参数栅格：每个格子有 12px 的小标签，容量旁边写着生效值与来源。
     assert.match(text(tree), /生效 1[,\s]?048[,\s]?576 · 来自 aperture/u);
+    // 每项来源跟着它描述的那个字段，而不是堆在行尾。
+    assert.match(text(tree), /生效 文本\+图像 · 来自 配置/u);
+    assert.match(text(tree), /生效 开 · 来自 models\.dev/u);
+    // 还没展开第二层时不摆来源：这块面归第一层。
+    assert.doesNotMatch(text(tree), /每项事实来自/u);
 
     change(findById(tree, 'dap-model-deepseek-flash-contextWindow'), '32768');
     await mini.flush();
