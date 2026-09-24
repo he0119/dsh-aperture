@@ -270,18 +270,3 @@ export function extractModelId(value: unknown): string | undefined {
   const record = asRecord(value);
   return record === undefined ? undefined : stringValue(record.id);
 }
-
-/** 读取参考扩展渲染为一行详情文本的价格摘要。 */
-export function extractPricingDetail(value: unknown): string | undefined {
-  const record = asRecord(value);
-  const pricing = asRecord(record?.pricing);
-  if (!pricing) {
-    return undefined;
-  }
-  const input = stringValue(pricing.input);
-  const output = stringValue(pricing.output);
-  if (!input && !output) {
-    return undefined;
-  }
-  return `in ${input ?? '?'} / out ${output ?? '?'}`;
-}

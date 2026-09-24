@@ -152,16 +152,6 @@ export class MiniReact {
     return deps;
   }
 
-  /** 卸载：跑一遍所有 cleanup。 */
-  unmount(): void {
-    for (const instance of this.instances.values()) {
-      for (const slot of instance.hooks) {
-        slot.cleanup?.();
-        slot.cleanup = undefined;
-      }
-    }
-  }
-
   /** 一次提交：重渲染、跑 effect。 */
   private commit(): void {
     this.dirty = false;
@@ -250,11 +240,6 @@ export function findAll(node: unknown, predicate: (element: HostElement) => bool
   return found;
 }
 
-/** 按标签名找元素。 */
-export function findAllByType(node: unknown, type: string): HostElement[] {
-  return findAll(node, (element) => element.type === type);
-}
-
 /** 按 `id` 找元素。 */
 export function findById(node: unknown, id: string): HostElement {
   const [found] = findAll(node, (element) => element.props.id === id);
@@ -264,23 +249,18 @@ export function findById(node: unknown, id: string): HostElement {
 
 /** 按按钮文字找按钮。 */
 export function findButton(node: unknown, label: string): HostElement {
-  const [found] = findAll(node, (element) => element.type === 'button' && textOf(element).includes(label));
+  const [found] = findAll(node, (element) => element.type === 'button' && text(element).includes(label));
   if (found === undefined) throw new Error(`找不到写着「${label}」的按钮`);
   return found;
 }
 
 /** 一个元素子树的文本。 */
-export function textOf(node: unknown): string {
+export function text(node: unknown): string {
   if (node === null || node === undefined || typeof node === 'boolean') return '';
-  if (Array.isArray(node)) return node.map((child) => textOf(child)).join('');
+  if (Array.isArray(node)) return node.map((child) => text(child)).join('');
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   const element = node as HostElement;
-  return textOf(element.props.children);
-}
-
-/** 整棵树的文本。 */
-export function text(node: unknown): string {
-  return textOf(node);
+  return text(element.props.children);
 }
 
 /** 触发一个元素的 `onClick`。 */

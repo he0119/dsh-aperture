@@ -50,11 +50,6 @@ export class ModelCatalog {
     return value;
   }
 
-  /** 丢弃缓存的文档，使下次加载重新抓取。 */
-  clear(): void {
-    this.loaded = undefined;
-  }
-
   /** 抓取、解析并索引一份清单文档。 */
   private async fetchCatalog(url: string, timeoutMs: number): Promise<CatalogLoad> {
     let body: unknown;
