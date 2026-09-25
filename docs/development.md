@@ -30,8 +30,8 @@ DSH_APERTURE_LIVE_URL=http://127.0.0.1:54117 npm run inspect
 ## 改代码时两半都要构建，但生效方式不一样
 
 两半都是编译产物：宿主半边 `src/*.ts` → `lib/*.js`（`tsc`），浏览器半边 `src/client/`（`index.ts` 装配 +
-`AperturePanel.tsx` 页面 + `locales.ts` / `remote.ts` / `format.ts` / `styles.ts` + `styles.css`）→
-`lib/client.js`（`tsdown`）。因此改完都要构建——只改了半边时跑对应的那一条更省事：
+`AperturePanel.tsx` 页面 + `ModelRow.tsx` / `ModelEditor.tsx` 行与编辑器 + `draft.ts` 草稿换算 +
+`locales.ts` / `remote.ts` / `format.ts` / `styles.ts` + `styles.css`）→ `lib/client.js`（`tsdown`）。因此改完都要构建——只改了半边时跑对应的那一条更省事：
 
 ```sh
 npm run build:host      # 只重编宿主半边

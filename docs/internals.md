@@ -156,6 +156,8 @@ Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://
 
 **模型行的卡头是自己画的按钮，不用 `DisclosureRow`。** 官方那个是根 24px 高、`overflow: hidden` 的横条，标题又是 `flex: none` 不许收缩，于是名字一长就把右边的事实与标签挤出可视区；它也只收一个 `icon` 与一行 `title`，塞不下「名字与标签一行、事实另一行」这种两行身份。现在行首是一颗盖满整行的 `button`（自己带 `aria-expanded`），里面三段：状态点、身份、箭头。身份第一行是名字（过长省略，`title` 里留着全名）加「未服务 / 已覆盖 N 项 / 有未保存的改动」几枚标签，第二行是事实。事实写成**带标签的**短语（`路由 aperture`，不是裸的 `aperture`）并用 `·` 分隔、随宽度换行：原先那串用 `·` 连起来的十一项，用户得自己数到第几项才知道哪个是协议。展开/收起仍是本地 state、按行记；收起**不丢草稿**——收起来不等于放弃，那颗「有未保存的改动」会一直挂着，要放弃得按「取消」。状态点仍是官方 `StateDot`，但它现在说三件事：绿是这一轮写进了路由、灰是这一轮同步过而它没写进去、黄是根本没有路由能服务它；同步那一轮没跑（关着）时不装作「没写进去」，而是说「这一轮没有同步，写没写进去看不出来」——报告里根本没有这一项。官方 `StateDot` 自己是 `aria-hidden`，说给谁听得由外层 `role="img"` 的 `aria-label` 给。
 
+**页面持有状态，行与编辑器只按 props 画。** 草稿与展开是两张按模型 id 记的表，长在 `AperturePanel` 上，动作也在那里按这一行绑好（`onToggle` / `onStage` / `onSave` / `onCancel` / `onClear`）再递下去；`ModelRow` 与 `ModelEditor` 自己不持有 state。这不是「为了拆而拆」：这几件状态本来就不属于某一行——收起一行不丢草稿、写完一行页面顺手把它收起来、两行各改各的，说的都是「同一份状态喂给多行」。草稿到补丁的换算（改了哪几项、该发什么出去、容量读不读得出来）在 `draft.ts` 里，因此行首那颗「有未保存的改动」与编辑器底部那句「有 N 项改动还没写下去」问的是同一个函数，两处说法不会打架。
+
 **编辑器里的字段也是官方那两个字段组件。** 文本字段用 `SettingsValueField`，按「名称与协议」（名字、别名、协议）与「容量」（上下文容量、最大输出）分两组，每组内部是 `auto-fit minmax(210px, 1fr)` 的栅格；模态是两个 `Checkbox`、推理是一个 `SegmentedControl`（跟随发现 / 开 / 关，「跟随发现」就是这一项不写），这两块并排——它们都是「一个开关加一句话」，横着放比竖着叠省一半高度。不摆成一个大栅格是因为官方 `.field + .field` 会给相邻字段画一条半宽的分隔线（specificity 0,2,0），`auto-fit` 一换行线就对不齐了；每个字段外面套一层 `.dap-fieldCell` 就绕开了，不必动 `!important`。一行的动作是「保存 / 清空覆盖 / 取消」（都是 `sm`）：官方「改完点卡片底部的应用」在只有一个编辑对象时很自然，而一份草稿对应多行时「按了保存到底写了哪几行」没有答案，因此一行一个保存按钮（它就在这一行里面，不必再自称「这一行」），版本校验也只管这一次写入。动作左边还有一句「和已保存的值相同 / 有 N 项改动还没写下去」：按下去之前先知道这一按会不会真的写。
 
 **来源跟着字段走，长解释收进「i」。** `provenance` 是「这一项事实从哪儿来」的诊断信息。字段下面只留一句来源（`SettingsValueField` 的 `hint`：`来源：Aperture`）；「留空即用发现到的名字」这类怎么做的话收进官方的 `help`，也就是标签旁边那颗「i」——点开才占位置（`fieldHelp` 给 `aria-label`：`显示名称的说明`）。勾选框与分段开关那两行官方组件没有 `hint`，来源就挨着控件写一句。理由：一个字段下面挂两句（怎么做 + 从哪来），五个字段就是十行灰字，正文被诊断信息盖住。协议没有单独一项来源：写过就是配置，没写过就是从通告的端点推导出来的。
@@ -179,7 +181,8 @@ Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://
 ### 浏览器半边也要构建
 
 源码在 `src/client/`：`index.ts` 是唯一的装配点（`apply` / `mountRemote` / 注册），页面在
-`AperturePanel.tsx`，字典在 `locales.ts`，描述符在 `remote.ts`，容量写法在 `format.ts`，样式在
+`AperturePanel.tsx`（一行模型与展开后的编辑器在 `ModelRow.tsx` / `ModelEditor.tsx`，草稿与补丁的
+换算在 `draft.ts`），字典在 `locales.ts`，描述符在 `remote.ts`，容量写法在 `format.ts`，样式在
 `styles.ts` + `styles.css`；`npm run build:client`（`tsdown`）把它们打成 `lib/client.js`，
 `exports["./client"]` 指向产物。DSH 的客户端模块系统只要求一个**经典脚本**：用
 `window.__ModuleLoader__.load({ id, factory })` 把自己上报，交给工厂一个同步的 `require`（解析平台模块表里的
@@ -199,8 +202,9 @@ footer: 'return module.exports; } });',
 ```
 
 源码那半边的形状：`index.ts` 只做装配（`apply` / `mountRemote` / 注册），页面 `AperturePanel.tsx` 是 TSX
-（`jsx: react-jsx`，automatic runtime，`react/jsx-runtime` 本来就在平台基线里），页面、每一行模型与展开后的
-编辑器都是普通的 JSX 树，`createElement` 那套样板没有了；`locales.ts` 是两份字典与命名空间声明，
+（`jsx: react-jsx`，automatic runtime，`react/jsx-runtime` 本来就在平台基线里），一行模型在
+`ModelRow.tsx`、展开后的编辑器在 `ModelEditor.tsx`，都是普通的 JSX 树，`createElement` 那套样板没有了；
+`draft.ts` 是草稿与补丁的换算，`locales.ts` 是两份字典与命名空间声明，
 `remote.ts` 是描述符，`format.ts` 是容量写法，样式表是真正的 `src/client/styles.css`，由
 `tsdown.config.ts` 里的 `cssInline()` 编译成文本内联进产物——对应官方 `dsh-css-text-inline` 那一步。
 **CSS 仍然内联**：客户端模块系统只服务 `<包名>/client.js` 这一个经典脚本，没有旁挂 `.css` 的路由，也没有
@@ -219,7 +223,7 @@ footer: 'return module.exports; } });',
 - 配置页注册必须走 `ctx.slots.inject('plugins.bundle.config', …)`：这个槽位由**插件页**自己声明，而那个声明完全可能晚于本插件的 `apply`，直接 `register` 会撞上「槽位尚未声明」；
 - 字典用 `ctx.locale.register(NS, { zh, en })` 注册，两种语言必须一次交齐；注册配置页时声明 `locale: NS`，槽位渲染器才会把绑定好的 `t` 交给组件；
 - 样式在 `apply` 的 effect 里注入一个 `<style data-plugin-css="dsh-aperture/styles.css">`（同时写上 `data-plugin="dsh-aperture"` 归属；`data-plugin-css` 取官方那套「包名/文件名」的写法），页面根节点带 `data-dsh-aperture`，选择器全收在那个属性之下；颜色一律引用 dsh web 的主题 token，卸载时由 effect 的 disposer 移除。这一份只剩排版：控件自己带底色与文字色（官方原语），本插件不再自画按钮，也就不必再配那对颜色；
-- **effect 的依赖里不放注入面**：`inject` 面由渲染器每轮渲染重新组装，依赖它的身份会让 effect 每轮重跑、再触发渲染，于是界面一直转圈。刷新信号用自增计数器，`test/client.test.ts` 除了钉住渲染次数，还直接检查每个 effect 的依赖里没有对象。
+- **effect 的依赖里不放注入面**：`inject` 面由渲染器每轮渲染重新组装，依赖它的身份会让 effect 每轮重跑、再触发渲染，于是界面一直转圈。刷新信号用自增计数器，`test/client.test.ts` 除了钉住渲染轮数，还直接检查每个 effect 的依赖里没有对象。
 
 宿主半边相反：`src/*.ts` 必须先 `npm run build:host` 编成 `lib/`，宿主加载的是那份产物。两半都要构建，但生效方式不同：客户端产物重建之后刷新页面即可，宿主那半边必须重启——因此「改了没反应」既可能是不该刷新而该重启，也可能是反过来；两半正好分在两边（分组排版、每行的草稿与折叠、容量的 K/M 写法在浏览器半边；报告的覆盖口径、写完等刷新的时序在宿主半边）。`lib/` 里那份的 mtime 比源文件旧就说明还没构建，构建与开发实例见 [development.md](development.md)。
 
@@ -231,7 +235,7 @@ footer: 'return module.exports; } });',
 - 它自己搭的那套里只有一个替身：`hmr`（`hmrSeam`）。真实的 HMR 要 `--expose-internals` 与 `timer` 服务才挂得起来，而它恰好决定了写入落不落得下来（见「写入行为」里那条「写入必须从 HMR 事务之外发起」）——少了这个替身，事件里发起的那一轮刷新被事务嵌套拒绝的样子，与「写成功了只是没变化」在断言上分不开。替身只留 `runExclusive()` 的两条语义：事务里再来一次就拒绝、否则排在上一件工作后面。
 - 它连的网关是仓库里的 `test/fake-gateway.ts`：内核挑一个空闲端口，`/v1/models` 回一份与断言一一对应的固定载荷。因此这一份不依赖 Tailscale 网络，CI 里也跑得动；`DSH_APERTURE_LIVE_URL` 给定时改连真实实例（那份载荷与用例是一份契约，改一处就要改另一处）。
 - 各 `src/*.ts` 的单元测试钉的是端到端**测不到**的那些：请求头与 URL 归一化、解析失败时的具体原因、`planSync` 的逐条 op、单飞语义、写入被拒的分支。端到端只会告诉你「文档里没有 `llm-pi-ai` 那一行」，不会告诉你「`accept` 头丢了」。因此两边都留：端到端负责「真的能用」，单元测试负责「坏在哪」。
-- 浏览器半边（`test/client.test.ts`）测的是**打包产物** `lib/client.js`（`npm test` 的 pretest 会先重打一次），因为 `window.__ModuleLoader__.load` 那层包法正是要钉住的契约之一；官方原语虽然有真实类型，但运行时仍然喂替身模块。它走 `test/support/mini-react`（实现了 `createElement` 与 automatic runtime 的 `jsx` / `jsxs` / `Fragment`），钉住的是**接缝**（注册到哪个槽位、注入面上的名字与形状、effect 依赖里不许有对象、卸载时收不收回订阅与样式）与页面行为（改哪一项写哪一项、失败时界面说不说实话）。它证明不了「官方组件长什么样」，那不在本仓库的测试范围内；替身只保证被测代码依赖的那套语义与官方一致（`SettingsFormModel` 的草稿、`revision` 围栏与 `stored` 口径）。
+- 浏览器半边（`test/client.test.ts`）测的是**打包产物** `lib/client.js`（`npm test` 的 pretest 会先重打一次），因为 `window.__ModuleLoader__.load` 那层包法正是要钉住的契约之一；官方原语虽然有真实类型，但运行时仍然喂替身模块。它走 `test/support/mini-react`（实现了 `createElement` 与 automatic runtime 的 `jsx` / `jsxs` / `Fragment`），钉住的是**接缝**（注册到哪个槽位、注入面上的名字与形状、effect 依赖里不许有对象、提交轮数不许自激、卸载时收不收回订阅与样式）与页面行为（改哪一项写哪一项、失败时界面说不说实话）。它证明不了「官方组件长什么样」，那不在本仓库的测试范围内；替身只保证被测代码依赖的那套语义与官方一致（`SettingsFormModel` 的草稿、`revision` 围栏与 `stored` 口径）。
 
 ## 已知边界
 

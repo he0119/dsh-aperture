@@ -8,6 +8,8 @@
  * @module dsh-aperture/client/locales
  */
 
+import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client';
+
 export const zh = {
   save: '保存',
   saving: '保存中…',
@@ -201,6 +203,15 @@ export type LocaleKey = keyof typeof zh;
 
 /** 字典命名空间（本插件拥有）；配置页注册时的 `locale` 声明与 `ctx.locale.bind` 都用它。 */
 export const NS = 'settings.aperturePanel';
+
+/**
+ * 这一页的 `t`：绑到本插件命名空间上的翻译函数。
+ *
+ * 渲染器注入面的 `t`（[AperturePanel.tsx](./AperturePanel.tsx)）、页面往行与编辑器递的那一个，
+ * 以及没有注入时的中文兜底，都是同一个形状；名字在这里定一次，几处 props 才不必各写一遍
+ * `TranslateNS<typeof NS>`。
+ */
+export type PanelTranslate = TranslateNS<typeof NS>;
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {

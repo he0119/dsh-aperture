@@ -1943,6 +1943,8 @@ describe('模型行与刷新', () => {
       withDeps.some((deps) => deps.length === 1 && deps[0] === 0),
       '重读报告应当以挂载时的 revision（0）为依赖',
     );
-    assert.ok(mini.renders <= 30, `挂载一轮渲染了 ${mini.renders} 次：effect 依赖里多半放了每轮都变的注入面`);
+    // 钉渲染轮数而不是组件执行次数：页面拆成行与编辑器之后，一次提交本来就会走好几个组件，替身里
+    // 那几个官方原语也各算一次，按执行次数算这条护栏会随「拆了几个组件」飘。
+    assert.ok(mini.commits <= 30, `挂载一轮提交了 ${mini.commits} 次：effect 依赖里多半放了每轮都变的注入面`);
   });
 });
