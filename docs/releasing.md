@@ -110,9 +110,9 @@ Release 条目还带一句「已发布到 npm」的说明，排在自动日志�
   本仓库**不再**用 Release Drafter 起草 Release——它的核心能力是「按 PR 标题推算版本号」，
   而版本号现在由发布 PR 决定，两者会互相打架（这正是之前版本错位的来源）。
 
-包里的两半边来源不同：`lib/`（宿主半边）不入库，由 `prepare`（`tsc -p tsconfig.json`）在安装与发布时
-现场编译；`client/aperture.js`（浏览器半边）是手写的经典脚本，原样随包分发、不经过构建——原因见
-[internals.md](internals.md) 的「浏览器半边没有构建步骤」。
+包里的两半边都是构建产物、都不入库：`lib/`（宿主半边）由 `tsc -p tsconfig.json` 编译，`lib/client.js`
+（浏览器半边，含 `.map`）由 `tsdown` 从 `src/client/` 打包，两者都由 `prepare`（`npm run build`）在安装与
+发布时现场跑——原因见 [internals.md](internals.md) 的「浏览器半边也要构建」。
 
 ## npm 侧的一次性登记
 

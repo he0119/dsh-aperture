@@ -7,8 +7,8 @@
 
 ```sh
 npm install                # 若机器级 npm 缓存不可写：npm install --cache ./.npm-cache --ignore-scripts
-npm run build              # tsc -> lib/
-npm run typecheck          # 含 test/，并用 node --check 解析浏览器半边
+npm run build              # tsc -> lib/（宿主半边）+ tsdown -> lib/client.js（浏览器半边）
+npm run typecheck          # test/ 与浏览器半边两个 tsc 项目
 npm test                   # 单元测试 + 端到端（229 个，离线运行；需要已安装的 devDependencies）
 
 DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live   # 只跑端到端，且指向真实实例
@@ -27,12 +27,23 @@ node scripts/fake-aperture-gateway.mjs 54117
 DSH_APERTURE_LIVE_URL=http://127.0.0.1:54117 npm run inspect
 ```
 
-## 改代码时两半不一样
+## 改代码时两半都要构建，但生效方式不一样
 
-浏览器半边（`client/aperture.js`）是手写 CJS，DSH 按文件直接服务，改完刷新页面就见效；宿主半边
-（`src/*.ts`）跑的是编译产物 `lib/`，改完必须 `npm run build` **再重启宿主**，否则跑的还是上一次
-构建的代码。`lib/` 的 mtime 比 `src/` 旧就说明还没构建。为什么浏览器半边没有构建步骤，见
-[internals.md](internals.md) 的「浏览器半边没有构建步骤」。
+两半都是编译产物：宿主半边 `src/*.ts` → `lib/*.js`（`tsc`），浏览器半边 `src/client/index.ts` →
+`lib/client.js`（`tsdown`）。因此改完都要构建——只改了半边时跑对应的那一条更省事：
+
+```sh
+npm run build:host      # 只重编宿主半边
+npm run build:client    # 只重打浏览器半边
+npm run watch:client    # 浏览器半边一直重打，改完只管刷新页面
+```
+
+`lib/` 里那份的 mtime 比源文件旧，就说明它还没构建（`lib/` 不入库，见 [releasing.md](releasing.md)）。
+
+生效方式不同：宿主半边加载的是 `lib/`，改完必须**重启宿主**；浏览器半边由 DSH 按文件直接服务
+产物，重建之后**刷新页面**就见效，不必重启。表现上最容易误判的是「改了没反应」——客户端改动要
+刷新页面，宿主改动要重启，两件事都不是「改错了」。为什么浏览器半边现在也要打包（而不是像以前那样
+手写产物），见 [internals.md](internals.md) 的「浏览器半边也要构建」。
 
 ## 起一个专门的开发实例
 

@@ -2,7 +2,7 @@
  * `aperturePanel` Remote 面的两端契约，以及宿主服务的纯委托。
  *
  * 这一面是手工登记的：生成描述符的 Typert 生成器不随 DSH 发布，而两半边（这里与
- * `client/aperture.js`）共享同一组端点名，谁写错一个字都不会有编译期报错，只会在浏览器里
+ * `src/client/index.ts`）共享同一组端点名，谁写错一个字都不会有编译期报错，只会在浏览器里
  * 安静地什么都不出现。因此这里钉住的是那份契约本身——端点 id 的文法与命名空间、参数的名字与
  * 顺序（网关按顺序位置传入，名字对不上就是把 `patch` 当成了模型 id）、编解码器的模式、以及
  * 端点名绝不能撞上 `RemoteNamespaceService` 的预置成员（撞上时注册表会撤回**整份**贡献）。
@@ -137,7 +137,7 @@ describe('PANEL_INVOCATIONS 的端点身份', () => {
     );
 
     for (const entry of PANEL_INVOCATIONS) {
-      // 浏览器右半边（`client/aperture.js`）按同一份文法拼出 `${PACKAGE}#${PANEL}/${method}`，
+      // 浏览器右半边（`src/client/index.ts`）按同一份文法拼出 `${PACKAGE}#${PANEL}/${method}`，
       // 网关、注册表与客户端三方共用它。
       assert.equal(entry.id, `${PANEL_PACKAGE}#${PANEL_NAMESPACE}/${entry.method}`, `${entry.method} 的端点 id`);
       assert.equal(entry.service, PANEL_NAMESPACE, `${entry.method} 的服务名`);
@@ -178,7 +178,7 @@ describe('PANEL_INVOCATIONS 的端点身份', () => {
 
   it('宿主侧描述符用 src-json 编解码器', () => {
     // 宿主这一半交接的是已经解析好的值，因此按 `src-json` 登记——strict 校验与 `create()`
-    // 工厂是**浏览器那一半**（`client/aperture.js` 里的直通 CODEC）的事，两边不是同一份描述符。
+    // 工厂是**浏览器那一半**（`src/client/index.ts` 里的直通 CODEC）的事，两边不是同一份描述符。
     for (const entry of PANEL_INVOCATIONS) {
       assert.equal(entry.result.mode, 'src-json', `${entry.method} 的结果编解码器`);
       for (const parameter of entry.parameters) {

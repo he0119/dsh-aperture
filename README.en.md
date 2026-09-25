@@ -218,7 +218,7 @@ Writes touch only the two keys under `llm-pi-ai.providers` that this plugin owns
 
 ```sh
 npm install
-npm run build      # tsc -> lib/
+npm run build      # tsc -> lib/ (host half) + tsdown -> lib/client.js (browser half)
 npm test           # unit tests + end-to-end (offline; devDependencies must be installed)
 ```
 

@@ -1,5 +1,5 @@
 /**
- * 客户端半边（`client/aperture.js`）的接线与页面行为。
+ * 客户端半边（源码 `src/client/index.ts`，被测的是打包产物 `lib/client.js`）的接线与页面行为。
  *
  * 这一份测试对着两件事：
  *
@@ -9,10 +9,14 @@
  * - **页面**：挂载之后读设置、改输入、按保存会走哪个端点、写成什么补丁、失败时界面说不说
  *   实话。页面逻辑几乎都在组件里，因此只能在能跑 effect 的渲染器里走一遍。
  *
- * 官方组件（`@deepseek-ai/dsh-client-ui-primitives`）在本仓库里没有装，也不该被测：这里只写
- * 一个**替身模块**，钉住被测代码依赖的那个接缝——prop 的名字与含义、按钮该在什么时候出现、
- * `SettingsFormModel` 的草稿与围栏语义。官方组件的观感与行为不在本仓库的测试范围内，这里只
- * 保证被测代码依赖的那个接缝语义。
+ * 官方组件（`@deepseek-ai/dsh-client-ui-primitives`）按真实版本装在 devDependencies 里，但那只是
+ * 为了让 `tsc -p tsconfig.client.json` 和打包器看见真实类型：这里**不跑**它们——vm 里没有模块表、
+ * 也没有真的 React。因此 `react` 与官方原语都喂替身模块，替身钉住的是被测代码依赖的那个接缝——
+ * prop 的名字与含义、按钮该在什么时候出现、`SettingsFormModel` 的草稿与围栏语义。官方组件的观感
+ * 与行为不在本仓库的测试范围内，这里只保证被测代码依赖的那套语义与官方一致。
+ *
+ * 测的是**产物**而不是源码：客户端半边要先打包（`npm run build:client`，`npm test` 的 pretest 已经
+ * 做了），因为 `window.__ModuleLoader__.load` 那层包法是打包器套上去的——那正是要钉住的契约之一。
  *
  * 渲染走 `test/support/mini-react`：它实现 `createElement` + `useState` + `useEffect`，按提交
  * 循环驱动到稳定，于是「挂载 → 拉设置 → 改输入 → 按保存」这条路径可以在纯 Node 里走完。
@@ -21,7 +25,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
@@ -34,7 +38,8 @@ import { APERTURE_NAMESPACE } from '../src/config.ts';
 import type { PanelModel, PanelRefresh, PanelReport } from '../src/report.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CLIENT_FILE = join(HERE, '..', 'client', 'aperture.js');
+/** 打包产物；`exports["./client"]` 指向的就是它。 */
+const CLIENT_FILE = join(HERE, '..', 'lib', 'client.js');
 
 /** 浏览半边上报的模块 id。 */
 const PACKAGE = 'dsh-aperture';
@@ -48,8 +53,8 @@ const NS = 'settings.aperturePanel';
 const SETTINGS_NS = 'aperture';
 /** 设置里这一页编辑的字段。 */
 const FIELDS = ['baseUrl', 'sync'];
-/** 样式表元素认领自己用的名字，与 `client/aperture.js` 里的常量一致。 */
-const STYLE_OWNER = 'aperture/client.js';
+/** 样式表元素认领自己用的名字（官方那套 `data-plugin-css` 的写法：包名/产物名），与 `src/client/index.ts` 里的常量一致。 */
+const STYLE_OWNER = 'dsh-aperture/client.js';
 
 /** 上报给 `window.__ModuleLoader__` 的一份模块。 */
 interface LoadedEntry {
@@ -790,6 +795,10 @@ function fakeDocument(styles: FakeStyle[]): Record<string, unknown> {
 
 /** 把半边加载起来：给它一个 `window` 与一个假的 `document`，`react` 与官方原语给替身。 */
 function loadClient(): Harness {
+  assert.ok(
+    existsSync(CLIENT_FILE),
+    `${CLIENT_FILE} 不存在：先打包客户端半边（npm run build:client）。`,
+  );
   const reported: LoadedEntry[] = [];
   const styles: FakeStyle[] = [];
   const consoleErrors: unknown[] = [];
