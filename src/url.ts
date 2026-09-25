@@ -57,14 +57,17 @@ export function buildModelsEndpoint(instanceRoot: string): string {
 /**
  * 某种协议下，一条 pi-ai 路由必须携带的 `baseURL`。
  *
- * `openai-completions` 会在路由的 `baseURL` 后面追加 `/chat/completions`，所以它
- * 拿到的是带 `/v1` 的根地址；`anthropic-messages` 走 provider SDK，SDK 自己会追加
+ * 两种 OpenAI 协议会在路由的 `baseURL` 后面追加各自端点，所以它们拿到的是带 `/v1`
+ * 的根地址；`anthropic-messages` 走 provider SDK，SDK 自己会追加
  * `/v1/messages`，所以它拿到的是裸的实例根地址。
  * @param instanceRoot - 归一化后的实例根地址。
  * @param protocol - 该路由的协议格式。
  * @returns 该路由的 `baseURL`。
  */
-export function buildRouteBaseUrl(instanceRoot: string, protocol: 'openai-completions' | 'anthropic-messages'): string {
+export function buildRouteBaseUrl(
+  instanceRoot: string,
+  protocol: 'openai-completions' | 'openai-responses' | 'anthropic-messages',
+): string {
   const root = stripTrailingSlashes(instanceRoot);
-  return protocol === 'openai-completions' ? `${root}/v1` : root;
+  return protocol === 'anthropic-messages' ? root : `${root}/v1`;
 }

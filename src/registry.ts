@@ -39,6 +39,9 @@ import type {
 /** 每个 OpenAI 兼容模型都必须通告的端点。 */
 const OPENAI_ENDPOINT = '/v1/chat/completions';
 
+/** OpenAI Responses 模型通告的端点。 */
+const OPENAI_RESPONSES_ENDPOINT = '/v1/responses';
+
 /** 每个 Anthropic Messages 模型都必须通告的端点。 */
 const ANTHROPIC_ENDPOINT = '/v1/messages';
 
@@ -257,6 +260,8 @@ function protocolFromConfigured(configured: ConfiguredModel): ApertureProtocol |
   switch (configured.api?.trim()) {
     case 'openai-completions':
       return 'openai-completions';
+    case 'openai-responses':
+      return 'openai-responses';
     case 'anthropic-messages':
       return 'anthropic-messages';
     default:
@@ -279,6 +284,9 @@ export function classifyProtocol(endpoints: readonly string[]): ApertureProtocol
   }
   if (endpoints.some((endpoint) => matchesEndpoint(endpoint, OPENAI_ENDPOINT))) {
     return 'openai-completions';
+  }
+  if (endpoints.some((endpoint) => matchesEndpoint(endpoint, OPENAI_RESPONSES_ENDPOINT))) {
+    return 'openai-responses';
   }
   if (endpoints.some((endpoint) => matchesEndpoint(endpoint, ANTHROPIC_ENDPOINT))) {
     return 'anthropic-messages';

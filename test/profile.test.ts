@@ -13,8 +13,10 @@ function plan(overrides: Partial<ProfileOptions> = {}, build = options()) {
   return buildProfilePlan(registry.models, {
     instanceRoot: ROOT,
     route: 'aperture',
+    responsesRoute: 'aperture-responses',
     anthropicRoute: 'aperture-anthropic',
     displayName: 'Aperture',
+    responsesDisplayName: 'Aperture (Responses)',
     anthropicDisplayName: 'Aperture (Anthropic)',
     headers: {},
     configured: build.models,
@@ -39,13 +41,23 @@ describe('buildProfilePlan', () => {
       result.routes.map((candidate) => candidate.provider),
       ['aperture', 'aperture-anthropic'],
     );
-    assert.deepEqual(result.ownedRoutes, ['aperture', 'aperture-anthropic']);
+    assert.deepEqual(result.ownedRoutes, ['aperture', 'aperture-responses', 'aperture-anthropic']);
     assert.equal(result.unserved.length, 4);
   });
 
   it('给每条路由它所属协议期望的 baseURL', () => {
     assert.equal(route(plan(), 'aperture')?.profile.baseURL, `${ROOT}/v1`);
     assert.equal(route(plan(), 'aperture-anthropic')?.profile.baseURL, ROOT);
+  });
+
+  it('把 Responses 模型发布到独立的 OpenAI Responses 路由', () => {
+    const build = options({ models: [{ id: 'response-only', api: 'openai-responses' }] });
+    const result = plan({}, build);
+    assert.equal(route(result, 'aperture-responses')?.profile.api, 'openai-responses');
+    assert.equal(route(result, 'aperture-responses')?.profile.baseURL, `${ROOT}/v1`);
+    assert.deepEqual(route(result, 'aperture-responses')?.profile.headers, {
+      authorization: 'Bearer dsh-aperture',
+    });
   });
 
   it('按协议发送 pi-ai 坚持要的占位请求头', () => {
@@ -125,8 +137,10 @@ describe('buildProfilePlan', () => {
     const result = buildProfilePlan(registry.models, {
       instanceRoot: ROOT,
       route: 'aperture',
+      responsesRoute: 'aperture-responses',
       anthropicRoute: 'aperture-anthropic',
       displayName: 'Aperture',
+      responsesDisplayName: 'Aperture (Responses)',
       anthropicDisplayName: 'Aperture (Anthropic)',
       headers: {},
       configured: [],
@@ -135,6 +149,6 @@ describe('buildProfilePlan', () => {
       result.routes.map((candidate) => candidate.provider),
       ['aperture-anthropic'],
     );
-    assert.deepEqual(result.ownedRoutes, ['aperture', 'aperture-anthropic']);
+    assert.deepEqual(result.ownedRoutes, ['aperture', 'aperture-responses', 'aperture-anthropic']);
   });
 });

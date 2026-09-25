@@ -12,10 +12,10 @@
 export type Modality = 'text' | 'image';
 
 /**
- * 本插件发布的协议格式。两者都由已安装的 `dsh-llm-pi-ai` 适配器服务，这就是发现
+ * 本插件发布的协议格式。三者都由已安装的 `dsh-llm-pi-ai` 适配器服务，这就是发现
  * 过程从不转换载荷的原因：它只决定每个模型在网关的哪些端点上应答。
  */
-export type ApertureProtocol = 'openai-completions' | 'anthropic-messages';
+export type ApertureProtocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages';
 
 /** 一项已归一化的事实的来源，用于报告中的诊断。 */
 export type FactSource = 'aperture' | 'models.dev' | 'config' | 'default';

@@ -47,6 +47,10 @@ describe('端点构造', () => {
       buildRouteBaseUrl('https://ai.long-antares.ts.net', 'openai-completions'),
       'https://ai.long-antares.ts.net/v1',
     );
+    assert.equal(
+      buildRouteBaseUrl('https://ai.long-antares.ts.net', 'openai-responses'),
+      'https://ai.long-antares.ts.net/v1',
+    );
   });
 
   it('给 Anthropic 路由裸根地址，因为它的 SDK 自己会追加 /v1', () => {

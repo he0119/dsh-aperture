@@ -1,7 +1,7 @@
 /**
  * 发布阶段：把发现的模型变成 `llm-pi-ai` provider profile。
  *
- * 这里不做任何负载转换：发布的两种协议都由已安装的 `dsh-llm-pi-ai` 适配器实现，剩下的
+ * 这里不做任何负载转换：发布的三种协议都由已安装的 `dsh-llm-pi-ai` 适配器实现，剩下的
  * 工作只是逐模型陈述适配器无法从一个无法识别的网关 URL 推断出的事实——模型有多大、接受
  * 什么，以及它的推理控制如何在协议格式上传输。
  *
@@ -37,12 +37,16 @@ const GENERIC_EFFORTS = { off: null, high: 'high' } as const;
 export interface ProfileOptions {
   /** 归一化后的实例根。 */
   readonly instanceRoot: string;
-  /** 拥有 OpenAI 兼容模型的路由键。 */
+  /** 拥有 OpenAI Chat Completions 模型的路由键。 */
   readonly route: string;
+  /** 拥有 OpenAI Responses 模型的路由键。 */
+  readonly responsesRoute: string;
   /** 拥有 Anthropic Messages 模型的路由键。 */
   readonly anthropicRoute: string;
-  /** OpenAI 兼容路由的选择器标签。 */
+  /** OpenAI Chat Completions 路由的选择器标签。 */
   readonly displayName: string;
+  /** OpenAI Responses 路由的选择器标签。 */
+  readonly responsesDisplayName: string;
   /** Anthropic 路由的选择器标签。 */
   readonly anthropicDisplayName: string;
   /** 凭据引用；部署配置了才有。 */
@@ -81,15 +85,23 @@ export interface ProfilePlan {
  * @returns 要发布的路由，以及未能被服务的模型。
  */
 export function buildProfilePlan(models: readonly DiscoveredModel[], options: ProfileOptions): ProfilePlan {
-  const openai = models.filter((model) => model.protocol === 'openai-completions');
+  const completions = models.filter((model) => model.protocol === 'openai-completions');
+  const responses = models.filter((model) => model.protocol === 'openai-responses');
   const anthropic = models.filter((model) => model.protocol === 'anthropic-messages');
 
   const routes: RoutePlan[] = [];
-  if (openai.length > 0) {
+  if (completions.length > 0) {
     routes.push({
       provider: options.route,
-      profile: buildProfile('openai-completions', openai, options),
-      models: openai,
+      profile: buildProfile('openai-completions', completions, options),
+      models: completions,
+    });
+  }
+  if (responses.length > 0) {
+    routes.push({
+      provider: options.responsesRoute,
+      profile: buildProfile('openai-responses', responses, options),
+      models: responses,
     });
   }
   if (anthropic.length > 0) {
@@ -103,7 +115,7 @@ export function buildProfilePlan(models: readonly DiscoveredModel[], options: Pr
   return {
     routes,
     unserved: models.filter((model) => model.protocol === undefined),
-    ownedRoutes: [options.route, options.anthropicRoute],
+    ownedRoutes: [options.route, options.responsesRoute, options.anthropicRoute],
   };
 }
 
@@ -115,7 +127,11 @@ function buildProfile(
 ): PiAiProviderProfile {
   const headers = routeHeaders(protocol, options);
   return {
-    displayName: protocol === 'openai-completions' ? options.displayName : options.anthropicDisplayName,
+    displayName: protocol === 'openai-completions'
+      ? options.displayName
+      : protocol === 'openai-responses'
+        ? options.responsesDisplayName
+        : options.anthropicDisplayName,
     api: protocol,
     baseURL: buildRouteBaseUrl(options.instanceRoot, protocol),
     ...(options.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.apiKeyEnv }),
@@ -147,10 +163,10 @@ function routeHeaders(
     });
 
   if (!hasCredential) {
-    if (protocol === 'openai-completions') {
-      headers.authorization = `Bearer ${DEFAULT_PLACEHOLDER_CREDENTIAL}`;
-    } else {
+    if (protocol === 'anthropic-messages') {
       headers['x-api-key'] = DEFAULT_PLACEHOLDER_CREDENTIAL;
+    } else {
+      headers.authorization = `Bearer ${DEFAULT_PLACEHOLDER_CREDENTIAL}`;
     }
   }
 

@@ -37,7 +37,7 @@ const modelConfig = z.object({
   id: z.string().required(),
   /** 选择器里显示的名字。 */
   name: z.string(),
-  /** 协议覆盖：`openai-completions` 或 `anthropic-messages`。 */
+  /** 协议覆盖：OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages。 */
   api: z.string(),
   /** 上下文容量（token 数）。 */
   contextWindow: z.number().step(1).min(1),
@@ -55,7 +55,7 @@ const modelConfig = z.object({
 export interface Config {
   /** Aperture 实例根地址，例如 `https://ai.example.ts.net`。留空则关闭发现。 */
   baseUrl?: string;
-  /** 承载 OpenAI 兼容模型的路由键；Anthropic 那条路由与两者的显示名都从它推出来（{@link derivedNames}）。 */
+  /** 承载 Chat Completions 模型的路由键；Responses、Anthropic 路由及显示名都从它推出来。 */
   route?: string;
   /** 按请求解析的凭据引用；留空则改为发布一个占位请求头。 */
   apiKeyEnv?: string;
@@ -146,8 +146,10 @@ export interface ResolvedConfig {
   /** 原样保留的配置值，供诊断使用。 */
   readonly rawBaseUrl: string;
   readonly route: string;
+  readonly responsesRoute: string;
   readonly anthropicRoute: string;
   readonly displayName: string;
+  readonly responsesDisplayName: string;
   readonly anthropicDisplayName: string;
   /** 凭据引用；未配置时为 `undefined`。 */
   readonly apiKeyEnv: string | undefined;
@@ -170,14 +172,26 @@ export interface ResolvedConfig {
  * 矛盾因此变成不可能，而不是要校验出来的错误。
  *
  * @param route - 已经过文法校验的 OpenAI 兼容路由键。
- * @returns 三条推导出来的名字。
+ * @returns 五个推导出来的路由与显示名。
  */
-function derivedNames(route: string): { anthropicRoute: string; displayName: string; anthropicDisplayName: string } {
+function derivedNames(route: string): {
+  responsesRoute: string;
+  anthropicRoute: string;
+  displayName: string;
+  responsesDisplayName: string;
+  anthropicDisplayName: string;
+} {
   const displayName = route
     .split('-')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
-  return { anthropicRoute: `${route}-anthropic`, displayName, anthropicDisplayName: `${displayName} (Anthropic)` };
+  return {
+    responsesRoute: `${route}-responses`,
+    anthropicRoute: `${route}-anthropic`,
+    displayName,
+    responsesDisplayName: `${displayName} (Responses)`,
+    anthropicDisplayName: `${displayName} (Anthropic)`,
+  };
 }
 
 /**
@@ -211,9 +225,14 @@ export function resolveConfig(config: Config): ResolvedConfig {
       throw new Error(`models 里重复列出了 "${id}"`);
     }
     seen.add(id);
-    if (model.api !== undefined && model.api !== 'openai-completions' && model.api !== 'anthropic-messages') {
+    if (
+      model.api !== undefined &&
+      model.api !== 'openai-completions' &&
+      model.api !== 'openai-responses' &&
+      model.api !== 'anthropic-messages'
+    ) {
       throw new Error(
-        `models["${id}"].api "${model.api}" 无法服务；请使用 openai-completions 或 anthropic-messages`,
+        `models["${id}"].api "${model.api}" 无法服务；请使用 openai-completions、openai-responses 或 anthropic-messages`,
       );
     }
   }

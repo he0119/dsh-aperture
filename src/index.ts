@@ -3,8 +3,8 @@
  * provider 路由发布给 DeepSeek Harness。
  *
  * Aperture 是 Tailscale 的集中式 LLM 网关：一个端点挡在团队有权使用的所有上游前面，靠网络
- * 身份而不是密钥认证。harness 本来就会跟这样的网关说话——`dsh-llm-pi-ai` 讲 OpenAI 兼容的
- * Chat Completions 与 Anthropic Messages，而这正是 Aperture 暴露的全部——但没有东西让模型
+ * 身份而不是密钥认证。harness 本来就会跟这样的网关说话——`dsh-llm-pi-ai` 讲 OpenAI 的
+ * Chat Completions / Responses 与 Anthropic Messages——但没有东西让模型
  * 清单自己刷新：适配器自带的“获取可用模型”只接受一份当时还在编辑的草稿。
  *
  * 本插件就是缺的那一半：读 `GET {baseUrl}/v1/models`，逐个模型判断网关实际用哪种协议服务它，

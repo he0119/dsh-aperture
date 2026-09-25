@@ -136,16 +136,20 @@ describe('resolveConfig', () => {
     assert.equal(resolved.route, 'aperture');
   });
 
-  it('另一条路由与两个显示名都从路由键推出来', () => {
-    // 一个部署要换的只是前缀：换成 `my-gateway` 之后四处名字必须一起换，而不是各写各的。
+  it('Responses、Anthropic 路由与三个显示名都从路由键推出来', () => {
+    // 一个部署要换的只是前缀：换成 `my-gateway` 之后所有派生名字必须一起换，而不是各写各的。
     const derived = resolveConfig(configured({ route: 'my-gateway' }));
+    assert.equal(derived.responsesRoute, 'my-gateway-responses');
     assert.equal(derived.anthropicRoute, 'my-gateway-anthropic');
     assert.equal(derived.displayName, 'My Gateway');
+    assert.equal(derived.responsesDisplayName, 'My Gateway (Responses)');
     assert.equal(derived.anthropicDisplayName, 'My Gateway (Anthropic)');
 
     const bare = resolveConfig(defaults());
+    assert.equal(bare.responsesRoute, 'aperture-responses');
     assert.equal(bare.anthropicRoute, 'aperture-anthropic');
     assert.equal(bare.displayName, 'Aperture');
+    assert.equal(bare.responsesDisplayName, 'Aperture (Responses)');
     assert.equal(bare.anthropicDisplayName, 'Aperture (Anthropic)');
   });
 
