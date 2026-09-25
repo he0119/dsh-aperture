@@ -93,7 +93,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 | 位置 | 作用 |
 | --- | --- |
 | 配置页 · 实例地址 | 改 `baseUrl`（写入设置接缝；写着「已覆盖」时旁边那颗「恢复默认」把它放回缺省值） |
-| 配置页 · 同步开关 | 改 `sync`：关掉就只探测、不写 `llm-pi-ai`——那一轮刷新会顺手把本插件已经发布的路由撤下来（只撤它拥有的那两个键，配置段里其他 provider 原样留着）；同样带「已覆盖 / 恢复默认」这一对 |
+| 配置页 · 同步开关 | 改 `sync`：关掉就只探测、不写 `llm-pi-ai`——那一轮刷新会顺手把本插件已经发布的路由撤下来（只撤它拥有的三个键，配置段里其他 provider 原样留着）；同样带「已覆盖 / 恢复默认」这一对 |
 | 配置页 · 保存 | 表单下方，把地址与开关的草稿写进设置文档；有版本设栅，表单已经与设置文档脱节时会拒绝写入，而不是覆盖别处的改动；写完等这一轮重新发现落地才返回，界面随即显示新配置 |
 | 配置页 · 模型 | 一行一个模型，一行一张卡：行首一颗状态点（绿=这一轮写进了路由，灰=这一轮同步过而它没写进去，黄=没有路由能服务它，鼠标停在上面或读屏都能听到这句话），第一行是名字与「未服务 / 已覆盖 N 项 / 有未保存的改动」几枚标签，第二行是带标签的事实（路由、协议、容量、模态、推理、别名），长名字省略、事实随宽度换行；点开就是这一行的覆盖编辑器——显示名、别名、协议三个输入框一组，「容量」一组（上下文容量、最大输出），模态两个勾选框与推理一个三段开关（跟随发现 / 开 / 关）并排；字段下面只留一句来源（「来源：Aperture」），「留空即用发现到的名字」这类怎么做的话在标签旁边那颗「i」里，点开才占位置；右上角「立刻刷新」立刻重新发现并发布，清单与每一行的状态跟着变新 |
 | 配置页 · 保存 / 清空覆盖 / 取消 | 只写这一行，或者只清掉后台报告里确实被覆盖过的那几项，或者把这一行的草稿整个丢掉；「保存」同样等一轮重新发现落地，所以按完看到的就是新值 |
@@ -107,7 +107,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture 实例地址。末尾 `/v1` 会被容忍并去掉；空值表示休眠（不探测、不写入） |
-| `route` | `aperture` | OpenAI 兼容模型的路由名；Anthropic 那条是它加 `-anthropic`，两个选择器名称也由它推出来（`aperture` → `Aperture` / `Aperture (Anthropic)`） |
+| `route` | `aperture` | Chat Completions 模型的路由名；Responses、Anthropic 路由分别追加 `-responses`、`-anthropic`，三个选择器名称也由它推出来 |
 | `apiKeyEnv` | `''` | 凭据 seam 里的引用名；非空时不再写占位头 |
 | `headers` | `{}` | 每条请求额外带的头，**优先于**占位头 |
 | `enabledModelIds` | `[]` | 非空时只保留这些 id（`models` 里显式列出的不受限） |
@@ -135,7 +135,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-**有些模型没出现在选择器里？** 看配置页「模型」那一段里带「未服务」标签的行。只提供 Gemini 原生 `generateContent` 端点的模型接不进来——`llm-pi-ai` 只讲 OpenAI 兼容和 Anthropic Messages 两种协议。走错端点时 Aperture 会明确告诉你该用哪个：
+**有些模型没出现在选择器里？** 看配置页「模型」那一段里带「未服务」标签的行。只提供 Gemini 原生 `generateContent` 端点的模型接不进来——本插件可发布 Chat Completions、OpenAI Responses 与 Anthropic Messages，不能转换 Gemini 原生协议。走错端点时 Aperture 会明确告诉你该用哪个：
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat
@@ -185,7 +185,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 
 **需要真密钥而不是占位头？** Aperture 靠网络身份（Tailscale）认证，本不需要密钥；插件默认写入 `authorization: Bearer dsh-aperture` / `x-api-key: dsh-aperture`，只是让适配器愿意发请求，**不是密钥**。真要密钥时把 `apiKeyEnv` 指向凭据 seam 里的记录，占位头就不会写入。
 
-**改了 `route` 之后旧路由还在？** 插件只认自己当前拥有的两个键（`route` 与 `route` + `-anthropic`），不知道历史上用过哪些名字，所以旧键会留在 `llm-pi-ai.providers` 里。它不报错、只是不再刷新；要清理就手动删掉那一行。
+**改了 `route` 之后旧路由还在？** 插件只认自己当前拥有的三个键（`route`、`route` + `-responses`、`route` + `-anthropic`），不知道历史上用过哪些名字，所以旧键会留在 `llm-pi-ai.providers` 里。它不报错、只是不再刷新；要清理就手动删掉那一行。
 
 ## 它做了什么
 
@@ -194,6 +194,7 @@ GET {baseUrl}/v1/models
         │
         ├─ 每个模型：supported_endpoints ──► 分流
         │     /v1/chat/completions        ──► route                     （openai-completions）
+        │     /v1/responses               ──► route + -responses        （openai-responses）
         │     /v1/messages                ──► route + -anthropic        （anthropic-messages）
         │     只有原生 generateContent     ──► 不发布（列进「未服务」）
         ├─ 容量：Aperture 字段 ─► models.dev ─► 默认值
@@ -201,7 +202,7 @@ GET {baseUrl}/v1/models
         └─ 生成 llm-pi-ai 的 providers.<route>，按 revision 写进 profile 的补丁文档
 ```
 
-写入只碰 `llm-pi-ai.providers` 下属于本插件的两个键：内容没变就不写；用路径操作写，你手写的其它 provider 原样保留；探测失败绝不删空已有目录；路由没模型了就删掉。实现细节（两条路由的取舍、容量与推理的来源优先级、生命周期与依赖、写入行为）见 [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md)。
+写入只碰 `llm-pi-ai.providers` 下属于本插件的三个键：内容没变就不写；用路径操作写，你手写的其它 provider 原样保留；探测失败绝不删空已有目录；路由没模型了就删掉。实现细节（协议分流、容量与推理的来源优先级、生命周期与依赖、写入行为）见 [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md)。
 
 ## 开发
 

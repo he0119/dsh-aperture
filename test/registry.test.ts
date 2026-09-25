@@ -17,6 +17,10 @@ describe('classifyProtocol', () => {
     assert.equal(classifyProtocol(['/v1/chat/completions']), 'openai-completions');
   });
 
+  it('把 /v1/responses 归到 OpenAI Responses 路由', () => {
+    assert.equal(classifyProtocol(['/v1/responses']), 'openai-responses');
+  });
+
   it('把 /v1/messages 归到 Anthropic 路由', () => {
     assert.equal(classifyProtocol(['/v1/messages']), 'anthropic-messages');
   });

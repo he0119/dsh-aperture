@@ -287,8 +287,11 @@ describe('live Aperture discovery', () => {
     const providers = (): Record<string, unknown> | undefined =>
       (sectionValue(ctx, PI_AI) as { providers?: Record<string, unknown> } | undefined)?.providers;
     await waitFor(
-      () => providers()?.[APERTURE] === undefined && providers()?.[`${APERTURE}-anthropic`] === undefined,
-      '两条路由都从 llm-pi-ai 段撤下来',
+      () =>
+        providers()?.[APERTURE] === undefined &&
+        providers()?.[`${APERTURE}-responses`] === undefined &&
+        providers()?.[`${APERTURE}-anthropic`] === undefined,
+      '三条路由都从 llm-pi-ai 段撤下来',
     );
     assert.deepEqual(Object.keys(providers() ?? {}), [], '除了本插件的路由，这个配置段里本来就没有别的 provider');
   });

@@ -1626,7 +1626,7 @@ describe('模型行与刷新', () => {
     assert.equal(protocol.props.value, '');
     assert.deepEqual(
       findAll(protocol, (node) => node.type === 'option').map((node) => node.props.value),
-      ['', 'openai-completions', 'anthropic-messages'],
+      ['', 'openai-completions', 'openai-responses', 'anthropic-messages'],
     );
     assert.deepEqual(
       findAll(rowOf(mini, 'deepseek-flash'), (node) => node.props.role === 'checkbox').map((node) => node.props['aria-checked']),

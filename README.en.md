@@ -96,7 +96,7 @@ The interface is at **Plugins → dsh-aperture**: open this plugin in the plugin
 | Where | Effect |
 | --- | --- |
 | Configuration page · Instance address | edits `baseUrl` (written through the settings seam; when it says "Overridden", the "Reset to default" beside it falls back to the default) |
-| Configuration page · Sync toggle | edits `sync`: off discovers without writing `llm-pi-ai`, and that round withdraws whatever this plugin had published (only the two keys it owns; every other provider in the section is left alone); carries the same "Overridden / Reset to default" pair |
+| Configuration page · Sync toggle | edits `sync`: off discovers without writing `llm-pi-ai`, and that round withdraws whatever this plugin had published (only the three keys it owns; every other provider in the section is left alone); carries the same "Overridden / Reset to default" pair |
 | Configuration page · Save | below the form: writes the address and toggle drafts into the settings document; it is revision-fenced, so a form that has drifted from the settings document is refused rather than overwriting someone else's edit; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
 | Configuration page · Models | one row per model, one card per row: a state dot at its head (green: this round wrote it into the routes; grey: this round synced but did not write it; amber: no route can serve it — hovering it, or a screen reader, hears exactly that), then the name with its "unserved / N overridden / unsaved edits" tags on the first line and labelled facts (route, protocol, capacities, modalities, reasoning, alias) on the second, with long names ellipsised and facts wrapping; expanded, it is that row's override editor — display name, alias and protocol as one group of text fields, context window and max output as the "capacity" group, and two modality checkboxes beside a three-way reasoning switch (follow discovery / on / off); a field keeps only one line naming where its value comes from ("Source: Aperture"), while how-to copy ("Leave it empty to use the discovered name") lives behind the "i" next to the label and only takes up room once opened; the "Refresh now" action at its top right discovers and republishes immediately, and the list and every row's status follow that round |
 | Configuration page · Save / Clear overrides / Cancel | write that row only, clear only the fields the backend report says really were overridden, or drop that row's draft; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
@@ -110,7 +110,7 @@ Every key lives under that row's `config:` in the profile patch document (user l
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture instance root. A trailing `/v1` is tolerated and stripped; empty leaves the plugin dormant |
-| `route` | `aperture` | Route key owning OpenAI-compatible models; the Anthropic route is this key plus `-anthropic`, and both selector labels derive from it (`aperture` → `Aperture` / `Aperture (Anthropic)`) |
+| `route` | `aperture` | Route key for Chat Completions models; Responses and Anthropic append `-responses` and `-anthropic`, with all three selector labels derived from it |
 | `apiKeyEnv` | `''` | Credential-seam reference; non-empty suppresses the placeholder header |
 | `headers` | `{}` | Extra request headers; they **win over** the placeholder |
 | `enabledModelIds` | `[]` | Non-empty restricts discovery to these ids (explicit `models` entries are exempt) |
@@ -138,7 +138,7 @@ Missing capacity and reasoning levels are filled in from Aperture's own fields �
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-**Some models never show up in the selector?** Look at the rows tagged `未服务` (unserved) in the Models section of the configuration page. Models that only offer Gemini's native `generateContent` endpoint cannot be attached — `llm-pi-ai` speaks OpenAI-compatible and Anthropic Messages only. Using the wrong endpoint fails loudly, and Aperture names the right one:
+**Some models never show up in the selector?** Look at the rows tagged `未服务` (unserved) in the Models section of the configuration page. Models that only offer Gemini's native `generateContent` endpoint cannot be attached — this plugin can publish Chat Completions, OpenAI Responses, and Anthropic Messages, but does not translate Gemini's native protocol. Using the wrong endpoint fails loudly, and Aperture names the right one:
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat
@@ -194,7 +194,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 
 **Need a real key instead of the placeholder header?** Aperture authenticates by network identity (Tailscale) and needs none; the plugin writes `authorization: Bearer dsh-aperture` / `x-api-key: dsh-aperture` only to make the adapter willing to send the request. It is **not a key**. When a real credential is needed, point `apiKeyEnv` at a credential-seam record and no placeholder is written.
 
-**The old route is still there after changing `route`?** The plugin only knows the two keys it currently owns (`route` and `route` + `-anthropic`), not the names it used before, so the old key stays in `llm-pi-ai.providers`. It does no harm and simply stops refreshing; delete the entry by hand to clean it up.
+**The old route is still there after changing `route`?** The plugin only knows the three keys it currently owns (`route`, `route` + `-responses`, and `route` + `-anthropic`), not the names it used before, so the old key stays in `llm-pi-ai.providers`. It does no harm and simply stops refreshing; delete the entry by hand to clean it up.
 
 ## What it does
 
@@ -203,6 +203,7 @@ GET {baseUrl}/v1/models
         │
         ├─ per model: supported_endpoints ──► routing
         │     /v1/chat/completions        ──► route                (openai-completions)
+        │     /v1/responses               ──► route + -responses   (openai-responses)
         │     /v1/messages                ──► route + -anthropic   (anthropic-messages)
         │     native generateContent only ──► not published (reported under 未服务)
         │
@@ -212,7 +213,7 @@ GET {baseUrl}/v1/models
         └─ llm-pi-ai providers.<route>, written into the profile patch document by revision
 ```
 
-Writes touch only the two keys under `llm-pi-ai.providers` that this plugin owns: an unchanged section is not rewritten; writes are path-addressed so your hand-written providers survive untouched; a failed discovery never wipes the published catalog; a route that lost its models is removed. Design notes — why two routes, where each fact comes from, lifecycle and dependencies, write behaviour — are in [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md) (Chinese).
+Writes touch only the three keys under `llm-pi-ai.providers` that this plugin owns: an unchanged section is not rewritten; writes are path-addressed so your hand-written providers survive untouched; a failed discovery never wipes the published catalog; a route that lost its models is removed. Design notes — protocol routing, where each fact comes from, lifecycle and dependencies, write behaviour — are in [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md) (Chinese).
 
 ## Development
 

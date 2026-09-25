@@ -165,6 +165,7 @@ export function ModelEditor(props: ModelEditorProps): ReactNode {
         >
           <option value="">{t('reasoningFollow')}</option>
           <option value="openai-completions">openai-completions</option>
+          <option value="openai-responses">openai-responses</option>
           <option value="anthropic-messages">anthropic-messages</option>
         </select>
         <span id={`dap-${model.id}-api-help`} className="dap-hint">{t('editApiHint')}</span>

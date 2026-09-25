@@ -4,7 +4,7 @@
 
 ## 只做发现，不做转换
 
-参考实现 [he0119/vscode-aperture-for-copilot](https://github.com/he0119/vscode-aperture-for-copilot) 需要自己实现一套 provider；而 DSH 里已经有 `@deepseek-ai/dsh-llm-pi-ai`，它本来就讲 OpenAI Chat Completions 和 Anthropic Messages——正好是 Aperture 唯一暴露的两种协议。所以本插件**不做任何 API 格式转换**：它把探测结果翻译成 `llm-pi-ai` 的 provider profiles，剩下的交给现成的适配器。
+参考实现 [he0119/vscode-aperture-for-copilot](https://github.com/he0119/vscode-aperture-for-copilot) 需要自己实现一套 provider；而 DSH 里已经有 `@deepseek-ai/dsh-llm-pi-ai`，它会讲 OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages。所以本插件**不做任何 API 格式转换**：它把探测结果翻译成 `llm-pi-ai` 的 provider profiles，剩下的交给现成的适配器。
 
 ```yaml
 # ~/.dsh/profiles/web/cordis.patch.yml —— 插件写进去的内容，不需要手写
@@ -23,13 +23,14 @@
 
 （设置命名空间就是 profile 里那一行的 `id`——`llm-pi-ai` 那一行由官方基础 profile 声明，本插件这一行是 `aperture`。`dsh-llm-pi-ai` 自己也是这么取命名空间的：`ctx.fiber.entry?.options.id ?? 'llm-pi-ai'`。）
 
-## 为什么有两条路由
+## 为什么最多有三条路由
 
 Aperture 是按**端点**网关的：同一个模型不是所有协议都收。实测（`https://ai.long-antares.ts.net/`）：
 
 | 模型 | `supported_endpoints` | 结果 |
 | --- | --- | --- |
 | 11 个（DeepSeek / MiMo / Grok / Qwen / LongCat …） | `/v1/chat/completions` | 走 `aperture` |
+| Responses 模型 | `/v1/responses` | 走 `aperture-responses` |
 | `MiniMax-M3` | `/v1/messages` | 走 `aperture-anthropic` |
 | 4 个 Gemini | `/v1beta/models/{model}:generateContent` | 不发布 |
 
@@ -40,7 +41,7 @@ Aperture 是按**端点**网关的：同一个模型不是所有协议都收。�
 404 model "MiniMax-M3" is available via anthropic_messages, not openai_chat
 ```
 
-`llm-pi-ai` 只讲 OpenAI 兼容协议和 Anthropic Messages，所以 Gemini 那 4 个**无法**接入——插件会把它们列出来，而不是发布一堆必然 404 的模型。
+`llm-pi-ai` 不讲 Gemini 原生协议，所以 Gemini 那 4 个**无法**接入——插件会把它们列出来，而不是发布一堆必然 404 的模型。
 
 ## 关于「占位凭据」
 
@@ -100,14 +101,14 @@ volatile 只改**配置怎么被持有**，不改校验：非法值仍然在 `Co
 
 ## 写入行为
 
-插件只碰 `llm-pi-ai.providers` 下的两个键（`route` / `route` + `-anthropic`），并且：
+插件只碰 `llm-pi-ai.providers` 下的三个键（`route` / `route` + `-responses` / `route` + `-anthropic`），并且：
 
 - **内容相同就不写**——每次刷新都对比解析后的段，避免无意义的重写和文件监听回环；
 - **用路径操作写**——你的其它 provider 一个字段都不会动；
 - **探测失败就不写**——网关临时不可达时保留已经生效的目录，而不是清空；
 - **带 revision 写**——与其它写入者（比如模型页）冲突时重读一次再写；
 - **路由没模型了就删掉**——避免留下指向旧目录的空路由；
-- **关掉同步就撤下**——`sync: false` 表示「本插件不该在这里留东西」，因此那一轮刷新发出的是一份空方案，`planSync` 会把两个拥有键 unset 掉（配置段里别的 provider 不动）。留着一份不再由配置决定的清单，界面看不出还有谁在服务，用户只能自己去翻 `llm-pi-ai` 段。撤下与「发布 N 条路由」走的是同一条路（空方案），没有第二条清理路径。
+- **关掉同步就撤下**——`sync: false` 表示「本插件不该在这里留东西」，因此那一轮刷新发出的是一份空方案，`planSync` 会把三个拥有键 unset 掉（配置段里别的 provider 不动）。留着一份不再由配置决定的清单，界面看不出还有谁在服务，用户只能自己去翻 `llm-pi-ai` 段。撤下与「发布 N 条路由」走的是同一条路（空方案），没有第二条清理路径。
 - **写入必须从 HMR 事务之外发起**——设置写入整次都在事务里（`config-editor.edit()` 把 `run()` 包在 `hmr.runExclusive()` 里），而 `loader/volatile-update` 正是在那个事务里**同步**发出来的：事务的 AsyncLocalStorage 印记会跟着从事件处理器里起的 promise 链一路走，事件那一轮早跑完了也不掉。于是直接在事件里刷新，那一轮对本配置段的写入就会被判成事务嵌套而拒绝（`HMR transactions cannot be nested`），配置页上显示成「没写（…）」——而发现本身看起来是成功的（模型列表、路由、耗时都在），只有宿主日志里那句 `发布发现的清单失败` 说的是实话。表现最典型的一步是**填地址那次保存**：地址空着时插件是休眠的（启动那一轮不发请求也不写），第一次真正要写 `llm-pi-ai` 的时刻恰好就是这次配置写入打开的事务里，于是两条路由一条都发布不出去。
   本插件因此把**每一轮刷新**都交给 `src/relay.ts` 那条通道起跑：它在**模块作用域**被拉起（模块求值不在任何事务里），事务里只负责把它叫醒；作业的续体注册在通道自己的上下文里，于是整轮都在事务之外，而写入照旧排在 HMR 队列后面（换的是上下文，不是串行）。通道按模块持有而不是按插件实例：源码热重载会让插件在事务里重建，实例里拉起的通道会跟着带上印记，而本模块通常留在模块缓存里。定时器、事件、插件加载三条来路都经它——它们是同一个问题的三种现场。
 
@@ -239,13 +240,13 @@ footer: 'return module.exports; } });',
 
 ## 已知边界
 
-- **不转换 API 格式**，这是设计目标而不是缺陷。也因此只支持 `llm-pi-ai` 讲得了的两种协议；Gemini 原生端点接不了。
+- **不转换 API 格式**，这是设计目标而不是缺陷。只支持 `llm-pi-ai` 能服务的 Chat Completions、OpenAI Responses 与 Anthropic Messages；Gemini 原生端点接不了。
 - `supported_endpoints` 是唯一的协议依据。网关如果不报，就按 OpenAI 兼容处理。
 - models.dev 是尽力而为的补全：拉不到就是拉不到，发现本身照常成功。
 - 本插件不注册任何 provider 目录（`registerConfigurableProviders`）——`llm-pi-ai` 已经认领了那件事，重复注册会抛错。
-- **改了 `route` 的路由名之后，旧键会留在 `llm-pi-ai.providers` 里**（插件只认自己当前拥有的两个键，无法知道历史上用过哪些名字）。它不会报错，只是不再刷新；要清理就手动删掉那一行。
+- **改了 `route` 的路由名之后，旧键会留在 `llm-pi-ai.providers` 里**（插件只认自己当前拥有的三个键，无法知道历史上用过哪些名字）。它不会报错，只是不再刷新；要清理就手动删掉那一行。
 - **配置页只存在于 Web 界面**（插件页 + Typert 注册表）；没有它的部署里发现照常，只是没有可点按的界面。从非本机来源打开的页面拿不到宿主设置，配置页会把失败原因摆在页面上（而不是假装可编辑）；设置文档本身不接受写入时（表单快照的 `state.writable === false`），表单会置灰并说明原因；连快照都拿不到时（`state.status === 'unavailable'`）设置那一段只剩官方表单的一句说明，报告照常显示。
 - **更高优先级的补丁层能盖住写入**：profile 的补丁文档之上还有 `$DSH_HOME/cordis.patch.yml` 这类层。同一行在那里也被写过时，配置页的保存写进 profile 的补丁文档、却不生效——写入本身可能被设置接缝拒收（配置页会说这一笔没被收下），也可能落盘了却仍是那一层说了算；两种都得去那一层改。
 - **peer 范围收得很紧**（`^0.1.7-rc.1`）：0.1.7 之前的宿主会被 peer 预检挡下——这一版起 `installSection` / `SettingsProvider` 这套接缝已经不存在，本插件的界面代码在旧宿主上无法工作。因此从 `0.2.0` 升上来是一次有意的破坏性升级。
-- **想让已发布的路由消失就关掉同步开关**：那一轮刷新会把本插件的两个键从 `llm-pi-ai.providers` 撤下来（同段里别的 provider 不动）。
+- **想让已发布的路由消失就关掉同步开关**：那一轮刷新会把本插件的三个键从 `llm-pi-ai.providers` 撤下来（同段里别的 provider 不动）。
 - **动作端点的一句结论仍是中文**：`PanelAction.summary` 由宿主半边写好（「已写入 2 条路由…」），因此英文界面里那一行也是中文。报告已经不走这条路（它是结构化数据），但这个动作用的还是「宿主说一句话」的形态；要让它跟着语言走，得把 `summary` 换成「码 + 实参」再由界面渲染。地址与同步的写入不再是端点，它们的话由界面自己按语言组织。

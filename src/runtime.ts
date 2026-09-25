@@ -211,8 +211,10 @@ export class ApertureRuntime {
     const plan = buildProfilePlan(registry.models, {
       instanceRoot: config.instanceRoot,
       route: config.route,
+      responsesRoute: config.responsesRoute,
       anthropicRoute: config.anthropicRoute,
       displayName: config.displayName,
+      responsesDisplayName: config.responsesDisplayName,
       anthropicDisplayName: config.anthropicDisplayName,
       ...(config.apiKeyEnv === undefined ? {} : { apiKeyEnv: config.apiKeyEnv }),
       headers: config.headers,

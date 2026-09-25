@@ -185,8 +185,8 @@ function mergeEntry(
   if (patch.api !== undefined) {
     const api = patch.api === null ? '' : patch.api.trim();
     if (api.length === 0) delete entry.api;
-    else if (api !== 'openai-completions' && api !== 'anthropic-messages') {
-      return { error: `api "${api}" 无法服务；只能是 openai-completions 或 anthropic-messages` };
+    else if (api !== 'openai-completions' && api !== 'openai-responses' && api !== 'anthropic-messages') {
+      return { error: `api "${api}" 无法服务；只能是 openai-completions、openai-responses 或 anthropic-messages` };
     } else entry.api = api;
   }
 
