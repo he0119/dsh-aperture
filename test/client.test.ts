@@ -1620,9 +1620,14 @@ describe('模型行与刷新', () => {
     assert.equal(findById(tree, 'dap-deepseek-flash-contextWindow').props.value, '1048576');
     assert.equal(findById(tree, 'dap-deepseek-flash-maxTokens').props.value, '384K');
     assert.equal(findById(tree, 'dap-deepseek-flash-alias').props.value, 'deepseek/deepseek-v4-flash');
-    // 协议没写在用户层里，输入框留空、由占位符提示发现的协议。
-    assert.equal(findById(tree, 'dap-deepseek-flash-api').props.value, '');
-    assert.equal(findById(tree, 'dap-deepseek-flash-api').props.placeholder, 'openai-completions');
+    // 协议是有限枚举；没写在用户层里时，下拉框停在「跟随发现」。
+    const protocol = findById(tree, 'dap-deepseek-flash-api');
+    assert.equal(protocol.type, 'select');
+    assert.equal(protocol.props.value, '');
+    assert.deepEqual(
+      findAll(protocol, (node) => node.type === 'option').map((node) => node.props.value),
+      ['', 'openai-completions', 'anthropic-messages'],
+    );
     assert.deepEqual(
       findAll(rowOf(mini, 'deepseek-flash'), (node) => node.props.role === 'checkbox').map((node) => node.props['aria-checked']),
       ['true', 'true'],

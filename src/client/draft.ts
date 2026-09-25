@@ -40,8 +40,8 @@ export interface RowDraft {
   api: string;
 }
 
-/** 文本类覆盖字段能取的那几个键（编辑器里的文本字段只服务它们）。 */
-export type TextFieldKey = 'name' | 'alias' | 'api' | 'contextWindow' | 'maxTokens';
+/** 文本类覆盖字段能取的那几个键；协议是有限枚举，单独使用下拉框。 */
+export type TextFieldKey = 'name' | 'alias' | 'contextWindow' | 'maxTokens';
 
 /** `PanelModelPatch` 的可写形态：这一页是逐字段攒出一份稀疏补丁的。 */
 export type RowPatch = { -readonly [K in keyof PanelModelPatch]: PanelModelPatch[K] };

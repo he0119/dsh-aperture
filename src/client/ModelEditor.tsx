@@ -69,7 +69,7 @@ export interface ModelEditorProps {
   model: PanelModel;
   /** 这一行此刻的草稿。 */
   draft: RowDraft;
-  /** 正在跑的动作名；非空即禁用控件，`edit` 是这一行的保存正在飞。 */
+  /** 正在跑的动作名；非空即禁用控件，`edit:<id>` 是对应行的保存正在飞。 */
   busy: string;
   /** 字典。 */
   t: PanelTranslate;
@@ -109,8 +109,8 @@ export function ModelEditor(props: ModelEditorProps): ReactNode {
    * 官方 `SettingsValueField` 的语义正好对得上：「已覆盖」= 用户层里有这个键（报告给的
    * `overrideKeys`），「恢复默认」= 把草稿改回「不覆盖」，非法草稿只标出来、由保存拦住。
    *
-   * 长解释进 `help`（官方那个「i」按钮），输入框下面只留一句来源；外面再套一层格子，官方字段行
-   * 那条「相邻就加上边框」在网格里会错开半格，隔开一层壳就不碰它了。
+   * 长解释进 `help`（官方那个「i」按钮），输入框下面只留一句来源；外层只负责补回跨组件壳的
+   * 相邻字段分隔线，字段自身的间距与控件仍完全交给官方组件。
    */
   const textField = (key: TextFieldKey, copy: TextFieldCopy) => (
     <div className="dap-fieldCell">
@@ -132,6 +132,46 @@ export function ModelEditor(props: ModelEditorProps): ReactNode {
         onEdit={(text) => onStage({ [key]: text })}
         onReset={() => onStage({ [key]: copy.cleared })}
       />
+    </div>
+  );
+
+  /** 协议是宿主支持的有限枚举，用原生下拉框避免把任意字符串送到后端。 */
+  const protocolField = (
+    <div className="dap-fieldCell">
+      <div className="dap-selectField">
+        <div className="dap-selectHead">
+          <label className="dap-selectLabel" htmlFor={`dap-${model.id}-api`}>{t('editApi')}</label>
+          {declaredIn(model, 'api') ? <Tag tone="info">{t('overridden')}</Tag> : null}
+          {declaredIn(model, 'api')
+            ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onStage({ api: '' })}
+                disabled={disabled}
+              >
+                {t('resetField')}
+              </Button>
+            )
+            : null}
+        </div>
+        <select
+          id={`dap-${model.id}-api`}
+          className="dap-select"
+          value={draft.api}
+          disabled={disabled}
+          aria-describedby={`dap-${model.id}-api-help dap-${model.id}-api-source`}
+          onChange={(event) => onStage({ api: event.target.value })}
+        >
+          <option value="">{t('reasoningFollow')}</option>
+          <option value="openai-completions">openai-completions</option>
+          <option value="anthropic-messages">anthropic-messages</option>
+        </select>
+        <span id={`dap-${model.id}-api-help`} className="dap-hint">{t('editApiHint')}</span>
+        <span id={`dap-${model.id}-api-source`} className="dap-hint">
+          {sourceOf(declaredIn(model, 'api') ? 'config' : 'aperture')}
+        </span>
+      </div>
     </div>
   );
 
@@ -165,14 +205,7 @@ export function ModelEditor(props: ModelEditorProps): ReactNode {
             source: () => 'config',
             cleared: '',
           })}
-          {textField('api', {
-            label: 'editApi',
-            hint: 'editApiHint',
-            // 协议没有单独一项来源：写过就是配置，没写过就是从通告的端点推导出来的。
-            source: (item) => (declaredIn(item, 'api') ? 'config' : 'aperture'),
-            cleared: '',
-            placeholder: (item) => item.protocol ?? '',
-          })}
+          {protocolField}
         </div>
       </div>
       <div className="dap-editGroup">
@@ -264,7 +297,7 @@ export function ModelEditor(props: ModelEditorProps): ReactNode {
             </Button>
           )}
         <Button variant="primary" size="sm" onClick={onSave} disabled={disabled}>
-          {busy === 'edit' ? t('saving') : t('saveRow')}
+          {busy === `edit:${model.id}` ? t('saving') : t('saveRow')}
         </Button>
       </div>
     </div>

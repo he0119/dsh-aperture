@@ -26,14 +26,14 @@
   margin: 0;
   font-size: 14px;
   font-weight: 500;
-  line-height: 22px;
+  line-height: 20px;
 }
 /* 数目跟在标题后面，用等宽数字，免得一轮刷新改写时宽度乱跳。 */
 [data-dsh-aperture] .dap-count {
-  font-size: 14px;
-  line-height: 22px;
+  font-size: 12px;
+  line-height: 18px;
   font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
 }
 /* 空状态是官方「模型」页那条虚线盒子：没有内容时给个形状，不留白。 */
 [data-dsh-aperture] .dap-empty {
@@ -75,7 +75,7 @@
   gap: 2px;
   min-width: 0;
 }
-/* 一个模型一张卡片：发丝描边立形状（官方输入框用的就是这一档描边），底色只在暗色主题下抬起一层。 */
+/* 模型清单沿用官方模型页的描边卡片；颜色只使用插件页确实提供的通用 token。 */
 [data-dsh-aperture] .dap-rows {
   display: flex;
   flex-direction: column;
@@ -87,6 +87,7 @@
 [data-dsh-aperture] .dap-card {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   border: 0.5px solid var(--dsw-alias-border-l4, rgba(128, 128, 128, 0.36));
   border-radius: var(--dsw-radius-xl, 20px);
   background: var(--dsw-alias-bg-layer-2, transparent);
@@ -111,7 +112,7 @@
   background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.06));
 }
 [data-dsh-aperture] .dap-cardHead[aria-expanded='true'] {
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
   border-radius: var(--dsw-radius-xl, 20px) var(--dsw-radius-xl, 20px) 0 0;
 }
 [data-dsh-aperture] .dap-cardHead:focus-visible {
@@ -177,16 +178,12 @@
 [data-dsh-aperture] .dap-chevron[data-open='true'] {
   transform: rotate(90deg);
 }
-/* 展开区是卡片里的一块内嵌面：暗色主题下比卡片再亮一层，亮色主题下靠这圈描边立住（底色也是白的）。 */
+/* 展开内容留在模型卡片里；四边使用相同的 12px 间距，不再另套一层描边。 */
 [data-dsh-aperture] .dap-editor {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin: 14px;
-  padding: 14px 16px;
-  border: 0.5px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
-  border-radius: var(--dsw-radius-lg, 16px);
-  background: var(--dsw-alias-bg-layer-3, transparent);
+  gap: 12px;
+  margin: 12px;
 }
 [data-dsh-aperture] .dap-editorHead {
   display: flex;
@@ -222,14 +219,54 @@
   line-height: 18px;
   color: var(--dsw-alias-label-secondary, #c9c9c9);
 }
-/* 字段用网格排，格子自带一层壳：官方那条「相邻字段加一条上边框」在网格里会错开半格。 */
+/* 字段按官方设置表单单列排列，并恢复相邻字段的发丝分隔线。 */
 [data-dsh-aperture] .dap-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 2px 16px;
+  display: flex;
+  flex-direction: column;
 }
 [data-dsh-aperture] .dap-fieldCell {
   min-width: 0;
+}
+[data-dsh-aperture] .dap-fieldCell + .dap-fieldCell {
+  border-top: 0.5px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
+}
+[data-dsh-aperture] .dap-selectField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0;
+}
+[data-dsh-aperture] .dap-selectHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+[data-dsh-aperture] .dap-selectLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+[data-dsh-aperture] .dap-select {
+  box-sizing: border-box;
+  height: 34px;
+  padding: 0 12px;
+  border: 0.5px solid var(--dsw-alias-border-l4, rgba(128, 128, 128, 0.36));
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3, transparent);
+  color: var(--dsw-alias-label-primary, #e6e6e6);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+[data-dsh-aperture] .dap-select:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary, #7aaaff);
+}
+[data-dsh-aperture] .dap-select:disabled {
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+  cursor: default;
 }
 [data-dsh-aperture] .dap-grid2 {
   display: grid;
@@ -273,8 +310,9 @@
 [data-dsh-aperture] .dap-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  padding-top: 2px;
+  padding-top: 4px;
 }
 /* 左边那句「还有几项没写下去」，按钮一律靠右，主按钮在最右。 */
 [data-dsh-aperture] .dap-actionsNote {
@@ -282,4 +320,9 @@
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-aperture] .dap-chevron:where(*) {
+    transition: none;
+  }
 }

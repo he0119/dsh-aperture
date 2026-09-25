@@ -217,7 +217,7 @@ export function AperturePanel(props: AperturePanelProps) {
       setBanner({ ok: true, text: t('noChanges') });
       return;
     }
-    run('edit', () => props.panel.writeModel(model.id, patch), (ok) => {
+    run(`edit:${model.id}`, () => props.panel.writeModel(model.id, patch), (ok) => {
       if (!ok) return;
       dropDraft(model.id);
       setOpened((current) => ({ ...current, [model.id]: false }));
@@ -248,7 +248,7 @@ export function AperturePanel(props: AperturePanelProps) {
     // 别名用空串表示「不要再覆盖」；其余字段 `null` 就是「不覆盖这一项」。
     const patch = Object.fromEntries(known.map((key) => [key, key === 'alias' ? '' : null]));
     const payload = unknown.length > 0 || known.length === 0 ? null : patch;
-    run('revert', () => props.panel.writeModel(model.id, payload), (ok) => {
+    run(`revert:${model.id}`, () => props.panel.writeModel(model.id, payload), (ok) => {
       if (!ok) return;
       dropDraft(model.id);
       setOpened((current) => ({ ...current, [model.id]: false }));
