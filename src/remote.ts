@@ -2,7 +2,7 @@
  * 配置页与宿主之间的 Typert Remote 面：`aperturePanel` 命名空间。
  *
  * 描述符是手工登记的，因为生成它们的 Typert 生成器并不随 DSH 发布，而这一步的规范本身很小：
- * 宿主半边用 `src-json` 编解码器，浏览器半边带 strict 校验，两端共享同一组端点名；参数按描述符
+ * Host 端用 `src-json` 编解码器，Web Client 端带 strict 校验，两端共享同一组端点名；参数按描述符
  * 里的顺序位置传入宿主方法，因此两边的名字与顺序必须一致。
  *
  * 端点 id 的 `#` 之前是包名，之后是 `<命名空间>/<方法>`。
@@ -20,7 +20,7 @@ import type { PanelReport } from './report.ts';
 /** 包名，同时是端点 id 的前缀。 */
 export const PANEL_PACKAGE = 'dsh-aperture';
 
-/** 线上命名空间，也是浏览器半边注入的服务名（`remote.aperturePanel`）。 */
+/** 线上命名空间，也是 Web Client 端注入的服务名（`remote.aperturePanel`）。 */
 export const PANEL_NAMESPACE = 'aperturePanel';
 
 /**

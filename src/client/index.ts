@@ -1,5 +1,5 @@
 /**
- * `dsh-aperture` 浏览器半边（插件本体）：把 Remote 贡献挂上去、注册字典与样式，并把配置页
+ * `dsh-aperture` Web Client 端（插件本体）：挂载 Remote 贡献、注册字典与样式，并把配置页
  * 注册到包级配置槽位 `plugins.bundle.config` 上（键是包名 `dsh-aperture`）。
  *
  * 页面本身在 [AperturePanel.tsx](./AperturePanel.tsx)，字典在 [locales.ts](./locales.ts)，
@@ -19,9 +19,9 @@
  */
 
 // 只取服务声明（cordis 的 Context 增强），不产生运行时 require：这些包是服务提供方，
-// 它们的客户端半边由宿主模块图按行装，不由本模块 require。服务声明长在各包的 `/client` 入口
+// 它们的 Web Client 模块由 Host 模块图按行装，不由本模块 require。服务声明长在各包的 `/client` 入口
 // （`ctx.slots` 是渲染器声明的、`SlotMap` 里那个 `plugins.bundle.config` 是插件管理页声明的），
-// 根入口只有宿主半边那一套，指错了就一个服务都拿不到。
+// 根入口只有 Host 模块，指错了就一个服务都拿不到。
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client';

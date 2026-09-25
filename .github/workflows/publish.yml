@@ -104,7 +104,7 @@ jobs:
           fi
           echo "标签落点校验通过：${tag} -> ${tag_sha}（main 顶端，package.json 就是 ${version}）"
 
-      # lib/ 不进 git，靠 prepare（npm run build：宿主 tsc + 浏览器 tsdown）在发布时现场编译，
+      # lib/ 不进 git，靠 prepare（npm run build：tsdown 统一构建宿主、声明与浏览器）在发布时现场编译，
       # 所以这里必须先装依赖：check job 里那份 npm ci 不会跨 job 共享工作目录，少了这一步 prepare
       # 会因为找不到 @types/node / tsdown 直接失败，发布在打包阶段就死了，根本走不到 OIDC 换 token。
       # 放在校验之后：标签打错了就没必要花这几分钟装依赖。

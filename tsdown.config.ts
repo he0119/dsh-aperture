@@ -1,5 +1,8 @@
 /**
- * 浏览器半边的打包配置（宿主半边仍走 `tsc -p tsconfig.json`）。
+ * Host 端与 Web Client 端的统一打包配置。
+ *
+ * 宿主沿用官方包的产物形状：源码打成一个 ESM `lib/index.js`，所有包依赖保持外部，
+ * 声明按源码模块输出到 `lib/types/`。Web Client 端则仍遵守 DSH 客户端模块系统的经典脚本契约。
  *
  * DSH 的客户端模块系统只认一个**经典脚本**：它用 `window.__ModuleLoader__.load({ id, factory })`
  * 报名，交给工厂一个同步的 `require`（解析平台模块表里的模块）。产物是 `format: 'cjs'`，外面套三行
@@ -14,7 +17,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 
-import { defineConfig, type TsdownPlugin } from 'tsdown'
+import { defineConfig, type TsdownPlugin, type UserConfig } from 'tsdown'
 
 const { name: PACKAGE } = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
@@ -69,11 +72,54 @@ function cssInline(): TsdownPlugin {
   }
 }
 
-export default defineConfig({
+const host: UserConfig = {
+  name: `${PACKAGE}/host`,
+  entry: { index: 'src/index.ts' },
+  tsconfig: 'tsconfig.json',
+  outDir: 'lib',
+  format: 'esm',
+  platform: 'node',
+  target: 'es2023',
+  dts: false,
+  sourcemap: false,
+  fixedExtension: false,
+  // 三份配置共用 lib/；完整构建由 package.json 的 prebuild 一次性清理，单独重建一端不删另一端。
+  clean: false,
+  // 官方 Host 包只合并自己的源码；Cordis、DSH 与普通 npm 依赖都由安装环境解析。
+  deps: { neverBundle: true },
+  outputOptions: {
+    entryFileNames: 'index.js',
+  },
+}
+
+const types: UserConfig = {
+  name: `${PACKAGE}/types`,
+  entry: ['src/**/*.ts', '!src/client/**'],
+  tsconfig: 'tsconfig.json',
+  outDir: 'lib/types',
+  root: 'src',
+  unbundle: true,
+  format: 'esm',
+  platform: 'node',
+  target: 'es2023',
+  dts: {
+    emitDtsOnly: true,
+    sourcemap: false,
+  },
+  sourcemap: false,
+  fixedExtension: false,
+  clean: false,
+  deps: {
+    neverBundle: true,
+    dts: { neverBundle: true },
+  },
+}
+
+const client: UserConfig = {
   name: `${PACKAGE}/client`,
   entry: { client: 'src/client/index.ts' },
-  // 宿主那份 tsconfig.json 把 src/client 排除在外（它没有 DOM 也没有 JSX），
-  // 因此这里必须显式指到浏览器半边自己的那份，否则 JSX / lib 都会按宿主的算。
+  // Host 端的 tsconfig.json 把 src/client 排除在外（它没有 DOM 也没有 JSX），
+  // 因此这里必须显式指到 Web Client 端自己的那份，否则 JSX / lib 都会按 Host 端的算。
   tsconfig: 'tsconfig.client.json',
   outDir: 'lib',
   format: 'cjs',
@@ -82,7 +128,7 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   fixedExtension: false,
-  // 宿主半边的 lib/*.js 也在同一个目录里，默认的 clean 会把它们一起删掉。
+  // Host 端的 lib/index.js 也在同一个目录里，默认的 clean 会把它一起删掉。
   clean: false,
   deps: {
     neverBundle: [...EXTERNALS],
@@ -95,4 +141,6 @@ export default defineConfig({
     intro: 'var module = { exports: {} }; var exports = module.exports;',
     footer: 'return module.exports; } });',
   },
-})
+}
+
+export default defineConfig([host, types, client])

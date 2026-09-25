@@ -15,7 +15,7 @@ main 上有一条 ruleset 要求 `pull_request` 且 `required_linear_history`（
 # 工作目录必须是干净的，否则 npm version 会拒绝（它会把改动混进发布提交里）。
 npm version 0.4.0 -m "chore(release): %s"
 # ↑ 一次做三件事：改 package.json 与 package-lock.json、提交、打注解标签 v0.4.0。
-#   它只跑 preversion/version/postversion 三个钩子，不会触发本包的 prepare（tsc），因此不会顺带构建。
+#   它只跑 preversion/version/postversion 三个钩子，不会触发本包的 prepare（tsdown），因此不会顺带构建。
 
 git push --follow-tags          # 提交与标签一起推上去，Publish 工作流接手
 
@@ -110,9 +110,10 @@ Release 条目还带一句「已发布到 npm」的说明，排在自动日志�
   本仓库**不再**用 Release Drafter 起草 Release——它的核心能力是「按 PR 标题推算版本号」，
   而版本号现在由发布 PR 决定，两者会互相打架（这正是之前版本错位的来源）。
 
-包里的两半边都是构建产物、都不入库：`lib/`（宿主半边）由 `tsc -p tsconfig.json` 编译，`lib/client.js`
-（浏览器半边，含 `.map`）由 `tsdown` 从 `src/client/` 打包，两者都由 `prepare`（`npm run build`）在安装与
-发布时现场跑——原因见 [internals.md](internals.md) 的「浏览器半边也要构建」。
+Host 端与 Web Client 端都是构建产物、都不入库：同一份 `tsdown.config.ts` 生成 Host 单文件 ESM
+`lib/index.js`、`lib/types/**/*.d.ts`，以及 Web Client 的 `lib/client.js`（含 `.map`）。它们都由
+`prepare`（`npm run build`）在安装与发布时现场跑——原因见 [internals.md](internals.md)
+的「Host 端与 Web Client 端统一由 tsdown 构建」。
 
 ## npm 侧的一次性登记
 

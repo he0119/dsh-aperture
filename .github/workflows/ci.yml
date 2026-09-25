@@ -31,15 +31,15 @@ jobs:
           cache: npm
       # 仓库自己没有编译型依赖；安装带来 typescript、各 @deepseek-ai/* 的类型声明，以及打包器
       # tsdown（它依赖的 rolldown 是预编译分发的平台绑定，不在本机编译）。装完 npm 会跑 prepare，
-      # 于是 lib/ 里两半边（宿主 .js + 浏览器 client.js）在这时就位。
+      # 于是 lib/ 里的宿主单文件 ESM、按模块声明与浏览器 client.js 在这时就位。
       - run: npm ci
-      # test/ 含 .ts 用例，靠 node 自带的类型擦除运行，因此这一步同时是「宿主半边类型没坏」的证明。
+      # test/ 含 .ts 用例，靠 node 自带的类型擦除运行；完整类型检查由下一步负责。
       # 客户端那一份测的是**产物** lib/client.js，所以 npm test 会先跑 pretest（build:client）重打一次，
       # 免得对着上一次构建的字节做断言。
       # 端到端那一份也在 glob 里（test/live.test.ts）：它连的网关由 test/fake-gateway.ts 自己起，
       # 不写死端口、不要网络，因此这里不需要 DSH_APERTURE_LIVE_URL，也不必单独一步。
       - run: npm test
-      # 两个 TS 项目：tsconfig.test.json（宿主 + test/）与 tsconfig.client.json（浏览器半边——
-      # 它要 DOM 与 JSX，不能并进宿主那份）。
+      # 两个 TS 项目：tsconfig.test.json（Host + test/）与 tsconfig.client.json（Web Client——
+      # 它要 DOM 与 JSX，不能并进 Host 那份）。
       - run: npm run typecheck
       - run: npm run build

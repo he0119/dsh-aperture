@@ -219,7 +219,7 @@ Writes touch only the three keys under `llm-pi-ai.providers` that this plugin ow
 
 ```sh
 npm install
-npm run build      # tsc -> lib/ (host half) + tsdown -> lib/client.js (browser half)
+npm run build      # tsdown -> lib/index.js + lib/types/index.d.ts + lib/client.js
 npm test           # unit tests + end-to-end (offline; devDependencies must be installed)
 ```
 

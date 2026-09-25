@@ -11,7 +11,7 @@
  * 用网关自己的字段加上 models.dev 定容量、写描述，最后写进 `llm-pi-ai` 的 provider 字典。
  * 它不转换任何协议格式——这正是重点。
  *
- * 界面在「插件」页里：浏览器半边（`client/aperture.js`）把自己注册成插件管理页的**包级**配置页
+ * 界面在「插件」页里：Web Client 端（`client/aperture.js`）把自己注册成插件管理页的**包级**配置页
  * （`plugins.bundle.config`，键是包名），用来改实例地址与同步开关（关掉即撤下已发布的路由）、
  * 立刻刷新，以及就地改单个模型的参数。除此之外没有别的界面——发现本身发生在插件加载、配置变更
  * 与刷新间隔到点上。
@@ -146,7 +146,7 @@ export function apply(ctx: Context, config: ConfigRef): void {
     void outside(() => runtime.refresh('配置变更'));
   });
 
-  // 本插件自己画设置表单（浏览器半边在包级配置页上拿 `configForms` 那份作用域手写这一页），
+  // 本插件自己画设置表单（Web Client 端在包级配置页上拿 `configForms` 那份作用域手写这一页），
   // 因此不让设置接缝再为它生成一个通用表单页。这只是页面归属的声明，不影响配置的读写能力。
   ctx.effect(
     () => ctx.settings.configure({ auto: false }, ctx.fiber),
@@ -166,7 +166,7 @@ export function apply(ctx: Context, config: ConfigRef): void {
   // 在事务里重建的，而那一代实例的发现同样要能写设置。
   void outside(() => runtime.refresh('插件加载'));
 
-  // 配置页需要宿主半边的 Remote 面（报告、按行写模型参数、立刻刷新），而 Typert 注册表只有 Web
+  // 配置页需要 Host 端的 Remote 接口（报告、按行写模型参数、立刻刷新），而 Typert 注册表只有 Web
   // 这类装配了网关的 profile 才有。其余 profile 里这一整块被跳过：发现照常运行，只是没有可点按
   // 的界面。
   ctx.inject(['typert'], (panelCtx) => {

@@ -4,11 +4,11 @@
   "description": "自动发现 Aperture 网关上的模型，并加进 DSH 的模型选择器。",
   "type": "module",
   "main": "lib/index.js",
-  "types": "lib/index.d.ts",
+  "types": "lib/types/index.d.ts",
   "icon": "./icon.svg",
   "exports": {
     ".": {
-      "types": "./lib/index.d.ts",
+      "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
     "./client": "./lib/client.js",
@@ -26,10 +26,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npm run build:host && npm run build:client",
-    "build:host": "tsc -p tsconfig.json",
-    "build:client": "tsdown",
-    "watch:client": "tsdown --watch",
+    "prebuild": "node -e \"require('node:fs').rmSync('lib', { recursive: true, force: true })\"",
+    "build": "tsdown --concurrency 1",
+    "build:host": "tsdown --filter dsh-aperture/host && tsdown --filter dsh-aperture/types",
+    "build:client": "tsdown --filter dsh-aperture/client",
+    "watch": "tsdown --watch --concurrency 1",
+    "watch:client": "tsdown --filter dsh-aperture/client --watch",
     "prepare": "npm run build",
     "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.client.json",
     "pretest": "npm run build:client",
