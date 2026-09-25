@@ -1,5 +1,5 @@
 /**
- * 客户端半边（`client/aperture.js`）的接线与页面行为。
+ * 客户端半边（源码 `src/client/`，被测的是打包产物 `lib/client.js`）的接线与页面行为。
  *
  * 这一份测试对着两件事：
  *
@@ -9,19 +9,24 @@
  * - **页面**：挂载之后读设置、改输入、按保存会走哪个端点、写成什么补丁、失败时界面说不说
  *   实话。页面逻辑几乎都在组件里，因此只能在能跑 effect 的渲染器里走一遍。
  *
- * 官方组件（`@deepseek-ai/dsh-client-ui-primitives`）在本仓库里没有装，也不该被测：这里只写
- * 一个**替身模块**，钉住被测代码依赖的那个接缝——prop 的名字与含义、按钮该在什么时候出现、
- * `SettingsFormModel` 的草稿与围栏语义。官方组件的观感与行为不在本仓库的测试范围内，这里只
- * 保证被测代码依赖的那个接缝语义。
+ * 官方组件（`@deepseek-ai/dsh-client-ui-primitives`）按真实版本装在 devDependencies 里，但那只是
+ * 为了让 `tsc -p tsconfig.client.json` 和打包器看见真实类型：这里**不跑**它们——vm 里没有模块表、
+ * 也没有真的 React。因此 `react` 与官方原语都喂替身模块，替身钉住的是被测代码依赖的那个接缝——
+ * prop 的名字与含义、按钮该在什么时候出现、`SettingsFormModel` 的草稿与围栏语义。官方组件的观感
+ * 与行为不在本仓库的测试范围内，这里只保证被测代码依赖的那套语义与官方一致。
  *
- * 渲染走 `test/support/mini-react`：它实现 `createElement` + `useState` + `useEffect`，按提交
- * 循环驱动到稳定，于是「挂载 → 拉设置 → 改输入 → 按保存」这条路径可以在纯 Node 里走完。
+ * 测的是**产物**而不是源码：客户端半边要先打包（`npm run build:client`，`npm test` 的 pretest 已经
+ * 做了），因为 `window.__ModuleLoader__.load` 那层包法是打包器套上去的——那正是要钉住的契约之一。
+ *
+ * 渲染走 `test/support/mini-react`：它实现 `createElement` 与 automatic runtime 的
+ * `jsx` / `jsxs` / `Fragment`，加上 `useState` + `useEffect`，按提交循环驱动到稳定，于是
+ * 「挂载 → 拉设置 → 改输入 → 按保存」这条路径可以在纯 Node 里走完。
  *
  * @module dsh-aperture/test/client
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
@@ -34,7 +39,8 @@ import { APERTURE_NAMESPACE } from '../src/config.ts';
 import type { PanelModel, PanelRefresh, PanelReport } from '../src/report.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CLIENT_FILE = join(HERE, '..', 'client', 'aperture.js');
+/** 打包产物；`exports["./client"]` 指向的就是它。 */
+const CLIENT_FILE = join(HERE, '..', 'lib', 'client.js');
 
 /** 浏览半边上报的模块 id。 */
 const PACKAGE = 'dsh-aperture';
@@ -48,8 +54,8 @@ const NS = 'settings.aperturePanel';
 const SETTINGS_NS = 'aperture';
 /** 设置里这一页编辑的字段。 */
 const FIELDS = ['baseUrl', 'sync'];
-/** 样式表元素认领自己用的名字，与 `client/aperture.js` 里的常量一致。 */
-const STYLE_OWNER = 'aperture/client.js';
+/** 样式表元素认领自己用的名字（官方那套 `data-plugin-css` 的写法：包名/文件名），与 `src/client/styles.ts` 里的常量一致。 */
+const STYLE_OWNER = 'dsh-aperture/styles.css';
 
 /** 上报给 `window.__ModuleLoader__` 的一份模块。 */
 interface LoadedEntry {
@@ -790,6 +796,10 @@ function fakeDocument(styles: FakeStyle[]): Record<string, unknown> {
 
 /** 把半边加载起来：给它一个 `window` 与一个假的 `document`，`react` 与官方原语给替身。 */
 function loadClient(): Harness {
+  assert.ok(
+    existsSync(CLIENT_FILE),
+    `${CLIENT_FILE} 不存在：先打包客户端半边（npm run build:client）。`,
+  );
   const reported: LoadedEntry[] = [];
   const styles: FakeStyle[] = [];
   const consoleErrors: unknown[] = [];
@@ -816,6 +826,8 @@ function loadClient(): Harness {
   assert.equal(entry.id, PACKAGE);
   const exports = entry.factory((id: string) => {
     if (id === 'react') return mini;
+    // JSX 走 automatic runtime：`jsx` / `jsxs` / `Fragment` 由替身一并提供。
+    if (id === 'react/jsx-runtime') return mini;
     if (id === PRIMITIVES) return primitives;
     throw new Error(`客户端半边不应在运行时 require "${id}"：平台基线之外没有模块可解析`);
   }) as ClientExports;
@@ -1608,9 +1620,14 @@ describe('模型行与刷新', () => {
     assert.equal(findById(tree, 'dap-deepseek-flash-contextWindow').props.value, '1048576');
     assert.equal(findById(tree, 'dap-deepseek-flash-maxTokens').props.value, '384K');
     assert.equal(findById(tree, 'dap-deepseek-flash-alias').props.value, 'deepseek/deepseek-v4-flash');
-    // 协议没写在用户层里，输入框留空、由占位符提示发现的协议。
-    assert.equal(findById(tree, 'dap-deepseek-flash-api').props.value, '');
-    assert.equal(findById(tree, 'dap-deepseek-flash-api').props.placeholder, 'openai-completions');
+    // 协议是有限枚举；没写在用户层里时，下拉框停在「跟随发现」。
+    const protocol = findById(tree, 'dap-deepseek-flash-api');
+    assert.equal(protocol.type, 'select');
+    assert.equal(protocol.props.value, '');
+    assert.deepEqual(
+      findAll(protocol, (node) => node.type === 'option').map((node) => node.props.value),
+      ['', 'openai-completions', 'anthropic-messages'],
+    );
     assert.deepEqual(
       findAll(rowOf(mini, 'deepseek-flash'), (node) => node.props.role === 'checkbox').map((node) => node.props['aria-checked']),
       ['true', 'true'],
@@ -1907,10 +1924,28 @@ describe('模型行与刷新', () => {
     assert.equal(banner.props['data-ok'], 'false');
     assert.match(text(banner), /写这一行的时候后台断了/u);
 
-    // 看着像 bug（结论里列了）：写失败之后 `run()` 的收尾照样执行，草稿被丢掉、面板收起，
-    // 用户刚打的那几个字就这么没了。这一行钉住的是当下的行为，改掉之后改成断言草稿还在。
+    assert.equal(toggleOf(rowOf(mini, 'deepseek-flash')).props['aria-expanded'], 'true', '失败之后编辑器仍然展开');
+    assert.equal(
+      findById(mini.tree(), 'dap-deepseek-flash-maxTokens').props.value,
+      '8192',
+      '失败之后保留草稿，用户可以直接重试',
+    );
+  });
+
+  it('清空覆盖失败：编辑器与尚未保存的草稿也原样保留', async () => {
+    const { mini, element } = driveClient({ fails: 'edit' });
+    mini.mount(element);
+    await mini.flush();
     await openRow(mini, 'deepseek-flash');
-    assert.equal(findById(mini.tree(), 'dap-deepseek-flash-maxTokens').props.value, '384K', '失败之后草稿没了');
+
+    change(findById(mini.tree(), 'dap-deepseek-flash-maxTokens'), '8192');
+    await mini.flush();
+    click(rowButton(mini, 'deepseek-flash', '清空覆盖'));
+    await mini.flush();
+
+    assert.equal(toggleOf(rowOf(mini, 'deepseek-flash')).props['aria-expanded'], 'true');
+    assert.equal(findById(mini.tree(), 'dap-deepseek-flash-maxTokens').props.value, '8192');
+    assert.equal(bannerOf(mini).props['data-ok'], 'false');
   });
 
   it('effect 的依赖里只有原始值，一轮交互只渲染少数几次', async () => {
@@ -1931,6 +1966,8 @@ describe('模型行与刷新', () => {
       withDeps.some((deps) => deps.length === 1 && deps[0] === 0),
       '重读报告应当以挂载时的 revision（0）为依赖',
     );
-    assert.ok(mini.renders <= 30, `挂载一轮渲染了 ${mini.renders} 次：effect 依赖里多半放了每轮都变的注入面`);
+    // 钉渲染轮数而不是组件执行次数：页面拆成行与编辑器之后，一次提交本来就会走好几个组件，替身里
+    // 那几个官方原语也各算一次，按执行次数算这条护栏会随「拆了几个组件」飘。
+    assert.ok(mini.commits <= 30, `挂载一轮提交了 ${mini.commits} 次：effect 依赖里多半放了每轮都变的注入面`);
   });
 });

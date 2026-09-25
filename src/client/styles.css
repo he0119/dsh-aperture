@@ -1,0 +1,328 @@
+[data-dsh-aperture] {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary, #e6e6e6);
+}
+[data-dsh-aperture] .dap-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+[data-dsh-aperture] .dap-groupHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+[data-dsh-aperture] .dap-titleWrap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+[data-dsh-aperture] .dap-groupTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+/* 数目跟在标题后面，用等宽数字，免得一轮刷新改写时宽度乱跳。 */
+[data-dsh-aperture] .dap-count {
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
+}
+/* 空状态是官方「模型」页那条虚线盒子：没有内容时给个形状，不留白。 */
+[data-dsh-aperture] .dap-empty {
+  margin: 0;
+  padding: 12px;
+  border: 0.5px dashed var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
+  border-radius: var(--dsw-radius-lg, 16px);
+  text-align: center;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+[data-dsh-aperture] .dap-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+[data-dsh-aperture] .dap-banner {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
+}
+[data-dsh-aperture] .dap-banner[data-ok='false'] {
+  color: var(--dsw-alias-state-error-primary, #e06c75);
+}
+[data-dsh-aperture] .dap-toggleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+[data-dsh-aperture] .dap-toggleText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+/* 模型清单沿用官方模型页的描边卡片；颜色只使用插件页确实提供的通用 token。 */
+[data-dsh-aperture] .dap-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+[data-dsh-aperture] .dap-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 0.5px solid var(--dsw-alias-border-l4, rgba(128, 128, 128, 0.36));
+  border-radius: var(--dsw-radius-xl, 20px);
+  background: var(--dsw-alias-bg-layer-2, transparent);
+}
+/* 行首是一条盖满整行的按钮：点哪儿都能展开这一行。 */
+[data-dsh-aperture] .dap-cardHead {
+  display: flex;
+  /* 顶着第一行走，不居中：这一行有两行身份（名字 + 事实），居中的话状态点会落在两行中间。 */
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+[data-dsh-aperture] .dap-cardHead:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.06));
+}
+[data-dsh-aperture] .dap-cardHead[aria-expanded='true'] {
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
+  border-radius: var(--dsw-radius-xl, 20px) var(--dsw-radius-xl, 20px) 0 0;
+}
+[data-dsh-aperture] .dap-cardHead:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary, #7aaaff);
+  outline-offset: 1px;
+}
+/* 状态点：写入与否这一列永远在同一处，扫一眼就能比。22px 就是名字那一行的高度，点因此落在名字中间。 */
+[data-dsh-aperture] .dap-status {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 22px;
+}
+[data-dsh-aperture] .dap-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+[data-dsh-aperture] .dap-identityTop {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+[data-dsh-aperture] .dap-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 事实一项一句（「路由 x」「上下文 1M」），之间用小圆点分开：比一串空格好认，也不抢字号。
+   名字必须是 .dap-factRow 而不是 .dap-facts：报告那张 dl 已经占了 .dap-facts，而且它的规则在后面，
+   同名的话会把这里压成竖排（一条一行）。 */
+[data-dsh-aperture] .dap-factRow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+[data-dsh-aperture] .dap-factItem + .dap-factItem::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+[data-dsh-aperture] .dap-chevron {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 22px;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+  transition: transform 160ms ease;
+}
+[data-dsh-aperture] .dap-chevron[data-open='true'] {
+  transform: rotate(90deg);
+}
+/* 展开内容留在模型卡片里；四边使用相同的 12px 间距，不再另套一层描边。 */
+[data-dsh-aperture] .dap-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px;
+}
+[data-dsh-aperture] .dap-editorHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+[data-dsh-aperture] .dap-editorId {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-dsh-aperture] .dap-editorDirty {
+  margin-left: auto;
+}
+[data-dsh-aperture] .dap-warnNote {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-warn-primary, #dd8629);
+}
+[data-dsh-aperture] .dap-editGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+[data-dsh-aperture] .dap-editGroupTitle {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
+}
+/* 字段按官方设置表单单列排列，并恢复相邻字段的发丝分隔线。 */
+[data-dsh-aperture] .dap-fields {
+  display: flex;
+  flex-direction: column;
+}
+[data-dsh-aperture] .dap-fieldCell {
+  min-width: 0;
+}
+[data-dsh-aperture] .dap-fieldCell + .dap-fieldCell {
+  border-top: 0.5px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
+}
+[data-dsh-aperture] .dap-selectField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0;
+}
+[data-dsh-aperture] .dap-selectHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+[data-dsh-aperture] .dap-selectLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+[data-dsh-aperture] .dap-select {
+  box-sizing: border-box;
+  height: 34px;
+  padding: 0 12px;
+  border: 0.5px solid var(--dsw-alias-border-l4, rgba(128, 128, 128, 0.36));
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3, transparent);
+  color: var(--dsw-alias-label-primary, #e6e6e6);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+[data-dsh-aperture] .dap-select:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary, #7aaaff);
+}
+[data-dsh-aperture] .dap-select:disabled {
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+  cursor: default;
+}
+[data-dsh-aperture] .dap-grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px 16px;
+  align-items: start;
+}
+[data-dsh-aperture] .dap-endpoints {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+[data-dsh-aperture] .dap-endpointList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+[data-dsh-aperture] .dap-endpoint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
+  overflow-wrap: anywhere;
+}
+[data-dsh-aperture] .dap-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+[data-dsh-aperture] .dap-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+[data-dsh-aperture] .dap-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+/* 左边那句「还有几项没写下去」，按钮一律靠右，主按钮在最右。 */
+[data-dsh-aperture] .dap-actionsNote {
+  margin-right: auto;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, #8b8b8b);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-aperture] .dap-chevron:where(*) {
+    transition: none;
+  }
+}

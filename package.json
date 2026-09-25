@@ -11,14 +11,13 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./client": "./client/aperture.js",
+    "./client": "./lib/client.js",
     "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
   "files": [
     "lib",
-    "client",
     "locale/*.json",
     "icon.svg",
     "cordis.patch.yml",
@@ -27,9 +26,13 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prepare": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.test.json && node --check client/aperture.js",
+    "build": "npm run build:host && npm run build:client",
+    "build:host": "tsc -p tsconfig.json",
+    "build:client": "tsdown",
+    "watch:client": "tsdown --watch",
+    "prepare": "npm run build",
+    "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.client.json",
+    "pretest": "npm run build:client",
     "test": "node --test --test-isolation=none \"test/**/*.test.ts\"",
     "test:live": "node --test --test-isolation=none test/live.test.ts",
     "inspect": "node scripts/inspect-live.mjs"
@@ -50,7 +53,7 @@
     "url": "git+https://github.com/he0119/dsh-aperture.git"
   },
   "engines": {
-    "node": ">=24.0.0"
+    "node": "^24.11.0 || >=26.0.0"
   },
   "dsh": {
     "bundle": {
@@ -59,10 +62,12 @@
     "client": {
       "platform": "web",
       "inject": [
+        "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
         "@deepseek-ai/dsh-client-ui-primitives",
-        "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-plugin-manager"
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings"
       ]
     }
   },
@@ -76,7 +81,16 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/cordis-plugin-loader": "1.0.5",
+    "@deepseek-ai/dsh-api-gateway": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-api-remotes": "0.1.7-rc.1",
     "@deepseek-ai/dsh-app-boot": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-locale": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-store": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.1",
     "@deepseek-ai/dsh-config-editor": "0.1.7-rc.1",
     "@deepseek-ai/dsh-llm": "0.1.7-rc.1",
     "@deepseek-ai/dsh-llm-pi-ai": "0.1.7-rc.1",
@@ -85,6 +99,8 @@
     "@deepseek-ai/dsh-typert-registry": "0.1.7-rc.1",
     "@deepseek-ai/schemastery": "3.18.4",
     "@types/node": "^22.20.0",
+    "@types/react": "^18.3.12",
+    "tsdown": "^0.23.0",
     "typescript": "^5.9.0"
   }
 }

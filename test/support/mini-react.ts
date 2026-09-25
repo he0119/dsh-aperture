@@ -3,14 +3,15 @@
  *
  * 配置页的逻辑几乎都在组件里：草稿与生效值的差异、按钮的可用性、动作按下之后把结果贴出来。
  * 这些没法靠「模块加载成功」证明，也没法在无浏览器、无 `react-dom` 的环境里用真 React 渲染
- * ——SSR 不跑 effect，因此只能看到加载态那一帧。这个替身实现 `createElement` + `useState`
- * + `useEffect`，按提交循环驱动到稳定，于是「挂载 → 拉配置 → 改输入 → 按保存」这条路径可以
- * 在纯 Node 里走完。
+ * ——SSR 不跑 effect，因此只能看到加载态那一帧。这个替身实现 `createElement` + `jsx` / `jsxs` /
+ * `Fragment`（automatic runtime）+ `useState` + `useEffect`，按提交循环驱动到稳定，于是
+ * 「挂载 → 拉配置 → 改输入 → 按保存」这条路径可以在纯 Node 里走完。
  *
  * 它刻意带两件测试用能力：
  *
- * - **渲染次数**：注入面的身份每轮渲染都会变，把 effect 的依赖写成注入面就会每次渲染重跑
- *   effect、再触发渲染，无限循环。`renders` 让用例可以钉住「一轮交互只渲染少数几次」。
+ * - **提交次数**：注入面的身份每轮渲染都会变，把 effect 的依赖写成注入面就会每次渲染重跑
+ *   effect、再触发渲染，无限循环。`commits` 让用例可以钉住「一轮交互只渲染少数几次」——按轮
+ *   数算，而不是按组件被执行了几次：页面拆成行与编辑器之后，一次提交本来就会走好几个组件。
  * - **提交上限**：真出现自激循环时，抛错而不是把测试挂死。
  *
  * @module dsh-aperture/test/support/mini-react
@@ -51,10 +52,19 @@ interface Instance {
 /** 一次提交最多重渲染几轮；超出即判定为自激循环。 */
 const MAX_COMMITS = 40;
 
+/** `jsx-runtime` 的 Fragment；替身只需要一个稳定的身份。 */
+const FRAGMENT = Symbol.for('dsh-aperture.mini-react.fragment');
+
 /** 渲染器：`createElement` 与两个 hook，加上驱动提交循环的 `flush`。 */
 export class MiniReact {
-  /** 组件函数被执行的次数。 */
-  renders = 0;
+  /**
+   * 提交（渲染一整棵树）的次数。
+   *
+   * 一轮交互重渲染几次看的是这个数，而不是组件函数被执行了几次：页面拆成行与编辑器之后，一次
+   * 提交会走好几个组件，按执行次数算的话，「拆了几个组件」会混进「重渲染了几轮」这个信号里；
+   * 替身里那几个官方原语同样各算一次。
+   */
+  commits = 0;
 
   private readonly instances = new Map<unknown, Instance>();
   private readonly effects: Instance[] = [];
@@ -69,6 +79,26 @@ export class MiniReact {
     type,
     props: { ...(props ?? {}), children },
   });
+
+  /**
+   * `react/jsx-runtime` 的 `jsx`。
+   *
+   * automatic runtime 把 `key` 单独当第三个参数交出来、把子节点塞进 `props.children`，而
+   * `createElement` 收的是「props + 实参」。这里按同一套语义接上去，于是源码无论是 JSX 还是
+   * `createElement`，替身这边都长成同一个元素形状。
+   */
+  readonly jsx = (type: unknown, props?: Record<string, unknown> | null, key?: unknown): Element => {
+    const { children, ...rest } = props ?? {};
+    const withKey = key === undefined ? rest : { ...rest, key };
+    if (children === undefined) return this.createElement(type, withKey);
+    return this.createElement(type, withKey, ...(Array.isArray(children) ? children : [children]));
+  };
+
+  /** `jsxs` 只是「子节点已知是数组」的提示，替身与 `jsx` 同处理。 */
+  readonly jsxs = this.jsx;
+
+  /** `react/jsx-runtime` 的 `Fragment`；`evaluate` 把它渲染成它的子节点。 */
+  readonly Fragment = FRAGMENT;
 
   /** `React.useState`。 */
   readonly useState = <T>(initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] => {
@@ -154,6 +184,7 @@ export class MiniReact {
 
   /** 一次提交：重渲染、跑 effect。 */
   private commit(): void {
+    this.commits += 1;
     this.dirty = false;
     this.effects.length = 0;
     this.root = this.evaluate(this.element);
@@ -177,11 +208,12 @@ export class MiniReact {
     if (typeof node !== 'object') return node;
     const element = node as Element;
     const children = this.evaluate(element.props.children);
+    // Fragment 不产生节点，只是把子节点原地展开。
+    if (element.type === FRAGMENT) return children;
     if (typeof element.type === 'function') {
       const instance = this.instanceFor(element.type);
       this.current = instance;
       instance.cursor = 0;
-      this.renders += 1;
       let rendered: unknown;
       try {
         rendered = (element.type as (props: Record<string, unknown>) => unknown)(element.props);
@@ -197,6 +229,13 @@ export class MiniReact {
     return node;
   }
 
+  /**
+   * 一个组件类型的实例（hook 槽位挂在它上面）。
+   *
+   * 按**类型**存，不看 `key`：同一个组件的多份实例共用同一组 hook 槽位。被测页面因此把草稿与
+   * 展开状态放在页面上（`AperturePanel`），行与编辑器只按 props 画——它们没有 hook，共用实例也
+   * 就没有区别；真给行加一个 `useState`，这个替身里两行会串到一份状态上。
+   */
   private instanceFor(type: unknown): Instance {
     let instance = this.instances.get(type);
     if (instance === undefined) {
