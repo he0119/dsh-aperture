@@ -208,7 +208,7 @@ GET {baseUrl}/v1/models
 
 ```sh
 npm install
-npm run build      # tsc -> lib/（宿主半边）+ tsdown -> lib/client.js（浏览器半边）
+npm run build      # tsdown -> lib/index.js + lib/types/index.d.ts + lib/client.js
 npm test           # 单元测试 + 端到端（离线运行；需要已安装的 devDependencies）
 ```
 

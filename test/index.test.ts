@@ -2,7 +2,7 @@
  * 插件入口的接线。
  *
  * `apply` 里没有算法，只有「跟宿主约定了什么」：过期重算的刷新间隔、配置变更那一件事、设置
- * 页的归属声明、以及只有装配了 Typert 网关的 profile 才有的配置页半边。这些约定全都只以副作用
+ * 页的归属声明、以及只有装配了 Typert 网关的 profile 才有的 Web Client 配置页。这些约定全都只以副作用
  * 的形式存在（effect、事件、注入、挂服务），没有它们，本插件在真实宿主里要么不刷新、要么在
  * 设置页上多出一个没人要的通用表单、要么在 headless profile 里连发现都不跑。
  *
@@ -125,7 +125,7 @@ function harness(options: { readonly typert?: boolean } = {}): Harness {
     };
 
   // 注入兑现时交给回调用的是一个派生子上下文：它继承父上下文的账本，另外多出 `typert` 与
-  // `plugin` 两项——插件半边正是靠这两项把配置页挂上去的。
+  // `plugin` 两项——Web Client 模块正是靠这两项把配置页挂上去的。
   const panelCtx = {
     effect: (execute: () => unknown, label = 'anonymous'): void => {
       panelEffects.push({ label, dispose: execute() });
@@ -387,12 +387,12 @@ describe('apply 登记的 effect', () => {
     apply(record.ctx, liveConfig().ref);
 
     assert.equal(record.presentations.length, 1, '只声明一次页面归属');
-    assert.deepEqual(record.presentations[0]?.presentation, { auto: false }, '关掉通用表单：配置页由浏览器半边画');
+    assert.deepEqual(record.presentations[0]?.presentation, { auto: false }, '关掉通用表单：配置页由 Web Client 端渲染');
     assert.equal(record.presentations[0]?.owner, record.fiber, '归属传的是 ctx.fiber，不是随便一根纤维');
   });
 });
 
-describe('apply 的面板半边', () => {
+describe('apply 的面板模块', () => {
   it('typert 兑现时：登记贡献、挂上宿主服务，ops 接在真的运行时与活配置上', async () => {
     const net = stubFetch();
     try {

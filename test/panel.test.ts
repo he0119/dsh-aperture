@@ -7,7 +7,7 @@
  * 都不抛异常——失败是要显示的结果，不是要分辨的 rejection。
  *
  * 地址与同步开关不在这份契约里：那两项由配置页交给页主递来的设置表单（`form.mutate`），
- * 版本校验与冲突恢复都是设置接缝自己的事（浏览器半边的用例在 `test/client.test.ts`）。
+ * 版本校验与冲突恢复都是设置接缝自己的事（Web Client 端的用例在 `test/client.test.ts`）。
  *
  * @module dsh-aperture/test/panel
  */
@@ -132,7 +132,7 @@ function fakeRuntime(first?: RefreshOutcome, next?: RefreshOutcome) {
  *
  * 两件事照真的来：`mutate` 把路径操作应用到 `aperture` 段上，并且**每次提交都换一份新的解析
  * 结果**（身份变了才是新版本，运行时靠它判断一轮刷新读的是不是此刻的配置）；通知也照真的来路
- * ——宿主半边监听 Loader 的 `loader/volatile-update` 来唤起刷新，这里把那个「该刷新了」交给
+ * ——Host 端监听 Loader 的 `loader/volatile-update` 来唤起刷新，这里把那个「该刷新了」交给
  * 调用方去接。
  *
  * @param options - `aperture` 段的起点。
@@ -588,7 +588,7 @@ describe('写完等一轮刷新落地', () => {
         // 清单只报可用性：这一条看的不是 models.dev，而是配置里的覆盖。
         catalog: { load: async () => ({ entries: 0 }) } as unknown as ModelCatalog,
       });
-      // 照 `index.ts` 的接法：配置一变就唤起一轮刷新（宿主那边是 Loader 的
+      // 照 `index.ts` 的接法：配置一变就唤起一轮刷新（Host 端是 Loader 的
       // `loader/volatile-update`）。
       store.onChange(() => void runtime.refresh('配置变更'));
       const ops = createPanelOps({ runtime, config, settings: store.service });

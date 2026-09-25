@@ -116,7 +116,7 @@ volatile 只改**配置怎么被持有**，不改校验：非法值仍然在 `Co
 
 插件自己的配置（`aperture` 段）则写在 profile 的补丁文档里，也就是「插件」页里这一行点「配置」之后编辑的那个文件。本包自带的 `cordis.patch.yml`（组合层）**故意不写 `config`**：缺省值只有 schema 一处；而补丁层是**整行替换**，`config-editor` 写下去的是整份 `next`、不会把与继承层相同的键逐个剔掉——组合层只要把缺省值摆出来，用户第一次在界面上保存就会把它们全量抄进自己的文件，「已覆盖」的判据（键在不在用户层里）于是凭空为真，将来改动某个缺省值也会被那份文件钉死。
 
-## 界面：一条契约、两半实现
+## 界面：一条契约、两端实现
 
 配置页挂在**插件页**里本插件那个**包**上：包级配置槽位 `plugins.bundle.config`，键就是包名 `dsh-aperture`，插件页把该槽位上注册的组件放进「这个包的配置」那一节。页头（面包屑、图标、名字、`aperture` 与 `dsh-aperture` 两行代码、那句描述）由插件页自己画，只有正文是我们的；名字、图标与描述也不是我画的，而是插件页从包元数据里读的——`locale/*.json` 的 `meta.title` / `meta.description`（文件名就是语言 id，`readPluginMeta` 读整个目录）与 `package.json` 的 `icon`（清单目录内的 SVG，≤256 KiB，读成 `data:` URL）。所以注册只给三件事：
 
@@ -134,15 +134,15 @@ scope.slots.inject('plugins.bundle.config', () => scope.slots.register(
 
 **行级槽位（`plugins.row.config`）不用。** 插件页里一行有「配置」按钮，是因为那一行有它自己的设置段；本插件的设置段与那一行是同一份，两个槽位只会让同一份界面出现在两个入口。包级页面是唯一入口（官方唯一一个包级配置页是 `dsh-experimental-client-ui-voice-input`，写法相同），也只有 `'page'` 一种用法：插件页只在这一处渲染它，没有行级页那种 `'summary'` 简写，也不像行级页与条目级页那样收到页主递来的 `form`。
 
-浏览器半边只注入 `slots` / `locale` / `remote` / `configForms` 四个服务。`baseUrl` 与 `sync` 这两项**设置**不自己往返：页主不递 `form`，因此按设置命名空间自己取——`ctx.configForms.get('aperture')`，服务按命名空间缓存控制器，拿到的与插件页自己那份是同一个。它给出的快照就是官方设置表单要的那个作用域（`status` / `value` / `base` / `user` / `revision` / `writable`），于是草稿、脏标记、`revision` 围栏写入、冲突拒绝、只读与「命名空间没在服务」的说明全交给设置接缝（`SettingsFormModel`），本插件不复制一套；写完仍然等一轮刷新落地（见下）。「已覆盖」看的是字段在不在用户层里（`overrideKeys`，与官方同一条判据），而不是值等不等于组合层，这两件事不是一回事。`configForms` 缺席时（注入表保证不会，但这一页不该因此整页消失）表单接到一个 `unavailable` 替身上，官方表单自己画那句「读不到」，报告照旧显示：报告才是这一页每次都有的东西。
+Web Client 端只注入 `slots` / `locale` / `remote` / `configForms` 四个服务。`baseUrl` 与 `sync` 这两项**设置**不自己往返：页主不递 `form`，因此按设置命名空间自己取——`ctx.configForms.get('aperture')`，服务按命名空间缓存控制器，拿到的与插件页自己那份是同一个。它给出的快照就是官方设置表单要的那个作用域（`status` / `value` / `base` / `user` / `revision` / `writable`），于是草稿、脏标记、`revision` 围栏写入、冲突拒绝、只读与「命名空间没在服务」的说明全交给设置接缝（`SettingsFormModel`），本插件不复制一套；写完仍然等一轮刷新落地（见下）。「已覆盖」看的是字段在不在用户层里（`overrideKeys`，与官方同一条判据），而不是值等不等于组合层，这两件事不是一回事。`configForms` 缺席时（注入表保证不会，但这一页不该因此整页消失）表单接到一个 `unavailable` 替身上，官方表单自己画那句「读不到」，报告照旧显示：报告才是这一页每次都有的东西。
 
 Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://github.com/xiaoyuyu6420/dsh-backup)）。除此之外：
 
 - **发现结果与逐模型编辑走 Remote，设置不走。** 报告、立刻刷新与逐模型编辑挂在 `aperturePanel` 命名空间上（`src/remote.ts` 的宿主服务 + `src/panel.ts` 的三个端点）。发现结果不是配置：把它塞进设置文档会让「用户写了什么」与「插件发现了什么」混成同一份账，而后者每轮刷新都会被重写。逐模型编辑要宿主来做，是因为它得先读用户层、按字段合并、把非法值挡在写入之前——这些判断属于插件而不是界面。地址与同步开关没有这层需要，它们就是设置文档里的两个键，因此读 `configForms.get('aperture')` 那份作用域，不借道 Remote。宿主侧仍然用 `ctx.settings.configure({ auto: false }, ctx.fiber)` 声明「这一行自己出页面」——这一句必须在 `ctx.effect` 里注册（`configure` 重复注册会抛），于是插件页不再给它多画一份通用表单。
-- **报告是数据，不是句子。** `src/report.ts` 只组装结构（哪个模型属于哪条路由、每条事实来自哪里、用户写了哪些覆盖），措辞与排版都在浏览器半边按语言组织——配置页是双语的，把中文句子拼在宿主半边等于让英文界面显示中文。
+- **报告是数据，不是句子。** `src/report.ts` 只组装结构（哪个模型属于哪条路由、每条事实来自哪里、用户写了哪些覆盖），措辞与排版都在 Web Client 端按语言组织——配置页是双语的，把中文句子拼在 Host 端等于让英文界面显示中文。
 - **逐模型编辑按字段合并，一次只写一个模型。** `edit` 收 `(id, patch)`：界面上一行一个「保存」，写下去的就只有那一行，版本校验也只管这一次写入。补丁是**稀疏**的：界面只发它改动过的字段，没提到的原样留在设置文档里（`reasoningEfforts` 界面根本不编辑，因此不会被顺手抹掉）；空串与 `null` 表示「这一项不覆盖」，`patch` 传 `null`（而不是缺省）才是「整条撤销」——缺省是调用方写错了，宿主会拒绝，因为「什么都没改」与「撤掉一切」差得太远。容量、模态、推理与协议落在 `models` 的对应条目上，清单别名落在 `modelAliases[id]`；写入时按位置替换数组元素，改一个字段不会让这条覆盖挪到数组末尾。撤销别名之前先看**用户层**有没有这个键：界面显示的是生效别名，它可能来自组合层或清单，删一个不存在的键要么白写、要么被设置服务当成坏路径拒绝。非法值在写入前就被挡下来——写进设置文档的坏值会让下一轮刷新的 `resolveConfig` 直接抛异常，那时用户已经在别处改坏了配置。
 - **空值不算声明。** 运行时 schema 给 `models[].input` 的缺省值是**空数组**，`reasoningEfforts` 也可能被写成 `{}`；两者都不是「这个模型没有任何模态 / 没有任何推理档位」的意思（想声明纯文本的是 `images: ignore`），却都会一路传到发布出去的 provider 里。`input: []` 抹掉发现到的模态，还谎称来源是配置；`{}` 更狠：`llm-pi-ai` 适配器以「reasoningEfforts 是空的」为由拒绝**整段**写入，于是三条路由一条都发布不出去、每张路由卡都亮红点，而原因只写在「最近一次刷新」的设置那一行里。两处都按「没写」处理（`registry.ts` 的 `declaredInput`、`profile.ts` 的 `declared`），并且用例**先过一遍 schema** 再断言——单元测试里手写的选项对象没有这个缺省值，正是这一点让 `input: []` 躲了很久。第三处是唯一会被用户看见的：报告曾经拿**解析后的配置**算「用户写过哪些覆盖」，于是 `input: []` 让一行什么都没写过的模型挂上「已覆盖」，而按「恢复默认」发下去的是 `input: null`——用户层里根本没有这个键，写下去是空操作，那颗标签于是永远撤不掉。现在报告只收用户层原样的条目（`buildReport` 的 `declared`）并收成 `overrideKeys`：**键在不在用户层里**，与官方同一条判据；界面不编辑的键（`reasoningEfforts`）也在名单里，因此「恢复默认」知道自己该整条撤。写回时同理（`panel.ts` 的 `prune`）：生效值里的空值不会被搬进用户层，否则一次「保存」就等于替用户写下他从未写过的覆盖。
-- **写完等一轮刷新落地才回答。** 配置页拿到回答就会重读报告，而报告里的路由与模型事实来自**最近一次刷新**（只有「已覆盖」与别名来自实时配置）。因此两条写路径在写入之后都 `await runtime.refresh('配置变更')`——Remote 的 `edit` 在宿主侧做，地址与同步在浏览器半边等 `form.save()` 回来之后做；不等它，界面重读到的还是旧配置算出来的那一份，也就是「保存了却没变」。这里不必担心多跑一轮：设置变更本身就会唤起同一轮刷新（Loader 的 `loader/volatile-update`），而 `refresh` 的承诺是「返回的那一轮读的是**此刻**的配置」——正在跑的那一轮读的就是此刻这份配置时调用方并进它，读的是更早的配置时才排到它后面（排队者共享排上的那一轮）。配置的身份可以直接比：设置服务每次提交都换一份深冻结的解析结果，没变就还是同一个对象（`memoizedConfig` 按源缓存，那个对象身份**就是**配置版本）。
+- **写完等一轮刷新落地才回答。** 配置页拿到回答就会重读报告，而报告里的路由与模型事实来自**最近一次刷新**（只有「已覆盖」与别名来自实时配置）。因此两条写路径在写入之后都 `await runtime.refresh('配置变更')`——Remote 的 `edit` 在 Host 端做，地址与同步在 Web Client 端等 `form.save()` 回来之后做；不等它，界面重读到的还是旧配置算出来的那一份，也就是「保存了却没变」。这里不必担心多跑一轮：设置变更本身就会唤起同一轮刷新（Loader 的 `loader/volatile-update`），而 `refresh` 的承诺是「返回的那一轮读的是**此刻**的配置」——正在跑的那一轮读的就是此刻这份配置时调用方并进它，读的是更早的配置时才排到它后面（排队者共享排上的那一轮）。配置的身份可以直接比：设置服务每次提交都换一份深冻结的解析结果，没变就还是同一个对象（`memoizedConfig` 按源缓存，那个对象身份**就是**配置版本）。
 - **只做按行编辑，没有批量。** 端点就是 `(id, patch)`，一次一个模型、一次版本校验。「恢复默认」也是这一行的补丁，只是全是 `null`。把多个模型打包成一个批次在这里没有对应场景——界面上不存在「一次改好几个再一起提交」这种动作——却会多出「一半写下去怎么办」这种必须解释的失败态。
 
 ### 界面用官方原语，颜色只引用「这一页真的定义过」的 token
@@ -163,7 +163,7 @@ Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://
 
 **来源跟着字段走，长解释收进「i」。** `provenance` 是「这一项事实从哪儿来」的诊断信息。字段下面只留一句来源（`SettingsValueField` 的 `hint`：`来源：Aperture`）；「留空即用发现到的名字」这类怎么做的话收进官方的 `help`，也就是标签旁边那颗「i」——点开才占位置（`fieldHelp` 给 `aria-label`：`显示名称的说明`）。勾选框与分段开关那两行官方组件没有 `hint`，来源就挨着控件写一句。理由：一个字段下面挂两句（怎么做 + 从哪来），五个字段就是十行灰字，正文被诊断信息盖住。协议没有单独一项来源：写过就是配置，没写过就是从通告的端点推导出来的。
 
-**「发现报告」那一块删掉了，但它那两句诊断留下了。** 原先它自己占一段：路由一列（`provider`、协议、模型数、「已写入 / 未写入」）加一张 `dl` 事实表（触发、时间、耗时、结果、清单、端点、写入）。删的理由是它讲的账在别处都讲过了：写没写进去，每一行开头那颗状态点就在说；模型属于哪条路由，「路由 x」那项事实就在说；刷新整个失败，`run()` 已经把宿主那句话贴到提示语上了。真正只有它说过的剩下两句——**清单读不到**（`catalog.available === false`，这时模型列表会是空的，不说原因等于没说）与**这一轮该写的没写进去**（`sync.applied === false`）——它们现在挂在模型那一段的提示语下面，正常的一轮（同步关着、或者写成功了）一个字都不说（`roundProblem`）。没有实例地址时的空状态也换成了那句「还没有实例地址：填上并保存之后才会去发现模型」：地址空着发现根本不会跑，「还没发现到模型」在那儿等于没说。宿主半边的报告一个字段没动——它是数据，界面只是不再整块摊开它。
+**「发现报告」那一块删掉了，但它那两句诊断留下了。** 原先它自己占一段：路由一列（`provider`、协议、模型数、「已写入 / 未写入」）加一张 `dl` 事实表（触发、时间、耗时、结果、清单、端点、写入）。删的理由是它讲的账在别处都讲过了：写没写进去，每一行开头那颗状态点就在说；模型属于哪条路由，「路由 x」那项事实就在说；刷新整个失败，`run()` 已经把 Host 端那句话贴到提示语上了。真正只有它说过的剩下两句——**清单读不到**（`catalog.available === false`，这时模型列表会是空的，不说原因等于没说）与**这一轮该写的没写进去**（`sync.applied === false`）——它们现在挂在模型那一段的提示语下面，正常的一轮（同步关着、或者写成功了）一个字都不说（`roundProblem`）。没有实例地址时的空状态也换成了那句「还没有实例地址：填上并保存之后才会去发现模型」：地址空着发现根本不会跑，「还没发现到模型」在那儿等于没说。Host 端的报告一个字段没动——它是数据，界面只是不再整块摊开它。
 
 **模型行上的「清空覆盖」写的是这一行的补丁，不是整条删除。** 报告里的 `overrideKeys` 写着这一行**确实**在用户层里写过哪几项，按钮就把认得的那几项逐个 `null` 发出去（别名那一项用空串），而不是丢掉 `aperture.models` 里整条条目——后者会把界面根本不编辑的键（例如 `reasoningEfforts`）一起扔掉。反过来，只要有**一个**界面不认识的键在名单里，就只能整条撤：只清认得的那几项，这一行在报告里仍然是「已覆盖」，那颗标签会按不下去——用户报上来的正是这个现象。别名单独落在 `modelAliases` 里，因此撤的时候写空串而不是 `null`。
 
@@ -173,13 +173,13 @@ Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://
 
 ### 端点描述符是手写的，但线格式只有一层直通
 
-生成描述符的 Typert 生成器并不随 DSH 发布，因此两半边都手写。宿主用 `src-json` 编解码器；浏览器半边只需要一个**直通**的 strict 编解码器——不是因为图省事，而是因为浏览器侧从不解析这些值：注册表（`@deepseek-ai/dsh-typert-registry`）只检查 `mode` 是 `strict`、`typeSymbol` 非空、`create` 是个函数；网关客户端只读参数上的 `mode` 与结果上可选的 `decode`/`encode`，**没有一处调用 `create()`**，逐字段手写一套 wire 校验因此永远不会执行。曾经那三百行文法还顺手埋了个雷：注册表要的是 `create` 工厂，`schema` 字段不被承认，于是 `$mount` 抛 `strict codec has no create() factory`、整份贡献被拒，界面安静地什么都不出现。现在只剩一个 `{ parse: (value) => value }`，`test/client.test.ts` 把键集（`create` / `mode` / `typeSymbol`）与工厂一起钉住。
+生成描述符的 Typert 生成器并不随 DSH 发布，因此两端都手写。Host 端用 `src-json` 编解码器；Web Client 端只需要一个**直通**的 strict 编解码器——不是因为图省事，而是因为 Web Client 从不解析这些值：注册表（`@deepseek-ai/dsh-typert-registry`）只检查 `mode` 是 `strict`、`typeSymbol` 非空、`create` 是个函数；网关客户端只读参数上的 `mode` 与结果上可选的 `decode`/`encode`，**没有一处调用 `create()`**，逐字段手写一套 wire 校验因此永远不会执行。曾经那三百行文法还顺手埋了个雷：注册表要的是 `create` 工厂，`schema` 字段不被承认，于是 `$mount` 抛 `strict codec has no create() factory`、整份贡献被拒，界面安静地什么都不出现。现在只剩一个 `{ parse: (value) => value }`，`test/client.test.ts` 把键集（`create` / `mode` / `typeSymbol`）与工厂一起钉住。
 
-参数名与顺序就是宿主方法的形参表：调用点按位置传参，网关按 `wire` 映射，并且自动省掉 `undefined` 实参（`if (value !== void 0) args[parameter.wire] = value`），所以「没提到的参数」天然就是「不碰」。`test/client.test.ts` 会加载真实的浏览器半边，断言它的端点集合、id 与参数名跟宿主那半边完全一致。
+参数名与顺序就是 Host 方法的形参表：调用点按位置传参，网关按 `wire` 映射，并且自动省掉 `undefined` 实参（`if (value !== void 0) args[parameter.wire] = value`），所以「没提到的参数」天然就是「不碰」。`test/client.test.ts` 会加载真实的 Web Client 端，断言它的端点集合、id 与参数名跟 Host 端完全一致。
 
 端点名另有一条不显眼的约束：api-gateway 在客户端给每个命名空间建一个 `RemoteNamespaceService`，端点会成为它的属性，因此与它自己的成员（`ctx` / `empty` / `invokeRemote` / `methods` / `name` / `namespace` / `has` / `install` / `installDirect` / `installScoped` / `assertMethodAvailable` / `remove`）重名时，`validateContribution` 会拒绝**整份**贡献——浏览器里只留一行 `console.error`，界面安静地什么都不出现；新端点起名时先对一遍这份名单，`test/client.test.ts` 把它抄成了护栏。
 
-### 浏览器半边也要构建
+### Host 端与 Web Client 端统一由 tsdown 构建
 
 源码在 `src/client/`：`index.ts` 是唯一的装配点（`apply` / `mountRemote` / 注册），页面在
 `AperturePanel.tsx`（一行模型与展开后的编辑器在 `ModelRow.tsx` / `ModelEditor.tsx`，草稿与补丁的
@@ -189,7 +189,7 @@ Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://
 `window.__ModuleLoader__.load({ id, factory })` 把自己上报，交给工厂一个同步的 `require`（解析平台模块表里的
 模块）。它不要求这份脚本经过打包器，也不检查它是否被压缩过——所以「手写一份 CJS 工厂体」在契约上完全成立
 （本插件 0.3.x 就是这么做的），代价全在源码侧：官方原语与 `ctx` 上那四个服务的形状只能靠记忆（官方改一个
-prop 名字，编译期不会有任何声音）；`lib/` 不入库而那份手写产物入库，同一个仓库里两半的命运不同；当时那
+prop 名字，编译期不会有任何声音）；`lib/` 不入库而那份手写产物入库，同一个仓库里两端的命运不同；当时那
 1566 行 `createElement` 没有 JSX，也没有 sourcemap。
 
 因此现在与官方插件同一条路：源码留在 `src/client/`，产物落 `lib/client.js`（+ `.map`），包法照抄官方
@@ -202,7 +202,7 @@ intro: 'var module = { exports: {} }; var exports = module.exports;',
 footer: 'return module.exports; } });',
 ```
 
-源码那半边的形状：`index.ts` 只做装配（`apply` / `mountRemote` / 注册），页面 `AperturePanel.tsx` 是 TSX
+Web Client 源码的形状：`index.ts` 只做装配（`apply` / `mountRemote` / 注册），页面 `AperturePanel.tsx` 是 TSX
 （`jsx: react-jsx`，automatic runtime，`react/jsx-runtime` 本来就在平台基线里），一行模型在
 `ModelRow.tsx`、展开后的编辑器在 `ModelEditor.tsx`，都是普通的 JSX 树，`createElement` 那套样板没有了；
 `draft.ts` 是草稿与补丁的换算，`locales.ts` 是两份字典与命名空间声明，
@@ -212,11 +212,12 @@ footer: 'return module.exports; } });',
 加载 `<link>` 的机制；本插件只有一份手写、没有类名变换的样式，因此那个加载器只做「读文件 → 导出文本」，
 不像官方那样还要过 lightningcss 与 CSS Modules（类名映射）。
 
-`tsdown` 只打包不做类型检查，类型交给独立的 `tsconfig.client.json`（`lib: es2023 + dom`、`jsx: react-jsx`、
-`strict`），`npm run typecheck` 会跑它。官方客户端包按**真实版本**装在 devDependencies 里，但只为类型与打包：
+`tsdown` 只打包不做完整类型检查：宿主类型交给 `tsconfig.test.json`，浏览器类型交给独立的
+`tsconfig.client.json`（`lib: es2023 + dom`、`jsx: react-jsx`、`strict`），`npm run typecheck` 会跑完两份。
+官方客户端包按**真实版本**装在 devDependencies 里，但只为类型与打包：
 它们运行时由宿主模块表提供，本包不解析它们（`test/client.test.ts` 里那个「不许 require 基线之外的模块」的
-替身就是这道保证）。报告与模型的形状不在浏览器半边另立一套，直接 `import type` 宿主的 `src/report.ts`——那是
-两半边共享的线格式，「宿主组装数据、界面按语言组织措辞」这条分工也照旧。
+替身就是这道保证）。报告与模型的形状不在 Web Client 端另立一套，直接 `import type` Host 端的 `src/report.ts`——那是
+两端共享的线格式，「Host 端组装数据、界面按语言组织措辞」这条分工也照旧。
 
 以下运行期契约不变：
 
@@ -226,7 +227,13 @@ footer: 'return module.exports; } });',
 - 样式在 `apply` 的 effect 里注入一个 `<style data-plugin-css="dsh-aperture/styles.css">`（同时写上 `data-plugin="dsh-aperture"` 归属；`data-plugin-css` 取官方那套「包名/文件名」的写法），页面根节点带 `data-dsh-aperture`，选择器全收在那个属性之下；颜色一律引用 dsh web 的主题 token，卸载时由 effect 的 disposer 移除。这一份只剩排版：控件自己带底色与文字色（官方原语），本插件不再自画按钮，也就不必再配那对颜色；
 - **effect 的依赖里不放注入面**：`inject` 面由渲染器每轮渲染重新组装，依赖它的身份会让 effect 每轮重跑、再触发渲染，于是界面一直转圈。刷新信号用自增计数器，`test/client.test.ts` 除了钉住渲染轮数，还直接检查每个 effect 的依赖里没有对象。
 
-宿主半边相反：`src/*.ts` 必须先 `npm run build:host` 编成 `lib/`，宿主加载的是那份产物。两半都要构建，但生效方式不同：客户端产物重建之后刷新页面即可，宿主那半边必须重启——因此「改了没反应」既可能是不该刷新而该重启，也可能是反过来；两半正好分在两边（分组排版、每行的草稿与折叠、容量的 K/M 写法在浏览器半边；报告的覆盖口径、写完等刷新的时序在宿主半边）。`lib/` 里那份的 mtime 比源文件旧就说明还没构建，构建与开发实例见 [development.md](development.md)。
+Host 端也由同一份 `tsdown.config.ts` 构建：内部源码合成官方 Host 插件同款的单一 ESM
+`lib/index.js`，包依赖全部保持外部 import，声明按模块输出到 `lib/types/`；Web Client 端仍输出
+`lib/client.js`。三份配置共用 `lib/`，完整构建先统一清理，再按顺序输出；单独重建一端不会删掉另一端。
+两端都要构建，但生效方式不同：Web Client 产物重建之后刷新页面即可，Host 端必须重启——因此「改了没反应」
+既可能是不该刷新而该重启，也可能是反过来；职责也分别落在两端（分组排版、每行的草稿与折叠、容量的 K/M
+写法在 Web Client 端；报告的覆盖口径、写完等刷新的时序在 Host 端）。构建与开发实例见
+[development.md](development.md)。
 
 ## 验证：哪一层证明什么
 
@@ -236,7 +243,7 @@ footer: 'return module.exports; } });',
 - 它自己搭的那套里只有一个替身：`hmr`（`hmrSeam`）。真实的 HMR 要 `--expose-internals` 与 `timer` 服务才挂得起来，而它恰好决定了写入落不落得下来（见「写入行为」里那条「写入必须从 HMR 事务之外发起」）——少了这个替身，事件里发起的那一轮刷新被事务嵌套拒绝的样子，与「写成功了只是没变化」在断言上分不开。替身只留 `runExclusive()` 的两条语义：事务里再来一次就拒绝、否则排在上一件工作后面。
 - 它连的网关是仓库里的 `test/fake-gateway.ts`：内核挑一个空闲端口，`/v1/models` 回一份与断言一一对应的固定载荷。因此这一份不依赖 Tailscale 网络，CI 里也跑得动；`DSH_APERTURE_LIVE_URL` 给定时改连真实实例（那份载荷与用例是一份契约，改一处就要改另一处）。
 - 各 `src/*.ts` 的单元测试钉的是端到端**测不到**的那些：请求头与 URL 归一化、解析失败时的具体原因、`planSync` 的逐条 op、单飞语义、写入被拒的分支。端到端只会告诉你「文档里没有 `llm-pi-ai` 那一行」，不会告诉你「`accept` 头丢了」。因此两边都留：端到端负责「真的能用」，单元测试负责「坏在哪」。
-- 浏览器半边（`test/client.test.ts`）测的是**打包产物** `lib/client.js`（`npm test` 的 pretest 会先重打一次），因为 `window.__ModuleLoader__.load` 那层包法正是要钉住的契约之一；官方原语虽然有真实类型，但运行时仍然喂替身模块。它走 `test/support/mini-react`（实现了 `createElement` 与 automatic runtime 的 `jsx` / `jsxs` / `Fragment`），钉住的是**接缝**（注册到哪个槽位、注入面上的名字与形状、effect 依赖里不许有对象、提交轮数不许自激、卸载时收不收回订阅与样式）与页面行为（改哪一项写哪一项、失败时界面说不说实话）。它证明不了「官方组件长什么样」，那不在本仓库的测试范围内；替身只保证被测代码依赖的那套语义与官方一致（`SettingsFormModel` 的草稿、`revision` 围栏与 `stored` 口径）。
+- Web Client 端（`test/client.test.ts`）测的是**打包产物** `lib/client.js`（`npm test` 的 pretest 会先重打一次），因为 `window.__ModuleLoader__.load` 那层包法正是要钉住的契约之一；官方原语虽然有真实类型，但运行时仍然喂替身模块。它走 `test/support/mini-react`（实现了 `createElement` 与 automatic runtime 的 `jsx` / `jsxs` / `Fragment`），钉住的是**接缝**（注册到哪个槽位、注入面上的名字与形状、effect 依赖里不许有对象、提交轮数不许自激、卸载时收不收回订阅与样式）与页面行为（改哪一项写哪一项、失败时界面说不说实话）。它证明不了「官方组件长什么样」，那不在本仓库的测试范围内；替身只保证被测代码依赖的那套语义与官方一致（`SettingsFormModel` 的草稿、`revision` 围栏与 `stored` 口径）。
 
 ## 已知边界
 
@@ -249,4 +256,4 @@ footer: 'return module.exports; } });',
 - **更高优先级的补丁层能盖住写入**：profile 的补丁文档之上还有 `$DSH_HOME/cordis.patch.yml` 这类层。同一行在那里也被写过时，配置页的保存写进 profile 的补丁文档、却不生效——写入本身可能被设置接缝拒收（配置页会说这一笔没被收下），也可能落盘了却仍是那一层说了算；两种都得去那一层改。
 - **peer 范围收得很紧**（`^0.1.7-rc.1`）：0.1.7 之前的宿主会被 peer 预检挡下——这一版起 `installSection` / `SettingsProvider` 这套接缝已经不存在，本插件的界面代码在旧宿主上无法工作。因此从 `0.2.0` 升上来是一次有意的破坏性升级。
 - **想让已发布的路由消失就关掉同步开关**：那一轮刷新会把本插件的三个键从 `llm-pi-ai.providers` 撤下来（同段里别的 provider 不动）。
-- **动作端点的一句结论仍是中文**：`PanelAction.summary` 由宿主半边写好（「已写入 2 条路由…」），因此英文界面里那一行也是中文。报告已经不走这条路（它是结构化数据），但这个动作用的还是「宿主说一句话」的形态；要让它跟着语言走，得把 `summary` 换成「码 + 实参」再由界面渲染。地址与同步的写入不再是端点，它们的话由界面自己按语言组织。
+- **动作端点的一句结论仍是中文**：`PanelAction.summary` 由 Host 端写好（「已写入 2 条路由…」），因此英文界面里那一行也是中文。报告已经不走这条路（它是结构化数据），但这个动作用的还是「Host 端说一句话」的形态；要让它跟着语言走，得把 `summary` 换成「码 + 实参」再由界面渲染。地址与同步的写入不再是端点，它们的话由界面自己按语言组织。

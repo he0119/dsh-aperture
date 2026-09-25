@@ -1,7 +1,7 @@
 /**
  * `aperturePanel` 这个 Remote 贡献的**浏览器侧描述符**，以及它在客户端的类型形状。
  *
- * 生成描述符的 Typert 生成器不随 DSH 发布，因此两半边都手写（见 docs/internals.md）：宿主用
+ * 生成描述符的 Typert 生成器不随 DSH 发布，因此两端都手写（见 docs/internals.md）：Host 端用
  * `src-json` 编解码器，这里只给一个**直通**的 strict 编解码器——浏览器侧从不解析这些值，注册表
  * 只检查 `mode` 与 `create()`，网关只读 `mode`。
  *
@@ -19,11 +19,11 @@ import type { PanelReport } from '../report.ts';
 
 /** 包名，取自 package.json；它同时是包级配置页的键、Remote 贡献名与样式归属的前半截。 */
 export const PACKAGE = 'dsh-aperture';
-/** 宿主半边的 Remote 命名空间（`src/remote.ts`）。 */
+/** Host 端的 Remote 命名空间（`src/remote.ts`）。 */
 export const PANEL = 'aperturePanel';
 
 /**
- * 浏览器半边与宿主半边之间的线格式。
+ * Web Client 端与 Host 端之间的线格式。
  *
  * 只有一个直通编解码器，因为浏览器侧从不解析这些值：注册表（`@deepseek-ai/dsh-typert-registry`）
  * 只检查 `mode` 是 `strict`、`typeSymbol` 非空、`create` 是个函数，网关客户端只读参数上的
@@ -69,7 +69,7 @@ function descriptor(method: string, parameters: readonly string[] = []): Invocat
   });
 }
 
-/** 与宿主半边 `PANEL_INVOCATIONS` 一一对应的贡献（按官方的 `TypertRemoteContribution` 校验）。 */
+/** 与 Host 端 `PANEL_INVOCATIONS` 一一对应的贡献（按官方的 `TypertRemoteContribution` 校验）。 */
 export const REMOTE: TypertRemoteContribution = Object.freeze({
   package: PACKAGE,
   descriptors: Object.freeze([

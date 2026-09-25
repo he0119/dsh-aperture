@@ -1,5 +1,5 @@
 /**
- * 客户端半边（源码 `src/client/`，被测的是打包产物 `lib/client.js`）的接线与页面行为。
+ * Web Client 端（源码 `src/client/`，被测的是打包产物 `lib/client.js`）的接线与页面行为。
  *
  * 这一份测试对着两件事：
  *
@@ -15,7 +15,7 @@
  * prop 的名字与含义、按钮该在什么时候出现、`SettingsFormModel` 的草稿与围栏语义。官方组件的观感
  * 与行为不在本仓库的测试范围内，这里只保证被测代码依赖的那套语义与官方一致。
  *
- * 测的是**产物**而不是源码：客户端半边要先打包（`npm run build:client`，`npm test` 的 pretest 已经
+ * 测的是**产物**而不是源码：Web Client 端要先打包（`npm run build:client`，`npm test` 的 pretest 已经
  * 做了），因为 `window.__ModuleLoader__.load` 那层包法是打包器套上去的——那正是要钉住的契约之一。
  *
  * 渲染走 `test/support/mini-react`：它实现 `createElement` 与 automatic runtime 的
@@ -42,7 +42,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** 打包产物；`exports["./client"]` 指向的就是它。 */
 const CLIENT_FILE = join(HERE, '..', 'lib', 'client.js');
 
-/** 浏览半边上报的模块 id。 */
+/** Web Client 端上报的模块 id。 */
 const PACKAGE = 'dsh-aperture';
 /** 官方 UI 原语包名（本仓库里只有替身）。 */
 const PRIMITIVES = '@deepseek-ai/dsh-client-ui-primitives';
@@ -103,7 +103,7 @@ interface ModelPatch {
 }
 
 /**
- * 夹具的三种形状直接用宿主那份报告类型，不再照抄一遍。
+ * 夹具的三种形状直接使用 Host 端的报告类型，不再照抄一遍。
  *
  * 抄过的那一份已经飘过一次：它多出一个 `PanelReport` 从来没有过的 `summary`，而页面根本不读
  * 这个字段，于是谁也没发现。改成别名之后，宿主删一个字段、改一个名字，这里当场编译不过。
@@ -133,7 +133,7 @@ interface FormFace {
 
 /** 替身控制器另外给测试用的那点东西。 */
 interface FakeForm extends FormFace {
-  /** 从宿主那边推一份新快照过来（订阅者应当被叫醒）。 */
+  /** 从 Host 端推一份新快照过来（订阅者应当被叫醒）。 */
   publish(overrides: Partial<SectionState>): void;
 }
 
@@ -143,7 +143,7 @@ interface PanelAction {
   readonly summary: string;
 }
 
-/** 半边要挂到 Remote 服务上的那份贡献。 */
+/** Web Client 端要挂到 Remote 服务上的贡献。 */
 interface RemoteContribution {
   readonly package: string;
   readonly descriptors: readonly ClientDescriptor[];
@@ -187,7 +187,7 @@ interface FakeStyle {
   removed: boolean;
 }
 
-/** 半边导出的那点成员。 */
+/** Web Client 端导出的成员。 */
 interface ClientExports {
   readonly name: string;
   readonly inject: readonly string[];
@@ -792,13 +792,13 @@ function fakeDocument(styles: FakeStyle[]): Record<string, unknown> {
   };
 }
 
-// --------------------------------------------------------------- 加载半边
+// --------------------------------------------------------------- 加载 Web Client 端
 
-/** 把半边加载起来：给它一个 `window` 与一个假的 `document`，`react` 与官方原语给替身。 */
+/** 加载 Web Client 端：给它一个 `window` 与一个假的 `document`，`react` 与官方原语给替身。 */
 function loadClient(): Harness {
   assert.ok(
     existsSync(CLIENT_FILE),
-    `${CLIENT_FILE} 不存在：先打包客户端半边（npm run build:client）。`,
+    `${CLIENT_FILE} 不存在：先构建 Web Client 端（npm run build:client）。`,
   );
   const reported: LoadedEntry[] = [];
   const styles: FakeStyle[] = [];
@@ -821,7 +821,7 @@ function loadClient(): Harness {
     },
   };
   vm.runInNewContext(readFileSync(CLIENT_FILE, 'utf8'), sandbox, { filename: CLIENT_FILE });
-  assert.equal(reported.length, 1, '半边应当只上报一份模块');
+  assert.equal(reported.length, 1, 'Web Client 端应当只上报一份模块');
   const entry = reported[0]!;
   assert.equal(entry.id, PACKAGE);
   const exports = entry.factory((id: string) => {
@@ -829,7 +829,7 @@ function loadClient(): Harness {
     // JSX 走 automatic runtime：`jsx` / `jsxs` / `Fragment` 由替身一并提供。
     if (id === 'react/jsx-runtime') return mini;
     if (id === PRIMITIVES) return primitives;
-    throw new Error(`客户端半边不应在运行时 require "${id}"：平台基线之外没有模块可解析`);
+    throw new Error(`Web Client 端不应在运行时 require "${id}"：平台基线之外没有模块可解析`);
   }) as ClientExports;
   return {
     exports,
@@ -854,7 +854,7 @@ function loadClient(): Harness {
 
 // --------------------------------------------------------------- 假控制器
 
-/** 造一个设置控制器：记下每次写入，还能从「宿主那边」推一份新快照过来。 */
+/** 造一个设置控制器：记下每次写入，还能从 Host 端推一份新快照过来。 */
 function fakeForm(harness: Harness, options: FakePanelOptions): FakeForm {
   let state = section(options.section);
   const listeners = new Set<() => void>();
@@ -874,7 +874,7 @@ function fakeForm(harness: Harness, options: FakePanelOptions): FakeForm {
     mutate: async (ops, revision) => {
       harness.writes.push({ ops, revision });
       // 只记账，不把写入回灌进快照：真宿主会让 `user` 跟着变，这一份替身故意留简单。因此用例
-      // 不该断言「保存之后快照长什么样」——那是宿主那一半的实现。
+      // 不该断言「保存之后快照长什么样」——那是 Host 端的实现。
       return options.refused !== true;
     },
     publish: (overrides) => {
@@ -887,7 +887,7 @@ function fakeForm(harness: Harness, options: FakePanelOptions): FakeForm {
 /** 造一个报告端点命名空间：`{ok: true, value}` 或 `{ok: false, error}`。 */
 function fakeNamespace(harness: Harness, options: FakePanelOptions): Record<string, unknown> {
   const payload = options.report ?? report();
-  /** 一次动作的结果（`PanelAction`）：宿主那边已经跑完了一轮发现。 */
+  /** 一次动作的结果（`PanelAction`）：Host 端已经跑完了一轮发现。 */
   const action = { ok: true as const, summary: '已重新发现并发布。' };
   return {
     status: async () => {
@@ -935,7 +935,7 @@ function slotHooks(mini: MiniReact, hooks: Record<string, { getSnapshot: () => u
   return built;
 }
 
-/** 把半边 apply 起来，再把配置页当成渲染器那样挂上去。 */
+/** apply Web Client 端，再把配置页当成渲染器那样挂上去。 */
 function driveClient(options: FakePanelOptions = {}, withoutService = false): Driven {
   const harness = loadClient();
 
@@ -1141,13 +1141,13 @@ function count(value: number): string {
 
 // -------------------------------------------------------------------- 用例
 
-describe('客户端半边', () => {
+describe('Web Client 端', () => {
   it('上报的模块 id 与依赖都是接缝的一部分', () => {
     const { harness } = driveClient();
     assert.equal(harness.exports.name, PACKAGE);
     assert.equal(harness.exports.NS, NS);
     assert.equal(harness.exports.SETTINGS_NS, SETTINGS_NS);
-    assert.equal(harness.exports.SETTINGS_NS, APERTURE_NAMESPACE, '设置命名空间必须与宿主那一半一致');
+    assert.equal(harness.exports.SETTINGS_NS, APERTURE_NAMESPACE, '设置命名空间必须与 Host 端一致');
     assert.deepEqual([...harness.exports.FIELDS], FIELDS);
     // 声明的服务清单与真正去要的那一份必须对得上。
     assert.deepEqual(plain(harness.exports.inject), ['slots', 'locale', 'remote', 'configForms']);
