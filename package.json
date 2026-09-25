@@ -1,6 +1,6 @@
 {
   "name": "dsh-aperture",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "自动发现 Aperture 网关上的模型，并加进 DSH 的模型选择器。",
   "type": "module",
   "main": "lib/index.js",
