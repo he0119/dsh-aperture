@@ -4,7 +4,7 @@ Discover the models an [Aperture](https://tailscale.com/kb/1542/aperture) gatewa
 
 ## Install
 
-Requirements: Node ≥ 24, and an Aperture instance you can reach.
+Requirements: Node ^22.19.0 or ≥24.0.0 (matching DSH), and an Aperture instance you can reach.
 
 ### 1. Add the plugin
 

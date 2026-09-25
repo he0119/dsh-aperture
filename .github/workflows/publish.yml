@@ -31,7 +31,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Node 24.11 是 engines 下限，并自带满足可信发布要求（>= 11.5.1）的 npm 11。
+      # 发布固定使用 Node 24.11：它属于官方支持范围，并自带满足可信发布要求（>= 11.5.1）的 npm 11。
       - uses: actions/setup-node@v5
         with:
           node-version: 24.11.0
