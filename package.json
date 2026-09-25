@@ -35,8 +35,8 @@
     "prepare": "npm run build",
     "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.client.json",
     "pretest": "npm run build:client",
-    "test": "node --test --test-isolation=none \"test/**/*.test.ts\"",
-    "test:live": "node --test --test-isolation=none test/live.test.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "test:live": "node --test test/live.test.ts",
     "inspect": "node scripts/inspect-live.mjs"
   },
   "keywords": [
@@ -55,7 +55,7 @@
     "url": "git+https://github.com/he0119/dsh-aperture.git"
   },
   "engines": {
-    "node": "^24.11.0 || >=26.0.0"
+    "node": "^22.19.0 || >=24.0.0"
   },
   "dsh": {
     "bundle": {

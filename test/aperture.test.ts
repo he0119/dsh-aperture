@@ -200,9 +200,13 @@ describe('fetchModelsListing', () => {
             reject(new Error('桩没有收到中止信号'));
             return;
           }
+          // Node 22 的 AbortSignal.timeout 使用不维持事件循环的计时器；真实 fetch 的连接会让进程继续
+          // 运行，这个永不落定的桩不会。留一个有引用的护栏，既模拟真实请求，也避免信号失效时挂死。
+          const guard = setTimeout(() => reject(new Error('中止信号没有按时到达')), 100);
           signal.addEventListener('abort', () => {
+            clearTimeout(guard);
             reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason)));
-          });
+          }, { once: true });
         }),
     );
 
