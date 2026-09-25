@@ -102,7 +102,7 @@ Release 条目还带一句「已发布到 npm」的说明，排在自动日志�
 
 ## 工作流一览
 
-- `.github/workflows/ci.yml`：PR、推 main 时跑 `test` / `typecheck` / `build`（Node 24；`engines` 下限也是 24）。
+- `.github/workflows/ci.yml`：PR、推 main 时跑 `test` / `typecheck` / `build`（Node 24.11；与 `engines` 下限一致）。
 - `.github/workflows/publish.yml`：推 `v*` 标签时先复用一遍上面的检查，再依次做三道落点校验、
   发布到 npm、建 Release。发布 job 里额外跑一次 `npm ci`，因为 `lib/` 靠 `prepare` 现场编译，
   而 check job 的依赖不跨 job 共享。

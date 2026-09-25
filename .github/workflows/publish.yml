@@ -31,10 +31,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Node 24 自带 npm 11：可信发布要求 npm >= 11.5.1。
+      # Node 24.11 是 engines 下限，并自带满足可信发布要求（>= 11.5.1）的 npm 11。
       - uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: 24.11.0
           registry-url: https://registry.npmjs.org
           cache: npm
 

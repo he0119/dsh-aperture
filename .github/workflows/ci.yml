@@ -25,9 +25,9 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          # 只测 Node 24：engines 下限就是 24，且 test 脚本用的 --test-isolation=none
+          # 测 engines 的准确下限；test 脚本用的 --test-isolation=none
           # 在 Node 22 上不存在（node: bad option，退出码 9）。
-          node-version: 24
+          node-version: 24.11.0
           cache: npm
       # 仓库自己没有编译型依赖；安装带来 typescript、各 @deepseek-ai/* 的类型声明，以及打包器
       # tsdown（它依赖的 rolldown 是预编译分发的平台绑定，不在本机编译）。装完 npm 会跑 prepare，
