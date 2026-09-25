@@ -1919,10 +1919,28 @@ describe('模型行与刷新', () => {
     assert.equal(banner.props['data-ok'], 'false');
     assert.match(text(banner), /写这一行的时候后台断了/u);
 
-    // 看着像 bug（结论里列了）：写失败之后 `run()` 的收尾照样执行，草稿被丢掉、面板收起，
-    // 用户刚打的那几个字就这么没了。这一行钉住的是当下的行为，改掉之后改成断言草稿还在。
+    assert.equal(toggleOf(rowOf(mini, 'deepseek-flash')).props['aria-expanded'], 'true', '失败之后编辑器仍然展开');
+    assert.equal(
+      findById(mini.tree(), 'dap-deepseek-flash-maxTokens').props.value,
+      '8192',
+      '失败之后保留草稿，用户可以直接重试',
+    );
+  });
+
+  it('清空覆盖失败：编辑器与尚未保存的草稿也原样保留', async () => {
+    const { mini, element } = driveClient({ fails: 'edit' });
+    mini.mount(element);
+    await mini.flush();
     await openRow(mini, 'deepseek-flash');
-    assert.equal(findById(mini.tree(), 'dap-deepseek-flash-maxTokens').props.value, '384K', '失败之后草稿没了');
+
+    change(findById(mini.tree(), 'dap-deepseek-flash-maxTokens'), '8192');
+    await mini.flush();
+    click(rowButton(mini, 'deepseek-flash', '清空覆盖'));
+    await mini.flush();
+
+    assert.equal(toggleOf(rowOf(mini, 'deepseek-flash')).props['aria-expanded'], 'true');
+    assert.equal(findById(mini.tree(), 'dap-deepseek-flash-maxTokens').props.value, '8192');
+    assert.equal(bannerOf(mini).props['data-ok'], 'false');
   });
 
   it('effect 的依赖里只有原始值，一轮交互只渲染少数几次', async () => {

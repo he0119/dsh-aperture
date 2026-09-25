@@ -129,19 +129,30 @@ export function AperturePanel(props: AperturePanelProps) {
     };
   }, [revision]);
 
-  /** 跑一个动作：期间禁用控件，结束后把结果贴出来并按需重读报告。 */
-  const run = (key: string, action: () => Promise<PanelAction>, after?: () => void): void => {
+  /**
+   * 跑一个动作：期间禁用控件，结束后把结果贴出来并按需收尾。
+   *
+   * `after` 会拿到动作是否成功；调用方若要丢草稿、收起编辑器，必须只在 `true` 时做。刷新报告这类
+   * 无论结果如何都要做的收尾可以忽略这个参数。
+   */
+  const run = (
+    key: string,
+    action: () => Promise<PanelAction>,
+    after?: (ok: boolean) => void,
+  ): void => {
     setBusy(key);
     setBanner(null);
     void (async () => {
+      let ok = false;
       try {
         const result = await action();
+        ok = result.ok;
         setBanner({ ok: result.ok, text: result.summary });
       } catch (error) {
         setBanner({ ok: false, text: textOf(error) });
       } finally {
         setBusy('');
-        if (after !== undefined) after();
+        if (after !== undefined) after(ok);
       }
     })();
   };
@@ -206,7 +217,8 @@ export function AperturePanel(props: AperturePanelProps) {
       setBanner({ ok: true, text: t('noChanges') });
       return;
     }
-    run('edit', () => props.panel.writeModel(model.id, patch), () => {
+    run('edit', () => props.panel.writeModel(model.id, patch), (ok) => {
+      if (!ok) return;
       dropDraft(model.id);
       setOpened((current) => ({ ...current, [model.id]: false }));
       setRevision((value) => value + 1);
@@ -236,7 +248,8 @@ export function AperturePanel(props: AperturePanelProps) {
     // 别名用空串表示「不要再覆盖」；其余字段 `null` 就是「不覆盖这一项」。
     const patch = Object.fromEntries(known.map((key) => [key, key === 'alias' ? '' : null]));
     const payload = unknown.length > 0 || known.length === 0 ? null : patch;
-    run('revert', () => props.panel.writeModel(model.id, payload), () => {
+    run('revert', () => props.panel.writeModel(model.id, payload), (ok) => {
+      if (!ok) return;
       dropDraft(model.id);
       setOpened((current) => ({ ...current, [model.id]: false }));
       setRevision((value) => value + 1);
