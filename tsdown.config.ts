@@ -12,12 +12,16 @@
  * 源映射从 `lib/client.js.map` 读。
  */
 import { readFileSync } from 'node:fs'
+import { dirname, relative, resolve, sep } from 'node:path'
 
-import { defineConfig } from 'tsdown'
+import { defineConfig, type TsdownPlugin } from 'tsdown'
 
 const { name: PACKAGE } = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
 ) as { name: string }
+
+/** tsdown 以包根为 cwd 求值配置；虚拟模块 id 用包根相对路径，免得产物里留下构建机的绝对路径。 */
+const ROOT = process.cwd()
 
 /**
  * 模块表里由宿主提供、本插件直接 `require` 的模块：平台基线（官方
@@ -31,9 +35,43 @@ const EXTERNALS = [
   '@deepseek-ai/dsh-client-ui-primitives',
 ] as const
 
+/** `?inline` 的虚拟模块前缀；结尾不能是 `.css`，否则会撞上 tsdown 自己的 CSS 管线。 */
+const CSS_INLINE_VIRTUAL = '\0dsh-aperture-css-inline:'
+const CSS_INLINE_SUFFIX = '.mjs'
+
+/**
+ * 把 `x.css?inline` 编译成 `export default "<文本>"`。
+ *
+ * 官方 `packages/client/tsdown.client.ts` 里那三个 `dsh-css-*` 加载器做的是同一件事，外加
+ * lightningcss 编译与 CSS Modules 的类名映射。本插件只有一份手写、没有类名变换的样式表，因此这里
+ * 只保留「读文件 → 导出文本」：CSS 仍然内联进产物（客户端模块系统只服务 `<包名>/client.js` 这个
+ * 经典脚本，没有旁挂 `.css` 的路由），但源码是真正的 `.css` 文件——编辑器认它，也不必再挤在 TS 里。
+ * @returns 处理 `?inline` 导入的 rolldown 插件。
+ */
+function cssInline(): TsdownPlugin {
+  return {
+    name: 'dsh-aperture-css-inline',
+    resolveId(source, importer) {
+      if (!source.endsWith('.css?inline')) return null
+      const specifier = source.slice(0, -'?inline'.length)
+      const file = importer === undefined ? resolve(specifier) : resolve(dirname(importer), specifier)
+      const name = relative(ROOT, file).split(sep).join('/')
+      return CSS_INLINE_VIRTUAL + name + CSS_INLINE_SUFFIX
+    },
+    load(id) {
+      if (!id.startsWith(CSS_INLINE_VIRTUAL)) return null
+      const name = id.slice(CSS_INLINE_VIRTUAL.length, -CSS_INLINE_SUFFIX.length)
+      const file = resolve(ROOT, name)
+      // 注册成 watch 依赖：`--watch` 下改 CSS 也要重打。
+      this.addWatchFile(file)
+      return `export default ${JSON.stringify(readFileSync(file, 'utf8'))}`
+    },
+  }
+}
+
 export default defineConfig({
   name: `${PACKAGE}/client`,
-  entry: { client: 'src/client/index.ts' },
+  entry: { client: 'src/client/index.tsx' },
   // 宿主那份 tsconfig.json 把 src/client 排除在外（它没有 DOM 也没有 JSX），
   // 因此这里必须显式指到浏览器半边自己的那份，否则 JSX / lib 都会按宿主的算。
   tsconfig: 'tsconfig.client.json',
@@ -50,6 +88,7 @@ export default defineConfig({
     neverBundle: [...EXTERNALS],
     alwaysBundle: specifier => !(EXTERNALS as readonly string[]).includes(specifier),
   },
+  plugins: [cssInline()],
   outputOptions: {
     entryFileNames: 'client.js',
     banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PACKAGE)}, factory: (require) => {`,

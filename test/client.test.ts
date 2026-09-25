@@ -1,5 +1,5 @@
 /**
- * 客户端半边（源码 `src/client/index.ts`，被测的是打包产物 `lib/client.js`）的接线与页面行为。
+ * 客户端半边（源码 `src/client/index.tsx`，被测的是打包产物 `lib/client.js`）的接线与页面行为。
  *
  * 这一份测试对着两件事：
  *
@@ -18,8 +18,9 @@
  * 测的是**产物**而不是源码：客户端半边要先打包（`npm run build:client`，`npm test` 的 pretest 已经
  * 做了），因为 `window.__ModuleLoader__.load` 那层包法是打包器套上去的——那正是要钉住的契约之一。
  *
- * 渲染走 `test/support/mini-react`：它实现 `createElement` + `useState` + `useEffect`，按提交
- * 循环驱动到稳定，于是「挂载 → 拉设置 → 改输入 → 按保存」这条路径可以在纯 Node 里走完。
+ * 渲染走 `test/support/mini-react`：它实现 `createElement` 与 automatic runtime 的
+ * `jsx` / `jsxs` / `Fragment`，加上 `useState` + `useEffect`，按提交循环驱动到稳定，于是
+ * 「挂载 → 拉设置 → 改输入 → 按保存」这条路径可以在纯 Node 里走完。
  *
  * @module dsh-aperture/test/client
  */
@@ -53,8 +54,8 @@ const NS = 'settings.aperturePanel';
 const SETTINGS_NS = 'aperture';
 /** 设置里这一页编辑的字段。 */
 const FIELDS = ['baseUrl', 'sync'];
-/** 样式表元素认领自己用的名字（官方那套 `data-plugin-css` 的写法：包名/产物名），与 `src/client/index.ts` 里的常量一致。 */
-const STYLE_OWNER = 'dsh-aperture/client.js';
+/** 样式表元素认领自己用的名字（官方那套 `data-plugin-css` 的写法：包名/文件名），与 `src/client/index.tsx` 里的常量一致。 */
+const STYLE_OWNER = 'dsh-aperture/styles.css';
 
 /** 上报给 `window.__ModuleLoader__` 的一份模块。 */
 interface LoadedEntry {
@@ -825,6 +826,8 @@ function loadClient(): Harness {
   assert.equal(entry.id, PACKAGE);
   const exports = entry.factory((id: string) => {
     if (id === 'react') return mini;
+    // JSX 走 automatic runtime：`jsx` / `jsxs` / `Fragment` 由替身一并提供。
+    if (id === 'react/jsx-runtime') return mini;
     if (id === PRIMITIVES) return primitives;
     throw new Error(`客户端半边不应在运行时 require "${id}"：平台基线之外没有模块可解析`);
   }) as ClientExports;

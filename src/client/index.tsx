@@ -74,8 +74,8 @@ import type {
 import type { PanelAction, PanelModelPatch } from '../panel.ts';
 import type { PanelModel, PanelReport } from '../report.ts';
 import type { FactSource, Modality } from '../types.ts';
-
-const h = React.createElement;
+// 样式表是真正的 .css 文件，由 tsdown 的 `cssInline()` 编译成文本内联进产物（见 tsdown.config.ts）。
+import styles from './styles.css?inline';
 
 /** 字典命名空间（本插件拥有）；配置页的 `locale` 声明与 `ctx.locale.bind` 都用它。 */
 const NS = 'settings.aperturePanel';
@@ -83,8 +83,8 @@ const NS = 'settings.aperturePanel';
 const PANEL = 'aperturePanel';
 /** 包名，取自 package.json；它同时是包级配置页的键。 */
 const PACKAGE = 'dsh-aperture';
-/** 样式表的归属标记（官方那套 `data-plugin-css` 的写法：包名/产物名）；卸载与热替换时按它回收。 */
-const STYLE_OWNER = 'dsh-aperture/client.js';
+/** 样式表的归属标记（官方那套 `data-plugin-css` 的写法：包名/文件名）；卸载与热替换时按它回收。 */
+const STYLE_OWNER = 'dsh-aperture/styles.css';
 /**
  * 设置命名空间（宿主 `src/config.ts` 的 `APERTURE_NAMESPACE`，也是 `cordis.patch.yml` 里那一行
  * 的 id）。包级配置页页主不递 `form`，这一份表单就是按它向 `configForms` 要来的。
@@ -224,293 +224,7 @@ function installStyles() {
   const element = document.createElement('style');
   element.dataset.plugin = PACKAGE;
   element.dataset.pluginCss = STYLE_OWNER;
-  element.textContent = `
-[data-dsh-aperture] {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  font-size: 13px;
-  color: var(--dsw-alias-label-primary, #e6e6e6);
-}
-[data-dsh-aperture] .dap-group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-[data-dsh-aperture] .dap-groupHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-[data-dsh-aperture] .dap-titleWrap {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-[data-dsh-aperture] .dap-groupTitle {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 22px;
-}
-/* 数目跟在标题后面，用等宽数字，免得一轮刷新改写时宽度乱跳。 */
-[data-dsh-aperture] .dap-count {
-  font-size: 14px;
-  line-height: 22px;
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-tertiary, #8b8b8b);
-}
-/* 空状态是官方「模型」页那条虚线盒子：没有内容时给个形状，不留白。 */
-[data-dsh-aperture] .dap-empty {
-  margin: 0;
-  padding: 12px;
-  border: 0.5px dashed var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
-  border-radius: var(--dsw-radius-lg, 16px);
-  text-align: center;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary, #8b8b8b);
-}
-[data-dsh-aperture] .dap-hint {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--dsw-alias-label-tertiary, #8b8b8b);
-}
-[data-dsh-aperture] .dap-banner {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--dsw-alias-label-secondary, #c9c9c9);
-}
-[data-dsh-aperture] .dap-banner[data-ok='false'] {
-  color: var(--dsw-alias-state-error-primary, #e06c75);
-}
-[data-dsh-aperture] .dap-toggleRow {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  font-size: 13px;
-  line-height: 1.5;
-}
-[data-dsh-aperture] .dap-toggleText {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-/* 一个模型一张卡片：发丝描边立形状（官方输入框用的就是这一档描边），底色只在暗色主题下抬起一层。 */
-[data-dsh-aperture] .dap-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-[data-dsh-aperture] .dap-card {
-  display: flex;
-  flex-direction: column;
-  border: 0.5px solid var(--dsw-alias-border-l4, rgba(128, 128, 128, 0.36));
-  border-radius: var(--dsw-radius-xl, 20px);
-  background: var(--dsw-alias-bg-layer-2, transparent);
-}
-/* 行首是一条盖满整行的按钮：点哪儿都能展开这一行。 */
-[data-dsh-aperture] .dap-cardHead {
-  display: flex;
-  /* 顶着第一行走，不居中：这一行有两行身份（名字 + 事实），居中的话状态点会落在两行中间。 */
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
-  padding: 12px 14px;
-  border: 0;
-  border-radius: inherit;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-[data-dsh-aperture] .dap-cardHead:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.06));
-}
-[data-dsh-aperture] .dap-cardHead[aria-expanded='true'] {
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));
-  border-radius: var(--dsw-radius-xl, 20px) var(--dsw-radius-xl, 20px) 0 0;
-}
-[data-dsh-aperture] .dap-cardHead:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary, #7aaaff);
-  outline-offset: 1px;
-}
-/* 状态点：写入与否这一列永远在同一处，扫一眼就能比。22px 就是名字那一行的高度，点因此落在名字中间。 */
-[data-dsh-aperture] .dap-status {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  height: 22px;
-}
-[data-dsh-aperture] .dap-identity {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-[data-dsh-aperture] .dap-identityTop {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-}
-[data-dsh-aperture] .dap-name {
-  overflow: hidden;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 22px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* 事实一项一句（「路由 x」「上下文 1M」），之间用小圆点分开：比一串空格好认，也不抢字号。
-   名字必须是 .dap-factRow 而不是 .dap-facts：报告那张 dl 已经占了 .dap-facts，而且它的规则在后面，
-   同名的话会把这里压成竖排（一条一行）。 */
-[data-dsh-aperture] .dap-factRow {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  column-gap: 6px;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 18px;
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-tertiary, #8b8b8b);
-}
-[data-dsh-aperture] .dap-factItem + .dap-factItem::before {
-  content: '·';
-  margin-right: 6px;
-  color: var(--dsw-alias-label-tertiary, #8b8b8b);
-}
-[data-dsh-aperture] .dap-chevron {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  height: 22px;
-  color: var(--dsw-alias-label-tertiary, #8b8b8b);
-  transition: transform 160ms ease;
-}
-[data-dsh-aperture] .dap-chevron[data-open='true'] {
-  transform: rotate(90deg);
-}
-/* 展开区是卡片里的一块内嵌面：暗色主题下比卡片再亮一层，亮色主题下靠这圈描边立住（底色也是白的）。 */
-[data-dsh-aperture] .dap-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin: 0 14px 14px;
-  padding: 14px 16px;
-  border: 0.5px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
-  border-radius: var(--dsw-radius-lg, 16px);
-  background: var(--dsw-alias-bg-layer-3, transparent);
-}
-[data-dsh-aperture] .dap-editorHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-[data-dsh-aperture] .dap-editorId {
-  overflow: hidden;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary, #8b8b8b);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-[data-dsh-aperture] .dap-editorDirty {
-  margin-left: auto;
-}
-[data-dsh-aperture] .dap-warnNote {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-state-warn-primary, #dd8629);
-}
-[data-dsh-aperture] .dap-editGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-[data-dsh-aperture] .dap-editGroupTitle {
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary, #c9c9c9);
-}
-/* 字段用网格排，格子自带一层壳：官方那条「相邻字段加一条上边框」在网格里会错开半格。 */
-[data-dsh-aperture] .dap-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 2px 16px;
-}
-[data-dsh-aperture] .dap-fieldCell {
-  min-width: 0;
-}
-[data-dsh-aperture] .dap-grid2 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 14px 16px;
-  align-items: start;
-}
-[data-dsh-aperture] .dap-endpoints {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-[data-dsh-aperture] .dap-endpointList {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-[data-dsh-aperture] .dap-endpoint {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary, #c9c9c9);
-  overflow-wrap: anywhere;
-}
-[data-dsh-aperture] .dap-inline {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-[data-dsh-aperture] .dap-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  line-height: 1.5;
-}
-[data-dsh-aperture] .dap-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 2px;
-}
-/* 左边那句「还有几项没写下去」，按钮一律靠右，主按钮在最右。 */
-[data-dsh-aperture] .dap-actionsNote {
-  margin-right: auto;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary, #8b8b8b);
-}
-`;
+  element.textContent = styles;
   document.head.appendChild(element);
   return () => {
     if (element.parentNode !== null) element.parentNode.removeChild(element);
@@ -1242,27 +956,27 @@ function AperturePanel(props: AperturePanelProps) {
    * 长解释进 `help`（官方那个「i」按钮），输入框下面只留一句来源；外面再套一层格子，官方字段行
    * 那条「相邻就加上边框」在网格里会错开半格，隔开一层壳就不碰它了。
    */
-  const textField = (model: PanelModel, key: TextFieldKey, copy: TextFieldCopy) => h(
-    'div',
-    { className: 'dap-fieldCell' },
-    h(SettingsValueField, {
-      id: `dap-${model.id}-${key}`,
-      label: t(copy.label),
-      help: { label: t('fieldHelp', { field: t(copy.label) }), content: t(copy.hint) },
-      hint: sourceOf(copy.source(model)),
-      ...(copy.placeholder === undefined ? {} : { placeholder: copy.placeholder(model) }),
-      ...(copy.numeric === true ? { numeric: true } : {}),
-      text: draftOf(model)[key],
-      overridden: declaredIn(model, key),
-      // 只有容量那两项用 `1M`/`384K` 的词汇，因此也只有它们会「读不出来」；文本字段写什么都算数。
-      invalid: copy.numeric === true && capacityBad(draftOf(model)[key]),
-      overriddenLabel: t('overridden'),
-      resetLabel: t('resetField'),
-      invalidLabel: t('invalidField'),
-      disabled: busy !== '',
-      onEdit: (text) => stage(model, { [key]: text }),
-      onReset: () => stage(model, { [key]: copy.cleared }),
-    }),
+  const textField = (model: PanelModel, key: TextFieldKey, copy: TextFieldCopy) => (
+    <div className="dap-fieldCell">
+      <SettingsValueField
+        id={`dap-${model.id}-${key}`}
+        label={t(copy.label)}
+        help={{ label: t('fieldHelp', { field: t(copy.label) }), content: t(copy.hint) }}
+        hint={sourceOf(copy.source(model))}
+        {...(copy.placeholder === undefined ? {} : { placeholder: copy.placeholder(model) })}
+        {...(copy.numeric === true ? { numeric: true } : {})}
+        text={draftOf(model)[key]}
+        overridden={declaredIn(model, key)}
+        // 只有容量那两项用 `1M`/`384K` 的词汇，因此也只有它们会「读不出来」；文本字段写什么都算数。
+        invalid={copy.numeric === true && capacityBad(draftOf(model)[key])}
+        overriddenLabel={t('overridden')}
+        resetLabel={t('resetField')}
+        invalidLabel={t('invalidField')}
+        disabled={busy !== ''}
+        onEdit={(text) => stage(model, { [key]: text })}
+        onReset={() => stage(model, { [key]: copy.cleared })}
+      />
+    </div>
   );
 
   /** 一行模型的覆盖编辑器：只写这一行。 */
@@ -1272,170 +986,139 @@ function AperturePanel(props: AperturePanelProps) {
     const changed = Object.keys(patchOf(draft, initialOf(model)).patch).length;
     // 界面认不得的键（`reasoningEfforts` 之类）只有「清空覆盖」撤得掉，而那是整条删，得先说清楚。
     const unknown = overrides.filter((key) => !EDITABLE_KEYS.includes(key));
-    return h(
-      'div',
-      { className: 'dap-editor' },
-      h(
-        'div',
-        { className: 'dap-editorHead' },
-        h('span', { className: 'dap-editorId', title: model.id }, model.id),
-        unknown.length === 0
+    return (
+      <div className="dap-editor">
+        <div className="dap-editorHead">
+          <span className="dap-editorId" title={model.id}>{model.id}</span>
+          {unknown.length === 0
+            ? null
+            : (
+              <span className="dap-warnNote">
+                {t('editUnknownOverrides', { keys: overrideKeyNames(unknown) })}
+              </span>
+            )}
+          {dirtyOf(model)
+            ? <Tag tone="warning" className="dap-editorDirty">{t('dirtyTag')}</Tag>
+            : null}
+        </div>
+        <div className="dap-editGroup">
+          <span className="dap-editGroupTitle">{t('editGroupIdentity')}</span>
+          <div className="dap-fields">
+            {textField(model, 'name', {
+              label: 'editName',
+              hint: 'editNameHint',
+              source: (item) => item.provenance.name,
+              cleared: '',
+            })}
+            {textField(model, 'alias', {
+              label: 'editAlias',
+              hint: 'editAliasHint',
+              source: () => 'config',
+              cleared: '',
+            })}
+            {textField(model, 'api', {
+              label: 'editApi',
+              hint: 'editApiHint',
+              // 协议没有单独一项来源：写过就是配置，没写过就是从通告的端点推导出来的。
+              source: (item) => (declaredIn(item, 'api') ? 'config' : 'aperture'),
+              cleared: '',
+              placeholder: (item) => item.protocol ?? '',
+            })}
+          </div>
+        </div>
+        <div className="dap-editGroup">
+          <span className="dap-editGroupTitle">{t('editGroupCapacity')}</span>
+          <div className="dap-fields">
+            {textField(model, 'contextWindow', {
+              label: 'editContextWindow',
+              hint: 'editCapacityHint',
+              source: (item) => item.provenance.limits,
+              cleared: '',
+              numeric: true,
+              // 清空之后回落到的就是发现到的那个数，摆在占位符里最省事。
+              placeholder: (item) => formatCapacity(item.contextWindow),
+            })}
+            {textField(model, 'maxTokens', {
+              label: 'editMaxTokens',
+              hint: 'editCapacityHint',
+              source: (item) => item.provenance.limits,
+              cleared: '',
+              numeric: true,
+              placeholder: (item) => formatCapacity(item.maxTokens),
+            })}
+          </div>
+        </div>
+        {/* 模态与推理并排：它们都是「一个开关加一句话」，横着放比竖着叠省一半高度。 */}
+        <div className="dap-grid2">
+          <div className="dap-editGroup">
+            <span className="dap-editGroupTitle">{t('editInput')}</span>
+            <div className="dap-control">
+              <Checkbox
+                checked={draft.text}
+                onChange={(next) => stage(model, { text: next })}
+                label={t('modalityText')}
+                disabled={busy !== ''}
+              />
+              <Checkbox
+                checked={draft.image}
+                onChange={(next) => stage(model, { image: next })}
+                label={t('modalityImage')}
+                disabled={busy !== ''}
+              />
+              {overrides.includes('input') ? <Tag tone="neutral">{t('overridden')}</Tag> : null}
+            </div>
+            <span className="dap-hint">{sourceOf(model.provenance.input)}</span>
+          </div>
+          <div className="dap-editGroup">
+            <span className="dap-editGroupTitle">{t('editReasoning')}</span>
+            {/* 显式给出 `Value`：`options` 里的字面量会被拓宽成 `string`，不给的话 `onChange`
+                拿到的就是 `string`，与草稿上的字面量联合对不上。 */}
+            <SegmentedControl<RowDraft['reasoning']>
+              id={`dap-${model.id}-reasoning`}
+              label={t('editReasoning')}
+              value={draft.reasoning}
+              options={[
+                { value: 'auto', label: t('reasoningFollow') },
+                { value: 'on', label: t('reasoningOn') },
+                { value: 'off', label: t('reasoningOff') },
+              ]}
+              onChange={(next) => stage(model, { reasoning: next })}
+              disabled={busy !== ''}
+            />
+            <span className="dap-hint">{sourceOf(model.provenance.reasoning)}</span>
+          </div>
+        </div>
+        {model.endpoints.length === 0
           ? null
-          : h(
-              'span',
-              { className: 'dap-warnNote' },
-              t('editUnknownOverrides', { keys: overrideKeyNames(unknown) }),
-            ),
-        dirtyOf(model)
-          ? h(Tag, { tone: 'warning', className: 'dap-editorDirty' }, t('dirtyTag'))
-          : null,
-      ),
-      h(
-        'div',
-        { className: 'dap-editGroup' },
-        h('span', { className: 'dap-editGroupTitle' }, t('editGroupIdentity')),
-        h(
-          'div',
-          { className: 'dap-fields' },
-          textField(model, 'name', {
-            label: 'editName',
-            hint: 'editNameHint',
-            source: (item) => item.provenance.name,
-            cleared: '',
-          }),
-          textField(model, 'alias', {
-            label: 'editAlias',
-            hint: 'editAliasHint',
-            source: () => 'config',
-            cleared: '',
-          }),
-          textField(model, 'api', {
-            label: 'editApi',
-            hint: 'editApiHint',
-            // 协议没有单独一项来源：写过就是配置，没写过就是从通告的端点推导出来的。
-            source: (item) => (declaredIn(item, 'api') ? 'config' : 'aperture'),
-            cleared: '',
-            placeholder: (item) => item.protocol ?? '',
-          }),
-        ),
-      ),
-      h(
-        'div',
-        { className: 'dap-editGroup' },
-        h('span', { className: 'dap-editGroupTitle' }, t('editGroupCapacity')),
-        h(
-          'div',
-          { className: 'dap-fields' },
-          textField(model, 'contextWindow', {
-            label: 'editContextWindow',
-            hint: 'editCapacityHint',
-            source: (item) => item.provenance.limits,
-            cleared: '',
-            numeric: true,
-            // 清空之后回落到的就是发现到的那个数，摆在占位符里最省事。
-            placeholder: (item) => formatCapacity(item.contextWindow),
-          }),
-          textField(model, 'maxTokens', {
-            label: 'editMaxTokens',
-            hint: 'editCapacityHint',
-            source: (item) => item.provenance.limits,
-            cleared: '',
-            numeric: true,
-            placeholder: (item) => formatCapacity(item.maxTokens),
-          }),
-        ),
-      ),
-      // 模态与推理并排：它们都是「一个开关加一句话」，横着放比竖着叠省一半高度。
-      h(
-        'div',
-        { className: 'dap-grid2' },
-        h(
-          'div',
-          { className: 'dap-editGroup' },
-          h('span', { className: 'dap-editGroupTitle' }, t('editInput')),
-          h(
-            'div',
-            { className: 'dap-control' },
-            h(Checkbox, {
-              checked: draft.text,
-              onChange: (next) => stage(model, { text: next }),
-              label: t('modalityText'),
-              disabled: busy !== '',
-            }),
-            h(Checkbox, {
-              checked: draft.image,
-              onChange: (next) => stage(model, { image: next }),
-              label: t('modalityImage'),
-              disabled: busy !== '',
-            }),
-            overrides.includes('input') ? h(Tag, { tone: 'neutral' }, t('overridden')) : null,
-          ),
-          h('span', { className: 'dap-hint' }, sourceOf(model.provenance.input)),
-        ),
-        h(
-          'div',
-          { className: 'dap-editGroup' },
-          h('span', { className: 'dap-editGroupTitle' }, t('editReasoning')),
-          // 显式给出 `Value`：`createElement` 不能把这个泛型从前面的 props 推出来，不给的话
-          // `onChange` 拿到的会是 `string`，与草稿上的字面量联合对不上。
-          h(SegmentedControl<RowDraft['reasoning']>, {
-            id: `dap-${model.id}-reasoning`,
-            label: t('editReasoning'),
-            value: draft.reasoning,
-            options: [
-              { value: 'auto', label: t('reasoningFollow') },
-              { value: 'on', label: t('reasoningOn') },
-              { value: 'off', label: t('reasoningOff') },
-            ] as const,
-            onChange: (next) => stage(model, { reasoning: next }),
-            disabled: busy !== '',
-          }),
-          h('span', { className: 'dap-hint' }, sourceOf(model.provenance.reasoning)),
-        ),
-      ),
-      model.endpoints.length === 0
-        ? null
-        : h(
-            'div',
-            { className: 'dap-endpoints' },
-            h('span', { className: 'dap-editGroupTitle' }, t('factEndpoints')),
-            h(
-              'ul',
-              { className: 'dap-endpointList' },
-              model.endpoints.map((endpoint) => h(
-                'li',
-                { className: 'dap-endpoint', key: endpoint },
-                endpoint,
-              )),
-            ),
-          ),
-      h(
-        'div',
-        { className: 'dap-actions' },
-        h('span', { className: 'dap-actionsNote' }, changed === 0
-          ? t('noPendingChanges')
-          : t('pendingChanges', { count: changed })),
-        h(Button, {
-          variant: 'ghost',
-          size: 'sm',
-          onClick: () => cancelRow(model),
-          disabled: busy !== '',
-        }, t('cancelRow')),
-        overrides.length === 0
-          ? null
-          : h(Button, {
-              variant: 'outline',
-              size: 'sm',
-              onClick: () => clearOverrides(model),
-              disabled: busy !== '',
-            }, t('clearOverrides')),
-        h(Button, {
-          variant: 'primary',
-          size: 'sm',
-          onClick: () => submitRow(model),
-          disabled: busy !== '',
-        }, busy === 'edit' ? t('saving') : t('saveRow')),
-      ),
+          : (
+            <div className="dap-endpoints">
+              <span className="dap-editGroupTitle">{t('factEndpoints')}</span>
+              <ul className="dap-endpointList">
+                {model.endpoints.map((endpoint) => (
+                  <li className="dap-endpoint" key={endpoint}>{endpoint}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        <div className="dap-actions">
+          <span className="dap-actionsNote">
+            {changed === 0 ? t('noPendingChanges') : t('pendingChanges', { count: changed })}
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => cancelRow(model)} disabled={busy !== ''}>
+            {t('cancelRow')}
+          </Button>
+          {overrides.length === 0
+            ? null
+            : (
+              <Button variant="outline" size="sm" onClick={() => clearOverrides(model)} disabled={busy !== ''}>
+                {t('clearOverrides')}
+              </Button>
+            )}
+          <Button variant="primary" size="sm" onClick={() => submitRow(model)} disabled={busy !== ''}>
+            {busy === 'edit' ? t('saving') : t('saveRow')}
+          </Button>
+        </div>
+      </div>
     );
   };
 
@@ -1450,58 +1133,44 @@ function AperturePanel(props: AperturePanelProps) {
     const open = opened[model.id] === true;
     const overrides = model.overrideKeys ?? [];
     const status = publishState(model);
-    return h(
-      'li',
-      { key: model.id, className: 'dap-card' },
-      h(
-        'button',
-        {
-          type: 'button',
-          className: 'dap-cardHead',
-          'aria-expanded': open ? 'true' : 'false',
-          onClick: () => toggleRow(model),
-        },
-        h(
-          'span',
-          { className: 'dap-status', role: 'img', 'aria-label': status.title, title: status.title },
-          h(StateDot, { state: status.state, size: 10 }),
-        ),
-        h(
-          'span',
-          { className: 'dap-identity' },
-          h(
-            'span',
-            { className: 'dap-identityTop' },
-            h('span', { className: 'dap-name', title: model.name }, model.name),
-            model.route === undefined ? h(Tag, { tone: 'warning' }, t('unservedTag')) : null,
-            overrides.length === 0
-              ? null
-              : h(
+    return (
+      <li key={model.id} className="dap-card">
+        <button
+          type="button"
+          className="dap-cardHead"
+          aria-expanded={open ? 'true' : 'false'}
+          onClick={() => toggleRow(model)}
+        >
+          <span className="dap-status" role="img" aria-label={status.title} title={status.title}>
+            <StateDot state={status.state} size={10} />
+          </span>
+          <span className="dap-identity">
+            <span className="dap-identityTop">
+              <span className="dap-name" title={model.name}>{model.name}</span>
+              {model.route === undefined ? <Tag tone="warning">{t('unservedTag')}</Tag> : null}
+              {overrides.length === 0
+                ? null
+                : (
                   // 这一层只为挂 `title`：官方 `Tag` 除了 tone/className/children 什么都不透传，
                   // 想让人 hover 看出「覆盖的是哪几项」就得自己在外面套一层。
-                  'span',
-                  { className: 'dap-tagWrap', title: overrideKeyNames(overrides) },
-                  h(Tag, { tone: 'neutral' }, t('overriddenCount', { count: overrides.length })),
-                ),
-            dirtyOf(model) ? h(Tag, { tone: 'warning' }, t('dirtyTag')) : null,
-          ),
-          h(
-            'span',
-            { className: 'dap-factRow' },
-            factItems(model).map((item, index) => h(
-              'span',
-              { className: 'dap-factItem', key: `${model.id}-fact-${String(index)}` },
-              item,
-            )),
-          ),
-        ),
-        h(
-          'span',
-          { className: 'dap-chevron', 'data-open': open ? 'true' : 'false' },
-          h(IconChevronRightOutlineRegular, { size: 14 }),
-        ),
-      ),
-      open ? editor(model) : null,
+                  <span className="dap-tagWrap" title={overrideKeyNames(overrides)}>
+                    <Tag tone="neutral">{t('overriddenCount', { count: overrides.length })}</Tag>
+                  </span>
+                )}
+              {dirtyOf(model) ? <Tag tone="warning">{t('dirtyTag')}</Tag> : null}
+            </span>
+            <span className="dap-factRow">
+              {factItems(model).map((item, index) => (
+                <span className="dap-factItem" key={`${model.id}-fact-${String(index)}`}>{item}</span>
+              ))}
+            </span>
+          </span>
+          <span className="dap-chevron" data-open={open ? 'true' : 'false'}>
+            <IconChevronRightOutlineRegular size={14} />
+          </span>
+        </button>
+        {open ? editor(model) : null}
+      </li>
     );
   };
 
@@ -1527,118 +1196,109 @@ function AperturePanel(props: AperturePanelProps) {
   const controlsDisabled = !state.available || !state.writable;
   const problem = roundProblem(report);
 
-  return h(
-    'div',
-    { 'data-dsh-aperture': '' },
-    h(
-      SettingsForm,
-      {
-        labels: {
+  return (
+    <div data-dsh-aperture="">
+      <SettingsForm
+        labels={{
           unavailable: t('unavailable'),
           readOnly: t('readOnly'),
           saveFailed: t('saveFailed'),
           save: t('save'),
           saving: t('saving'),
-        },
-        state,
-        onSave: saveSettings,
-        onDiscard: props.discard,
-        // 官方把 `children` 声明成必需，而 `createElement` 这条「children 走实参」的重载仍要求 props
-        // 自身满足那个类型。实参优先于 `props.children`（React 与测试替身都如此），因此这里给个占位。
-        children: null,
-      },
-      h(SettingsValueField, {
-        id: 'dap-base-url',
-        label: t('addressLabel'),
-        hint: t('addressHint'),
-        placeholder: t('addressPlaceholder'),
-        text: state.baseUrl.text,
-        overridden: state.baseUrl.overridden,
-        invalid: state.baseUrl.invalid,
-        overriddenLabel: t('overridden'),
-        resetLabel: t('resetField'),
-        invalidLabel: t('invalidField'),
-        disabled: controlsDisabled || state.saving,
-        onEdit: (text) => props.edit('baseUrl', text),
-        onReset: () => props.resetField('baseUrl'),
-      }),
-      h(
-        'div',
-        { className: 'dap-toggleRow' },
-        h(
-          'div',
-          { className: 'dap-toggleText' },
-          h('span', null, t('syncLabel')),
-          h('span', { className: 'dap-hint' }, t('syncHint')),
-        ),
-        h(
-          'div',
-          { className: 'dap-inline' },
-          state.sync.overridden
-            ? h(Tag, { tone: 'info' }, t('overridden'))
-            : null,
-          state.sync.overridden
-            ? h(Button, {
-                variant: 'ghost',
-                size: 'sm',
-                onClick: () => props.resetField('sync'),
-                disabled: controlsDisabled || state.saving,
-              }, t('resetField'))
-            : null,
-          h(Switch, {
-            checked: state.sync.text === 'true',
-            onChange: (next) => props.edit('sync', next ? 'true' : 'false'),
-            label: t('syncLabel'),
-            disabled: controlsDisabled || state.saving,
-          }),
-        ),
-      ),
-    ),
-    banner === null
-      ? null
-      : h('p', {
-          className: 'dap-banner',
-          'data-ok': banner.ok ? 'true' : 'false',
-          role: 'status',
-          'aria-live': 'polite',
-        }, banner.text),
-    h(
-      'section',
-      { className: 'dap-group' },
-      h(
-        'div',
-        { className: 'dap-groupHead' },
-        h(
-          'span',
-          { className: 'dap-titleWrap' },
-          h('h3', { className: 'dap-groupTitle' }, t('modelsTitle')),
-          report === null
-            ? null
-            : h('span', { className: 'dap-count' }, t('modelsCount', { count: report.models.length })),
-        ),
-        h(Button, {
-          variant: 'ghost',
-          size: 'sm',
-          icon: h(IconRefreshOutlineRegular, { size: 14 }),
-          onClick: refreshReport,
-          disabled: busy !== '',
-          title: t('refreshHint'),
-        }, busy === 'refresh' ? t('refreshing') : t('refresh')),
-      ),
-      h('p', { className: 'dap-hint' }, t('modelsHint')),
-      problem === null ? null : h('p', { className: 'dap-warnNote' }, problem),
-      report === null
-        ? h('p', { className: 'dap-hint' }, t('loading'))
-        : report.models.length === 0
-          // 没有实例地址时发现根本不会跑，这时说「还没发现到模型」等于没说——那句话要说清为什么。
-          // 只在设置读得到的时候这么说：读不到时地址存不存在都不知道，那是另一件事（表单自己会说）。
-          ? h(
-              'p',
-              { className: 'dap-empty' },
-              state.available && state.baseUrl.text === '' ? t('dormantHint') : t('noModels'),
-            )
-          : h('ul', { className: 'dap-rows' }, report.models.map(modelRow)),
-    ),
+        }}
+        state={state}
+        onSave={saveSettings}
+        onDiscard={props.discard}
+      >
+        <SettingsValueField
+          id="dap-base-url"
+          label={t('addressLabel')}
+          hint={t('addressHint')}
+          placeholder={t('addressPlaceholder')}
+          text={state.baseUrl.text}
+          overridden={state.baseUrl.overridden}
+          invalid={state.baseUrl.invalid}
+          overriddenLabel={t('overridden')}
+          resetLabel={t('resetField')}
+          invalidLabel={t('invalidField')}
+          disabled={controlsDisabled || state.saving}
+          onEdit={(text) => props.edit('baseUrl', text)}
+          onReset={() => props.resetField('baseUrl')}
+        />
+        <div className="dap-toggleRow">
+          <div className="dap-toggleText">
+            <span>{t('syncLabel')}</span>
+            <span className="dap-hint">{t('syncHint')}</span>
+          </div>
+          <div className="dap-inline">
+            {state.sync.overridden ? <Tag tone="info">{t('overridden')}</Tag> : null}
+            {state.sync.overridden
+              ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => props.resetField('sync')}
+                  disabled={controlsDisabled || state.saving}
+                >
+                  {t('resetField')}
+                </Button>
+              )
+              : null}
+            <Switch
+              checked={state.sync.text === 'true'}
+              onChange={(next) => props.edit('sync', next ? 'true' : 'false')}
+              label={t('syncLabel')}
+              disabled={controlsDisabled || state.saving}
+            />
+          </div>
+        </div>
+      </SettingsForm>
+      {banner === null
+        ? null
+        : (
+          <p
+            className="dap-banner"
+            data-ok={banner.ok ? 'true' : 'false'}
+            role="status"
+            aria-live="polite"
+          >
+            {banner.text}
+          </p>
+        )}
+      <section className="dap-group">
+        <div className="dap-groupHead">
+          <span className="dap-titleWrap">
+            <h3 className="dap-groupTitle">{t('modelsTitle')}</h3>
+            {report === null
+              ? null
+              : <span className="dap-count">{t('modelsCount', { count: report.models.length })}</span>}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<IconRefreshOutlineRegular size={14} />}
+            onClick={refreshReport}
+            disabled={busy !== ''}
+            title={t('refreshHint')}
+          >
+            {busy === 'refresh' ? t('refreshing') : t('refresh')}
+          </Button>
+        </div>
+        <p className="dap-hint">{t('modelsHint')}</p>
+        {problem === null ? null : <p className="dap-warnNote">{problem}</p>}
+        {report === null
+          ? <p className="dap-hint">{t('loading')}</p>
+          : report.models.length === 0
+            // 没有实例地址时发现根本不会跑，这时说「还没发现到模型」等于没说——那句话要说清为什么。
+            // 只在设置读得到的时候这么说：读不到时地址存不存在都不知道，那是另一件事（表单自己会说）。
+            ? <p className="dap-empty">{state.available && state.baseUrl.text === '' ? t('dormantHint') : t('noModels')}</p>
+            : (
+              <ul className="dap-rows">
+                {report.models.map(modelRow)}
+              </ul>
+            )}
+      </section>
+    </div>
   );
 }
 
