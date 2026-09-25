@@ -1,5 +1,5 @@
 /**
- * 客户端半边（源码 `src/client/index.tsx`，被测的是打包产物 `lib/client.js`）的接线与页面行为。
+ * 客户端半边（源码 `src/client/`，被测的是打包产物 `lib/client.js`）的接线与页面行为。
  *
  * 这一份测试对着两件事：
  *
@@ -54,7 +54,7 @@ const NS = 'settings.aperturePanel';
 const SETTINGS_NS = 'aperture';
 /** 设置里这一页编辑的字段。 */
 const FIELDS = ['baseUrl', 'sync'];
-/** 样式表元素认领自己用的名字（官方那套 `data-plugin-css` 的写法：包名/文件名），与 `src/client/index.tsx` 里的常量一致。 */
+/** 样式表元素认领自己用的名字（官方那套 `data-plugin-css` 的写法：包名/文件名），与 `src/client/styles.ts` 里的常量一致。 */
 const STYLE_OWNER = 'dsh-aperture/styles.css';
 
 /** 上报给 `window.__ModuleLoader__` 的一份模块。 */

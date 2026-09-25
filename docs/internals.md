@@ -178,8 +178,10 @@ Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://
 
 ### 浏览器半边也要构建
 
-源码在 `src/client/index.tsx`，`npm run build:client`（`tsdown`）把它打成 `lib/client.js`，`exports["./client"]`
-指向产物。DSH 的客户端模块系统只要求一个**经典脚本**：用
+源码在 `src/client/`：`index.ts` 是唯一的装配点（`apply` / `mountRemote` / 注册），页面在
+`AperturePanel.tsx`，字典在 `locales.ts`，描述符在 `remote.ts`，容量写法在 `format.ts`，样式在
+`styles.ts` + `styles.css`；`npm run build:client`（`tsdown`）把它们打成 `lib/client.js`，
+`exports["./client"]` 指向产物。DSH 的客户端模块系统只要求一个**经典脚本**：用
 `window.__ModuleLoader__.load({ id, factory })` 把自己上报，交给工厂一个同步的 `require`（解析平台模块表里的
 模块）。它不要求这份脚本经过打包器，也不检查它是否被压缩过——所以「手写一份 CJS 工厂体」在契约上完全成立
 （本插件 0.3.x 就是这么做的），代价全在源码侧：官方原语与 `ctx` 上那四个服务的形状只能靠记忆（官方改一个
@@ -196,12 +198,14 @@ intro: 'var module = { exports: {} }; var exports = module.exports;',
 footer: 'return module.exports; } });',
 ```
 
-源码那半边的形状：`src/client/index.tsx` 是 TSX（`jsx: react-jsx`，automatic runtime，`react/jsx-runtime`
-本来就在平台基线里），页面、每一行模型与展开后的编辑器都是普通的 JSX 树，`createElement` 那套样板没有了；
-样式表是真正的 `src/client/styles.css`，由 `tsdown.config.ts` 里的 `cssInline()` 编译成文本内联进产物——
-对应官方 `dsh-css-text-inline` 那一步。**CSS 仍然内联**：客户端模块系统只服务 `<包名>/client.js` 这一个
-经典脚本，没有旁挂 `.css` 的路由，也没有加载 `<link>` 的机制；本插件只有一份手写、没有类名变换的样式，
-因此那个加载器只做「读文件 → 导出文本」，不像官方那样还要过 lightningcss 与 CSS Modules（类名映射）。
+源码那半边的形状：`index.ts` 只做装配（`apply` / `mountRemote` / 注册），页面 `AperturePanel.tsx` 是 TSX
+（`jsx: react-jsx`，automatic runtime，`react/jsx-runtime` 本来就在平台基线里），页面、每一行模型与展开后的
+编辑器都是普通的 JSX 树，`createElement` 那套样板没有了；`locales.ts` 是两份字典与命名空间声明，
+`remote.ts` 是描述符，`format.ts` 是容量写法，样式表是真正的 `src/client/styles.css`，由
+`tsdown.config.ts` 里的 `cssInline()` 编译成文本内联进产物——对应官方 `dsh-css-text-inline` 那一步。
+**CSS 仍然内联**：客户端模块系统只服务 `<包名>/client.js` 这一个经典脚本，没有旁挂 `.css` 的路由，也没有
+加载 `<link>` 的机制；本插件只有一份手写、没有类名变换的样式，因此那个加载器只做「读文件 → 导出文本」，
+不像官方那样还要过 lightningcss 与 CSS Modules（类名映射）。
 
 `tsdown` 只打包不做类型检查，类型交给独立的 `tsconfig.client.json`（`lib: es2023 + dom`、`jsx: react-jsx`、
 `strict`），`npm run typecheck` 会跑它。官方客户端包按**真实版本**装在 devDependencies 里，但只为类型与打包：
@@ -211,7 +215,7 @@ footer: 'return module.exports; } });',
 
 以下运行期契约不变：
 
-- 运行时只 `require('react')`（平台基线模块）与 `require('@deepseek-ai/dsh-client-ui-primitives')`（控件与设置表单那一套），槽位、字典与 Remote 都从 `ctx` 上取服务，因此 `dsh.client.external` 是空的（`tsdown.config.ts` 里那份 `EXTERNALS` 就是这两个加上 `react/jsx-runtime`）；`dsh.client.inject` 是给宿主客户端模块系统的声明——它按这份清单把那些包的工厂注册成可 `require` 的模块，清单与 `src/client/index.tsx` 顶部那几条只为取服务声明的 `import type {} from '…/client'` 一一对应，来源是各包**发布出来的类型声明**而不是猜的（`ctx.slots` 在 `dsh-client-ui-renderer/client`、`ctx.locale` 在 `dsh-client-locale/client`、`ctx.configForms` 在 `dsh-client-ui-settings/client`、`ctx.remote` 在 `dsh-api-remotes/client`；`dsh-client-ui-plugin-manager` 是声明 `plugins.bundle.config` 那个槽位的插件页，`dsh-client-ui-primitives` 提供控件）。宿主只校验它是字符串数组，因此这份清单与插件页自己声明的槽位保持一致，不另立一套；多写一个客户端模块图里没有的 id 不会报错、也不会连出边（`arriveGraphRow` 找不到就跳过），所以它仍然只是**声明**——`apply` 真正等的是服务，不是清单；
+- 运行时只 `require('react')`（平台基线模块）与 `require('@deepseek-ai/dsh-client-ui-primitives')`（控件与设置表单那一套），槽位、字典与 Remote 都从 `ctx` 上取服务，因此 `dsh.client.external` 是空的（`tsdown.config.ts` 里那份 `EXTERNALS` 就是这两个加上 `react/jsx-runtime`）；`dsh.client.inject` 是给宿主客户端模块系统的声明——它按这份清单把那些包的工厂注册成可 `require` 的模块，清单与 `src/client/index.ts` 顶部那几条只为取服务声明的 `import type {} from '…/client'` 一一对应，来源是各包**发布出来的类型声明**而不是猜的（`ctx.slots` 在 `dsh-client-ui-renderer/client`、`ctx.locale` 在 `dsh-client-locale/client`、`ctx.configForms` 在 `dsh-client-ui-settings/client`、`ctx.remote` 在 `dsh-api-remotes/client`；`dsh-client-ui-plugin-manager` 是声明 `plugins.bundle.config` 那个槽位的插件页，`dsh-client-ui-primitives` 提供控件）。宿主只校验它是字符串数组，因此这份清单与插件页自己声明的槽位保持一致，不另立一套；多写一个客户端模块图里没有的 id 不会报错、也不会连出边（`arriveGraphRow` 找不到就跳过），所以它仍然只是**声明**——`apply` 真正等的是服务，不是清单；
 - 配置页注册必须走 `ctx.slots.inject('plugins.bundle.config', …)`：这个槽位由**插件页**自己声明，而那个声明完全可能晚于本插件的 `apply`，直接 `register` 会撞上「槽位尚未声明」；
 - 字典用 `ctx.locale.register(NS, { zh, en })` 注册，两种语言必须一次交齐；注册配置页时声明 `locale: NS`，槽位渲染器才会把绑定好的 `t` 交给组件；
 - 样式在 `apply` 的 effect 里注入一个 `<style data-plugin-css="dsh-aperture/styles.css">`（同时写上 `data-plugin="dsh-aperture"` 归属；`data-plugin-css` 取官方那套「包名/文件名」的写法），页面根节点带 `data-dsh-aperture`，选择器全收在那个属性之下；颜色一律引用 dsh web 的主题 token，卸载时由 effect 的 disposer 移除。这一份只剩排版：控件自己带底色与文字色（官方原语），本插件不再自画按钮，也就不必再配那对颜色；

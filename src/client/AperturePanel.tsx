@@ -1,29 +1,11 @@
 /**
- * `dsh-aperture` 浏览器半边（源码）：**「插件」页里本插件那个包页上的配置页**。
+ * 配置页：插件列表里本插件那个包页上的设置页（实例地址、同步开关，以及逐模型的覆盖）。
  *
- * 注册在包级配置槽位 `plugins.bundle.config` 上，键是包名 `dsh-aperture`：点开插件列表里的本
- * 插件就是这一页。页面只交内容，控件用官方原语，**没有卡片**，标题与面包屑由页主画。
+ * 页面只交内容，控件用官方原语，**没有卡片**——标题与面包屑由页主画。表单状态读注入面里的
+ * `useApertureCard`（官方 `SettingsFormModel` 的投影），报告、提示语与每行草稿是这一页的局部
+ * 状态；报告里的事实（`panel.status` 那一份结构化数据）只是不再整块摊开给用户看。
  *
- * 地址与同步开关交给官方设置表单（`SettingsForm` / `SettingsValueField` / `SettingsFormModel`）：
- * 草稿与生效值的差分、`revision` 围栏写入、保存失败保留草稿、只读与「命名空间没在服务」都归它
- * 管，本模块只声明每个字段怎么在「存下来的值」与「输入框文本」之间换算。
- *
- * 注入面是 `slots` / `locale` / `remote` / `configForms`：报告与「立刻刷新」经自己的
- * `aperturePanel` Remote 往返；设置的读写面向 `configForms` 要——**包级**配置页页主只递
- * `view: 'page'`、不递 `form`（递 `form` 的是行级与条目级），所以得按设置命名空间自己取。状态走
- * 注入面里的 `hooks`（渲染器把它变成 `useApertureCard` 选择器钩子），动作走普通函数。
- *
- * 运行时只 require 平台基线里的模块（`react` 与 `@deepseek-ai/dsh-client-ui-primitives`）；
- * `slots` / `locale` / `remote` / `configForms` 都从 `ctx` 上取服务，因此 `dsh.client.external`
- * 是空的。`dsh.client.inject` 是给宿主客户端模块系统的声明：它按那份清单把那些包的工厂注册成可
- * `require` 的模块。
- *
- * 这个文件是**源码**：`npm run build:client`（tsdown）把它打成 `lib/client.js`——一个用
- * `window.__ModuleLoader__.load({ id, factory })` 报名的经典脚本，`exports["./client"]` 指向它。
- * 包法（banner / intro / footer 三行把 CJS 工厂包出去）与官方
- * `packages/client/tsdown.client.ts` 一致，见仓库内 `tsdown.config.ts`。
- *
- * @module dsh-aperture/client
+ * @module dsh-aperture/client/AperturePanel
  */
 
 import * as React from 'react';
@@ -34,123 +16,23 @@ import {
   IconRefreshOutlineRegular,
   SegmentedControl,
   SettingsForm,
-  SettingsFormModel,
   SettingsValueField,
   StateDot,
   Switch,
   Tag,
-  settingsTextField,
 } from '@deepseek-ai/dsh-client-ui-primitives';
-
-// 只取服务声明（cordis 的 Context 增强），不产生运行时 require：这些包是服务提供方，
-// 它们的客户端半边由宿主模块图按行装，不由本模块 require。服务声明长在各包的 `/client` 入口
-// （`ctx.slots` 是渲染器声明的、`SlotMap` 里那个 `plugins.bundle.config` 是插件管理页声明的），
-// 根入口只有宿主半边那一套，指错了就一个服务都拿不到。
-import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client';
-import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
-import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client';
-// 下面这一条是给文件末尾那两处 `declare module` 用的：本模块把字典命名空间并进它的
-// `LocaleNamespaceMap`。
-import type {} from '@deepseek-ai/dsh-client-ui-slots';
-import type {} from '@deepseek-ai/dsh-api-remotes/client';
-import type { Context } from '@deepseek-ai/cordis';
 import type {
-  InvocationDescriptor,
-  RemoteResult,
-  TypertCodec,
-  TypertDisposer,
-  TypertRemoteContribution,
-  TypertSchema,
-} from '@deepseek-ai/dsh-typert-protocol';
-import type {
-  SettingsFieldSpec,
   SettingsFieldState,
   SettingsFormActions,
-  SettingsFormScope,
   SettingsFormShell,
   StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives';
+import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client';
 import type { PanelAction, PanelModelPatch } from '../panel.ts';
 import type { PanelModel, PanelReport } from '../report.ts';
 import type { FactSource, Modality } from '../types.ts';
-// 样式表是真正的 .css 文件，由 tsdown 的 `cssInline()` 编译成文本内联进产物（见 tsdown.config.ts）。
-import styles from './styles.css?inline';
-
-/** 字典命名空间（本插件拥有）；配置页的 `locale` 声明与 `ctx.locale.bind` 都用它。 */
-const NS = 'settings.aperturePanel';
-/** 宿主半边的 Remote 命名空间（`src/remote.ts`）。 */
-const PANEL = 'aperturePanel';
-/** 包名，取自 package.json；它同时是包级配置页的键。 */
-const PACKAGE = 'dsh-aperture';
-/** 样式表的归属标记（官方那套 `data-plugin-css` 的写法：包名/文件名）；卸载与热替换时按它回收。 */
-const STYLE_OWNER = 'dsh-aperture/styles.css';
-/**
- * 设置命名空间（宿主 `src/config.ts` 的 `APERTURE_NAMESPACE`，也是 `cordis.patch.yml` 里那一行
- * 的 id）。包级配置页页主不递 `form`，这一份表单就是按它向 `configForms` 要来的。
- */
-const SETTINGS_NS = 'aperture';
-/** 这一页自己编辑的两个字段；其余配置键（`models` 除外）留给配置文件。 */
-const FIELDS = Object.freeze(['baseUrl', 'sync']);
-
-// ---------------------------------------------------------------- 端点契约
-
-/**
- * 浏览器半边与宿主半边之间的线格式。
- *
- * 只有一个直通编解码器，因为浏览器侧从不解析这些值：注册表（`@deepseek-ai/dsh-typert-registry`）
- * 只检查 `mode` 是 `strict`、`typeSymbol` 非空、`create` 是个函数，网关客户端只读参数上的
- * `mode` 与结果上可选的 `decode`/`encode`，**没有一处调用 `create()`**，逐字段手写的 wire 校验
- * 因此永远不会执行。曾经那 300 行文法还埋了个雷：注册表要的是 `create` 工厂，`schema` 字段不被
- * 承认，于是 `$mount` 抛 `strict codec has no create() factory`，整份贡献被拒，界面安静地什么
- * 都不出现。
- *
- * 端点名不能与命名空间服务自己的成员重名：api-gateway 为每个命名空间建的
- * `RemoteNamespaceService` 会把端点收成自己的属性，撞上 `remove` / `has` / `install` / `name` /
- * `ctx` 这类预置名字时校验会拒绝**整份**贡献。
- */
-const SCHEMA: TypertSchema = Object.freeze({ parse: (value: unknown) => value });
-const CODEC: TypertCodec = Object.freeze({
-  mode: 'strict',
-  typeSymbol: `${PACKAGE}/types#any`,
-  create: () => SCHEMA,
-});
-
-/**
- * 一个端点的浏览器侧描述符。
- *
- * 参数按宿主方法的形参顺序给出；调用点按位置传参，网关按 `wire` 映射，并且**自动省掉
- * `undefined` 实参**（`if (value !== void 0) args[parameter.wire] = value`），所以「没提到的
- * 参数」天然就是「不碰」。
- *
- * @param {Array<string>} parameters - 参数名，顺序与宿主方法一致。
- */
-function descriptor(method: string, parameters: readonly string[] = []): InvocationDescriptor {
-  return Object.freeze({
-    id: `${PACKAGE}#${PANEL}/${method}`,
-    service: PANEL,
-    namespace: PANEL,
-    method,
-    invocation: Object.freeze({ kind: 'direct' }),
-    parameters: Object.freeze(parameters.map((name) => Object.freeze({
-      name,
-      wire: name,
-      source: 'json',
-      codec: CODEC,
-    }))),
-    result: CODEC,
-  });
-}
-
-/** 与宿主半边 `PANEL_INVOCATIONS` 一一对应的贡献（按官方的 `TypertRemoteContribution` 校验）。 */
-const REMOTE: TypertRemoteContribution = Object.freeze({
-  package: PACKAGE,
-  descriptors: Object.freeze([
-    descriptor('status'),
-    descriptor('refresh'),
-    descriptor('edit', ['id', 'patch']),
-  ]),
-});
+import { formatCapacity, formatCount, parseCapacity } from './format.ts';
+import { NS, interpolate, zhDict, type LocaleKey } from './locales.ts';
 
 /**
  * 界面能编辑的覆盖键。
@@ -160,326 +42,9 @@ const REMOTE: TypertRemoteContribution = Object.freeze({
  */
 const EDITABLE_KEYS = Object.freeze(['name', 'api', 'contextWindow', 'maxTokens', 'input', 'thinking', 'alias']);
 
-/**
- * `aperturePanel` 这个命名空间在**客户端**的形状。
- *
- * 官方这块是 Typert 生成器从宿主 FaceModel 生成的（`*.typert.remote-client.d.ts`），而生成器不随
- * DSH 发布，描述符因此两边都手写（见 docs/internals.md）。这一段就是把生成器本该产出的东西手写
- * 一份：`TypertRemoteMap` 是拍平的 `<命名空间>/<方法>` 键，`TypertRemoteNamespaceMap` 是命名空间
- * 到方法表的映射，客户端 `ctx.remote.<命名空间>` 与 `ctx.inject(['remote.<命名空间>'])` 都读它。
- * 接口名沿用生成器那套十六进制后缀（`aperturePanel` 的 ASCII），将来真引入生成器时，删掉这一段
- * 换成它生成的文件即可。
- */
-declare module '@deepseek-ai/dsh-typert-protocol' {
-  interface TypertRemoteNamespace$617065727475726550616e656c {
-    status: () => Promise<RemoteResult<PanelReport>>;
-    refresh: () => Promise<RemoteResult<PanelAction>>;
-    edit: (id: string, patch: PanelModelPatch | null) => Promise<RemoteResult<PanelAction>>;
-  }
-  interface TypertRemoteMap {
-    'aperturePanel/status': () => Promise<RemoteResult<PanelReport>>;
-    'aperturePanel/refresh': () => Promise<RemoteResult<PanelAction>>;
-    'aperturePanel/edit': (id: string, patch: PanelModelPatch | null) => Promise<RemoteResult<PanelAction>>;
-  }
-  interface TypertRemoteNamespaceMap {
-    'aperturePanel': TypertRemoteNamespace$617065727475726550616e656c;
-  }
-}
-
-/** 把 `RemoteResult` 拆成值，失败则抛人话。 */
-function unwrap<T>(result: RemoteResult<T>): T {
-  if (result.ok) return result.value;
-  const detail = result.error && result.error.message ? result.error.message : '未知原因';
-  throw new Error(`面板暂时连不上后台（${detail}）；若反复出现请重启 dsh web。`);
-}
-
-// -------------------------------------------------------------------- 样式
-
-/**
- * 配置页样式。
- *
- * 页面在独立 bundle 里，用不了仓库的 CSS module 管线，因此样式随包分发、按 effect 生命周期注入，
- * 卸载时移除；元素按 `data-plugin-css` 认领，与自己重名的那份先删掉（热替换）。
- *
- * 选择器全部收在根节点的 `[data-dsh-aperture]` 之下，颜色只引用 dsh web 的主题 token
- * （`--dsw-alias-*`，各带回落值），深浅色自动跟随。
- *
- * 排版照官方「模型」页：一个模型一张卡片（发丝描边 + 大圆角），展开的编辑器是卡片里一块内嵌面，
- * 字段用官方 `SettingsValueField`，因此徽章、重置、提示这些细活与官方设置页逐像素一致。官方那些
- * 类名是打包器哈希出来的私有产物，抄不到，能抄的只有配方（描边、圆角、内边距、字号）。
- *
- * 颜色只许用「这一页真的定义过」的 token：官方原语自己用的那几个（`bg-layer-3`、`border-l4`、
- * `interactive-bg-hover`）与 Theme 检查面列出的那十几个。像 `--dsw-alias-settings-card-stroke`
- * 这种只活在官方「模型」页自己那份组件 CSS 里的名字，在插件页上根本没定义——引用它等于引用一个
- * 空值，回落值又是白色，于是亮色主题下卡片连边都看不见（暗色主题反而正常，因为回落值是白 16%）。
- * 亮色主题下 `bg-layer-*` 全是白色（层与层靠阴影分开），所以卡片只能靠描边立住，底色只是给暗色
- * 主题加一点抬起感。
- *
- * @returns {Function} 卸载时移除样式表的 disposer。
- */
-function installStyles() {
-  const stale = document.querySelector(`style[data-plugin-css="${STYLE_OWNER}"]`);
-  if (stale !== null && stale.parentNode !== null) stale.parentNode.removeChild(stale);
-
-  const element = document.createElement('style');
-  element.dataset.plugin = PACKAGE;
-  element.dataset.pluginCss = STYLE_OWNER;
-  element.textContent = styles;
-  document.head.appendChild(element);
-  return () => {
-    if (element.parentNode !== null) element.parentNode.removeChild(element);
-  };
-}
-
-// -------------------------------------------------------------------- 字典
-
-const zh = {
-  save: '保存',
-  saving: '保存中…',
-  saveFailed: '没被接受：文档可能只读，或刚被别处改过',
-  readOnly: '这份设置是只读的，改不动。',
-  unavailable: '这一份设置现在读不到：宿主没有把 aperture 段服务给这个页面。',
-
-  addressLabel: '实例地址',
-  addressHint: '填 Aperture 的地址；留空即休眠，不再发现模型。',
-  addressPlaceholder: 'http://127.0.0.1:54117',
-  syncLabel: '自动同步',
-  syncHint: '每轮发现之后，把模型与参数写进 dsh 的 llm-pi-ai 路由。',
-
-  overridden: '已覆盖',
-  overriddenCount: '已覆盖 {count} 项',
-  resetField: '恢复默认',
-  invalidField: '要填不小于 1 的整数，或留空',
-
-  refresh: '立刻刷新',
-  refreshHint: '立刻重新发现并发布一次，清单与每一行的状态都按这一轮刷新。',
-  refreshing: '刷新中…',
-  loading: '读取中…',
-
-  configRefused: '设置已被别处改过，这次改动没有写入：刷新页面后再改一遍。',
-  savedResult: '已保存：{result}',
-  noChanges: '没有改动，因此没有写入。',
-  invalidNumber: '{field} 只能填不小于 1 的整数。',
-
-  // 「发现报告」那一块删掉之后留下的三句：没有地址时的空状态，以及这一轮两处可能出问题的地方。
-  dormantHint: '还没有实例地址：填上并保存之后才会去发现模型。',
-  catalogUnavailable: '清单不可用（{reason}）',
-  syncSkipped: '没写（{reason}）',
-
-  modelsTitle: '模型',
-  modelsHint: '一行一个模型；展开改这一行的覆盖，「保存」只写这一行。顺序来自发现顺序，没有路由可服务的排在最后。',
-  modelsCount: '{count} 个',
-  noModels: '还没有发现任何模型。',
-  unservedTag: '未服务',
-  dirtyTag: '有未保存的改动',
-  statusUnserved: '没有路由能服务这个模型',
-  statusUnknown: '这一轮没有同步，写没写进去看不出来',
-  statusPublished: '已写入 dsh 的路由',
-  statusNotPublished: '还没写进 dsh 的路由',
-
-  factContextWindow: '上下文 {count}',
-  factMaxTokens: '输出 {count}',
-  factRoute: '路由 {route}',
-  factProtocol: '协议 {protocol}',
-  factInput: '模态 {value}',
-  factReasoning: '推理 {value}',
-  factAlias: '别名 {alias}',
-  factEndpoints: '网关通告的端点：',
-  factSource: '来源：{source}',
-
-  modalityText: '文本',
-  modalityImage: '图片',
-  modalityNone: '无',
-  reasoningFollow: '跟随发现',
-  reasoningOn: '开',
-  reasoningOff: '关',
-
-  sourceAperture: 'Aperture',
-  sourceModelsDev: 'models.dev',
-  sourceConfig: '配置',
-  sourceDefault: '默认值',
-
-  editName: '显示名',
-  editApi: '协议',
-  editContextWindow: '上下文容量',
-  editMaxTokens: '最大输出',
-  editInput: '请求模态',
-  editReasoning: '推理',
-  editAlias: '清单别名',
-  editNameHint: '留空即用发现到的名字。',
-  editApiHint: '未服务的模型只有这里能救：填上协议它才有路由；留空即用网关通告的协议。',
-  editCapacityHint: '可以写 1M、384K；留空即用发现到的容量。',
-  editAliasHint: '写进 llm-pi-ai 清单的别名。',
-  editInputHint: '这里能覆盖报告说它接收的模态。',
-  editReasoningHint: '「跟随发现」就是这一项不写。',
-  fieldHelp: '{field}的说明',
-  editGroupIdentity: '名称与协议',
-  editGroupCapacity: '容量',
-  editUnknownOverrides: '这一行还有界面改不动的覆盖（{keys}）：清空覆盖会整条删掉。',
-  pendingChanges: '有 {count} 项改动还没写下去',
-  noPendingChanges: '和已保存的值相同',
-  saveRow: '保存',
-  clearOverrides: '清空覆盖',
-  cancelRow: '取消',
-  keyReasoningEfforts: '推理档位',
-  listSeparator: '、',
-};
-
-const en = {
-  save: 'Save',
-  saving: 'Saving…',
-  saveFailed: 'not accepted: the document may be read-only, or just changed elsewhere',
-  readOnly: 'These settings are read-only, so nothing can be changed here.',
-  unavailable: 'These settings cannot be read right now: the Host does not serve the aperture section to this page.',
-
-  addressLabel: 'Instance address',
-  addressHint: 'Where Aperture listens; leave it empty to go dormant and stop discovering models.',
-  addressPlaceholder: 'http://127.0.0.1:54117',
-  syncLabel: 'Sync automatically',
-  syncHint: 'After each discovery round, write the models and their parameters into dsh\u2019s llm-pi-ai routes.',
-
-  overridden: 'overridden',
-  overriddenCount: '{count} overridden',
-  resetField: 'Reset to default',
-  invalidField: 'Enter an integer of at least 1, or leave it empty',
-
-  refresh: 'Refresh now',
-  refreshHint: 'Discover and republish once; the list and every row’s status follow this round.',
-  refreshing: 'Refreshing…',
-  loading: 'Loading…',
-
-  configRefused: 'These settings changed elsewhere, so this edit was not written. Reload the page and try again.',
-  savedResult: 'Saved: {result}',
-  noChanges: 'Nothing changed, so nothing was written.',
-  invalidNumber: '{field} takes an integer of at least 1.',
-
-  // What is left of the deleted discovery report: the empty state without an address, plus the two
-  // things that can go wrong in a round.
-  dormantHint: 'No instance address yet: models are discovered once you set and save one.',
-  catalogUnavailable: 'catalog unavailable ({reason})',
-  syncSkipped: 'skipped ({reason})',
-
-  modelsTitle: 'Models',
-  modelsHint: 'One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery, with anything no route can serve last.',
-  modelsCount: '{count} models',
-  noModels: 'No models discovered yet.',
-  unservedTag: 'unserved',
-  dirtyTag: 'unsaved edits',
-  statusUnserved: 'No route can serve this model',
-  statusUnknown: 'This round synced nothing, so whether it was written is unknown',
-  statusPublished: 'Written into the dsh routes',
-  statusNotPublished: 'Not written into the dsh routes yet',
-
-  factContextWindow: '{count} context',
-  factMaxTokens: 'output {count}',
-  factRoute: 'route {route}',
-  factProtocol: 'protocol {protocol}',
-  factInput: 'modalities {value}',
-  factReasoning: 'reasoning {value}',
-  factAlias: 'alias {alias}',
-  factEndpoints: 'Endpoints the gateway advertises:',
-  factSource: 'Source: {source}',
-
-  modalityText: 'text',
-  modalityImage: 'image',
-  modalityNone: 'none',
-  reasoningFollow: 'Follow discovery',
-  reasoningOn: 'On',
-  reasoningOff: 'Off',
-
-  sourceAperture: 'Aperture',
-  sourceModelsDev: 'models.dev',
-  sourceConfig: 'config',
-  sourceDefault: 'default',
-
-  editName: 'Display name',
-  editApi: 'Protocol',
-  editContextWindow: 'Context window',
-  editMaxTokens: 'Max output',
-  editInput: 'Request modalities',
-  editReasoning: 'Reasoning',
-  editAlias: 'Catalog alias',
-  editNameHint: 'Leave it empty to use the discovered name.',
-  editApiHint: 'The only way an unserved model gets a route is a protocol here; leave it empty to use the advertised one.',
-  editCapacityHint: 'Write 1M or 384K; leave it empty to use the discovered capacity.',
-  editAliasHint: 'The alias written into the llm-pi-ai catalog.',
-  editInputHint: 'This overrides the modalities the report says it accepts.',
-  editReasoningHint: '\u201cFollow discovery\u201d leaves this key unwritten.',
-  fieldHelp: 'About {field}',
-  editGroupIdentity: 'Name and protocol',
-  editGroupCapacity: 'Capacity',
-  editUnknownOverrides: 'This row also carries overrides this page cannot edit ({keys}); clearing overrides removes the whole entry.',
-  pendingChanges: '{count} edits not written yet',
-  noPendingChanges: 'Matches the saved values',
-  saveRow: 'Save',
-  clearOverrides: 'Clear overrides',
-  cancelRow: 'Cancel',
-  keyReasoningEfforts: 'reasoning efforts',
-  listSeparator: ', ',
-};
-
-/** 内置中文兜底按普通字典读（`t` 缺席时用它，键集由下面的 `LocaleNamespaceMap` 声明）。 */
-const zhDict: Record<string, string> = zh;
-
-/**
- * 本插件的字典命名空间：声明之后 `ctx.locale.register(NS, …)` 会按 `zh` 的键集校验两份字典
- * （少一个键、多一个键都是编译错误，双语必须一次交齐），配置页注册时的 `locale: NS` 也才认得它。
- */
-declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface LocaleNamespaceMap {
-    'settings.aperturePanel': LocaleKey;
-  }
-}
-
-// ------------------------------------------------------------------ 小工具
-
 /** 一个错误的人话形式。 */
 function textOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/** token 计数的千位分隔符；跟随浏览器语言。 */
-function formatCount(value: number): string {
-  return value.toLocaleString();
-}
-
-/** 容量能写成的样子：十进制数加一个可选的 K/M 后缀。 */
-const CAPACITY_PATTERN = /^(\d+(?:\.\d+)?)([km])?$/i;
-/** 后缀是十进制的：`1M` 就是 1000K，跟容量平时的说法一致。 */
-const CAPACITY_SCALE = { k: 1e3, m: 1e6 };
-
-/**
- * 读输入框里的容量，好让人写 `1M`、`100K` 而不必去数零。与官方「模型」页同一套写法（它的
- * `parseCapacity`）：空串是「这一项不覆盖」，读不出来的返回 `NaN`，由调用方在本地挡下来。
- *
- * @returns {number|undefined} token 数；空串给 `undefined`，读不出来给 `NaN`。
- */
-function parseCapacity(text: string): number | undefined {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) return undefined;
-  const match = CAPACITY_PATTERN.exec(trimmed);
-  if (match === null) return NaN;
-  const suffix = match[2] === undefined ? '' : match[2].toLowerCase();
-  const scale = suffix === 'k' || suffix === 'm' ? CAPACITY_SCALE[suffix] : 1;
-  const scaled = Number(match[1]) * scale;
-  const rounded = Math.round(scaled);
-  // 浮点误差落在整数边上的（`1.0000001M`）吃掉；真不是整数的（`0.5`）原样返回，交给
-  // 调用方按「必须是不小于 1 的整数」拒绝。
-  return Math.abs(scaled - rounded) < 1e-6 ? rounded : scaled;
-}
-
-/**
- * 把存下来的 token 数写回输入框，取能原样读回来的最短写法：`1000000` 写成 `1M`、`384000`
- * 写成 `384K`，`1048576` 不是整千就照原样写——官方 `formatCapacity` 同此，两边是一套词汇。
- *
- * @returns {string} 输入框文本；没有值时是空串。
- */
-function formatCapacity(value: number | undefined): string {
-  if (value === undefined) return '';
-  if (!Number.isInteger(value) || value <= 0) return String(value);
-  if (value % CAPACITY_SCALE.m === 0) return `${String(value / CAPACITY_SCALE.m)}M`;
-  if (value % CAPACITY_SCALE.k === 0) return `${String(value / CAPACITY_SCALE.k)}K`;
-  return String(value);
 }
 
 /** 事实来源 → 字典键；未知来源原样显示。 */
@@ -489,71 +54,6 @@ const SOURCE_KEYS: Readonly<Record<string, LocaleKey>> = {
   config: 'sourceConfig',
   default: 'sourceDefault',
 };
-
-/** 一个键在不在用户层里——这就是「有没有被覆盖」的判据：写了与默认值相同的值也算覆盖。 */
-function hasKey(layer: unknown, key: string): boolean {
-  return typeof layer === 'object' && layer !== null && Object.prototype.hasOwnProperty.call(layer, key);
-}
-
-/**
- * 把 `{name}` 占位符换成实参。locale 服务自己做这件事，这里只是没有注入 `t` 时（测试、以及
- * 渲染器还没绑定字典时）用同一套规则兜底——否则字典里的模板会原样漏到界面上。
- *
- * @returns {string} 填好的字符串。
- */
-function interpolate(template: string, params?: Record<string, unknown>): string {
-  if (params === undefined) return template;
-  return template.replace(/\{(\w+)\}/gu, (match, name) => (
-    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
-  ));
-}
-
-// ------------------------------------------------------------ 设置表单模型
-
-/**
- * 布尔字段的换算规格。
- *
- * 官方设置表单按「草稿文本」组织，规格只要求两个方向：值怎么写进文本、文本怎么变成一次写入。
- * 开关用 `'true'` / `'false'` 当草稿，空串是「这一项不写」，值回落到组合层与 schema 默认。
- *
- * @returns {object} 字段规格。
- */
-function booleanField(field: string): SettingsFieldSpec {
-  return {
-    field,
-    format: (value) => (value === true ? 'true' : value === false ? 'false' : ''),
-    parse: (text) => {
-      if (text === '') return { kind: 'clear' };
-      if (text === 'true') return { kind: 'set', value: true };
-      if (text === 'false') return { kind: 'set', value: false };
-      return undefined;
-    },
-  };
-}
-
-/**
- * 这份设置没有服务时用的替身：`configForms` 缺席时（注入表保证不会，但这一页不该因此整页消失）
- * 让 `SettingsFormModel` 读到 `unavailable` 快照，官方表单自己会画那句「读不到」，模型那一段
- * 照旧。写入一律回绝——没有服务时没有任何东西能接受它。
- */
-const UNSERVED: SettingsFormScope<Record<string, unknown>> = Object.freeze({
-  getSnapshot: () => ({
-    // `as const` 是必需的：`Object.freeze` 会把字面量摊成 `string`，而官方要的是那个三选一的联合。
-    status: 'unavailable' as const,
-    value: undefined,
-    base: undefined,
-    user: undefined,
-    writable: false,
-    revision: undefined,
-  }),
-  subscribe: () => () => {},
-  mutate: async () => false,
-});
-
-// ------------------------------------------------------------------ 配置页
-
-/** 本插件字典的键（内置中文那一份的键集就是权威，`LocaleNamespaceMap` 按它声明）。 */
-type LocaleKey = keyof typeof zh;
 
 /**
  * 一个模型这一行的草稿：输入框里的文本与开关。
@@ -613,7 +113,7 @@ interface TextFieldCopy {
 }
 
 /** 报告与两个写端点（走 `aperturePanel` Remote）。 */
-interface PanelFace {
+export interface PanelFace {
   status(): Promise<PanelReport>;
   refresh(): Promise<PanelAction>;
   writeModel(id: string, patch: PanelModelPatch | null): Promise<PanelAction>;
@@ -629,7 +129,7 @@ type ApertureCardSnapshot = SettingsFormShell & {
  * 配置页组件拿到的注入面：注册时 `inject` 返回什么，这里就要求什么；渲染器另外把
  * `locale: NS` 绑成 `t`、把 `hooks.apertureCard` 变成 `useApertureCard` 选择器钩子。
  */
-interface AperturePanelProps {
+export interface AperturePanelProps {
   /** 字典（注册时声明了 `locale: NS`）；没有时用内置中文兜底（测试与首次渲染）。 */
   t?: TranslateNS<typeof NS>;
   /** 表单投影的选择器钩子。 */
@@ -689,6 +189,8 @@ const OVERRIDE_NAMES: Readonly<Record<string, LocaleKey>> = {
   reasoningEfforts: 'keyReasoningEfforts',
 };
 
+// ------------------------------------------------------------------ 页面
+
 /**
  * 配置页：实例（地址、同步开关）与模型清单。
  *
@@ -704,7 +206,7 @@ const OVERRIDE_NAMES: Readonly<Record<string, LocaleKey>> = {
  *   `resetField` / `discard` / `failed`（设置表单）与 `t`（字典，注册时声明了 `locale`）。
  * @returns {object} 页面元素。
  */
-function AperturePanel(props: AperturePanelProps) {
+export function AperturePanel(props: AperturePanelProps) {
   const t: TranslateNS<typeof NS> = typeof props.t === 'function'
     ? props.t
     : (key, params) => interpolate(zhDict[key] ?? key, params);
@@ -1301,104 +803,3 @@ function AperturePanel(props: AperturePanelProps) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------- 插件本体
-
-/**
- * 把 `aperturePanel` 贡献挂到客户端的 Remote 服务上。
- *
- * `apply` 必须保持同步：宿主 Cordis 会卸载 async apply 里 `await` 之后注册的 `ctx.effect`。
- * 因此异步的 `$mount` 在一个**同步注册**的 effect 工厂内部完成，失败落 console.error。
- *
- * @param {object} ctx - 客户端根上下文。
- */
-function mountRemote(ctx: Context): void {
-  ctx.effect(() => {
-    let mounted: TypertDisposer | null = null;
-    let pending = true;
-    let unloaded = false;
-    void (async () => {
-      try {
-        mounted = await ctx.remote.$mount(REMOTE);
-      } catch (error) {
-        console.error('dsh-aperture: aperturePanel 贡献挂载失败', error);
-      }
-      pending = false;
-      if (unloaded) void mounted?.();
-    })();
-    return () => {
-      unloaded = true;
-      if (!pending) void mounted?.();
-    };
-  }, 'dsh-aperture: remote contribution');
-}
-
-/**
- * 浏览器插件主体：字典、样式、Remote 贡献，以及「插件」页里本插件那个包页的配置页。
- *
- * `ctx.slots.inject` 是必需的，不是可选的：`plugins.bundle.config` 由插件管理页自己声明，那个
- * 声明完全可能在本插件 `apply` 之后才发生，直接 register 会撞上「槽位尚未声明」。
- *
- * 注册的键是**包名**：键控槽位按它找贡献，点开插件列表里的本插件就是这一页。设置那一份表单也
- * 在这里取——页主只递 `view`，`configForms.get(命名空间)` 才是这一页的配置读写面；服务按命名
- * 空间缓存控制器，因此它与插件页自己取到的是同一份。
- *
- * @param {object} ctx - 客户端根上下文。
- */
-function apply(ctx: Context): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-aperture: dictionaries');
-  ctx.effect(() => installStyles(), 'dsh-aperture: stylesheet');
-  mountRemote(ctx);
-
-  ctx.inject(['remote.aperturePanel'], (scope) => {
-    const t = scope.locale.bind(NS);
-    const namespace = () => scope.remote.aperturePanel;
-    const panel: PanelFace = {
-      status: async () => unwrap(await namespace().status()),
-      refresh: async () => unwrap(await namespace().refresh()),
-      writeModel: async (id, patch) => unwrap(await namespace().edit(id, patch)),
-    };
-
-    // 官方设置表单那一套：这一份模型负责草稿、`revision` 围栏与「哪些字段已覆盖」，页面只读
-    // 它的投影。表单自己订阅控制器，因此设置一变，投影就会变新。
-    const controller = ctx.configForms === undefined ? UNSERVED : ctx.configForms.get(SETTINGS_NS);
-    const form = new SettingsFormModel(controller, [settingsTextField('baseUrl'), booleanField('sync')]);
-    const actions = form.actions();
-    const card = form.bind(() => ({
-      ...form.shell(),
-      baseUrl: form.field('baseUrl'),
-      sync: form.field('sync'),
-    }));
-    scope.effect(() => () => form.dispose(), 'dsh-aperture: settings form');
-
-    scope.slots.inject('plugins.bundle.config', () => scope.slots.register({
-      name: 'plugins.bundle.config',
-      key: PACKAGE,
-      locale: NS,
-      inject: () => ({
-        hooks: { apertureCard: card },
-        panel,
-        edit: actions.edit,
-        resetField: actions.resetField,
-        discard: actions.discard,
-        save: () => form.save(),
-        failed: () => form.shell().failed,
-      }),
-    }, AperturePanel));
-  });
-}
-
-export const name = PACKAGE;
-/** 本插件依赖的客户端服务：槽位、字典、Remote 调用面，以及设置接缝的配置表单。 */
-export const inject = ['slots', 'locale', 'remote', 'configForms'];
-export {
-  apply,
-  /** 字典命名空间（测试与排查用）。 */
-  NS,
-  /** 设置命名空间，也是包级配置页这一份表单的键（测试与排查用）。 */
-  SETTINGS_NS,
-  /** 这一页自己编辑的字段（测试与排查用）。 */
-  FIELDS,
-  /** 上报给 Remote 注册表的贡献（测试与排查用）。 */
-  REMOTE,
-};

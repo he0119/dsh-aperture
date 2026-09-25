@@ -71,7 +71,7 @@ function cssInline(): TsdownPlugin {
 
 export default defineConfig({
   name: `${PACKAGE}/client`,
-  entry: { client: 'src/client/index.tsx' },
+  entry: { client: 'src/client/index.ts' },
   // 宿主那份 tsconfig.json 把 src/client 排除在外（它没有 DOM 也没有 JSX），
   // 因此这里必须显式指到浏览器半边自己的那份，否则 JSX / lib 都会按宿主的算。
   tsconfig: 'tsconfig.client.json',
