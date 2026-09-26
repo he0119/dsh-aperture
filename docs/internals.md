@@ -184,7 +184,7 @@ Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://
 源码在 `src/client/`：`index.ts` 是唯一的装配点（`apply` / `mountRemote` / 注册），页面在
 `AperturePanel.tsx`（一行模型与展开后的编辑器在 `ModelRow.tsx` / `ModelEditor.tsx`，草稿与补丁的
 换算在 `draft.ts`），字典在 `locales.ts`，描述符在 `remote.ts`，容量写法在 `format.ts`，样式在
-`styles.ts` + `styles.css`；`npm run build:client`（`tsdown`）把它们打成 `lib/client.js`，
+`styles.ts` + `styles.css`；`pnpm run build:client`（`tsdown`）把它们打成 `lib/client.js`，
 `exports["./client"]` 指向产物。DSH 的客户端模块系统只要求一个**经典脚本**：用
 `window.__ModuleLoader__.load({ id, factory })` 把自己上报，交给工厂一个同步的 `require`（解析平台模块表里的
 模块）。它不要求这份脚本经过打包器，也不检查它是否被压缩过——所以「手写一份 CJS 工厂体」在契约上完全成立
@@ -213,11 +213,26 @@ Web Client 源码的形状：`index.ts` 只做装配（`apply` / `mountRemote` /
 不像官方那样还要过 lightningcss 与 CSS Modules（类名映射）。
 
 `tsdown` 只打包不做完整类型检查：宿主类型交给 `tsconfig.test.json`，浏览器类型交给独立的
-`tsconfig.client.json`（`lib: es2023 + dom`、`jsx: react-jsx`、`strict`），`npm run typecheck` 会跑完两份。
+`tsconfig.client.json`（`lib: es2023 + dom`、`jsx: react-jsx`、`strict`），`pnpm run typecheck` 会跑完两份。
 官方客户端包按**真实版本**装在 devDependencies 里，但只为类型与打包：
 它们运行时由宿主模块表提供，本包不解析它们（`test/client.test.ts` 里那个「不许 require 基线之外的模块」的
 替身就是这道保证）。报告与模型的形状不在 Web Client 端另立一套，直接 `import type` Host 端的 `src/report.ts`——那是
 两端共享的线格式，「Host 端组装数据、界面按语言组织措辞」这条分工也照旧。
+
+devDependencies 里还有一个本包**从不 import** 的 `@deepseek-ai/cosmokit`，它是给声明生成用的：
+`src/config.ts` 的 `Config` 由 schemastery 的 `.volatile()` 推导，而 `.volatile()` 的结果类型是
+`Schema<…, 'volatile'>`，其输出类型 `Volatile<T>` 定义在 cosmokit 里。npm 的平铺 `node_modules` 会把
+cosmokit 提升到根目录，tsc 于是能用一个模块名引用它；pnpm 的隔离布局只在 `.pnpm/` 里保留它，声明生成会直接报
+
+```text
+error TS2742: The inferred type of 'Config' cannot be named without a reference to
+'.pnpm/@deepseek-ai+cosmokit@1.8.5/node_modules/@deepseek-ai/cosmokit'. A type annotation is necessary.
+```
+
+官方 DSH 用 `'@deepseek-ai/cosmokit': 'link:vendor/cosmokit'` 把这个包钉在仓库内的固定路径上解决同一问题；
+本仓库没有 vendor 目录，就改成把它写成直接依赖（版本与 schemastery 要求的 `~1.8.5`、以及官方 vendor 的那份一致），
+让它和其余依赖一样出现在根 `node_modules` 里。它不进 `peerDependencies`：本包运行时并不解析它，
+只有声明文件里会出现对它的引用。
 
 以下运行期契约不变：
 
@@ -243,7 +258,7 @@ Host 端也由同一份 `tsdown.config.ts` 构建：内部源码合成官方 Hos
 - 它自己搭的那套里只有一个替身：`hmr`（`hmrSeam`）。真实的 HMR 要 `--expose-internals` 与 `timer` 服务才挂得起来，而它恰好决定了写入落不落得下来（见「写入行为」里那条「写入必须从 HMR 事务之外发起」）——少了这个替身，事件里发起的那一轮刷新被事务嵌套拒绝的样子，与「写成功了只是没变化」在断言上分不开。替身只留 `runExclusive()` 的两条语义：事务里再来一次就拒绝、否则排在上一件工作后面。
 - 它连的网关是仓库里的 `test/fake-gateway.ts`：内核挑一个空闲端口，`/v1/models` 回一份与断言一一对应的固定载荷。因此这一份不依赖 Tailscale 网络，CI 里也跑得动；`DSH_APERTURE_LIVE_URL` 给定时改连真实实例（那份载荷与用例是一份契约，改一处就要改另一处）。
 - 各 `src/*.ts` 的单元测试钉的是端到端**测不到**的那些：请求头与 URL 归一化、解析失败时的具体原因、`planSync` 的逐条 op、单飞语义、写入被拒的分支。端到端只会告诉你「文档里没有 `llm-pi-ai` 那一行」，不会告诉你「`accept` 头丢了」。因此两边都留：端到端负责「真的能用」，单元测试负责「坏在哪」。
-- Web Client 端（`test/client.test.ts`）测的是**打包产物** `lib/client.js`（`npm test` 的 pretest 会先重打一次），因为 `window.__ModuleLoader__.load` 那层包法正是要钉住的契约之一；官方原语虽然有真实类型，但运行时仍然喂替身模块。它走 `test/support/mini-react`（实现了 `createElement` 与 automatic runtime 的 `jsx` / `jsxs` / `Fragment`），钉住的是**接缝**（注册到哪个槽位、注入面上的名字与形状、effect 依赖里不许有对象、提交轮数不许自激、卸载时收不收回订阅与样式）与页面行为（改哪一项写哪一项、失败时界面说不说实话）。它证明不了「官方组件长什么样」，那不在本仓库的测试范围内；替身只保证被测代码依赖的那套语义与官方一致（`SettingsFormModel` 的草稿、`revision` 围栏与 `stored` 口径）。
+- Web Client 端（`test/client.test.ts`）测的是**打包产物** `lib/client.js`（`pnpm test` 的 pretest 会先重打一次），因为 `window.__ModuleLoader__.load` 那层包法正是要钉住的契约之一；官方原语虽然有真实类型，但运行时仍然喂替身模块。它走 `test/support/mini-react`（实现了 `createElement` 与 automatic runtime 的 `jsx` / `jsxs` / `Fragment`），钉住的是**接缝**（注册到哪个槽位、注入面上的名字与形状、effect 依赖里不许有对象、提交轮数不许自激、卸载时收不收回订阅与样式）与页面行为（改哪一项写哪一项、失败时界面说不说实话）。它证明不了「官方组件长什么样」，那不在本仓库的测试范围内；替身只保证被测代码依赖的那套语义与官方一致（`SettingsFormModel` 的草稿、`revision` 围栏与 `stored` 口径）。
 
 ## 已知边界
 

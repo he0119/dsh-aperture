@@ -23,22 +23,26 @@ jobs:
     steps:
       # v5 起这两个动作跑在 Node 24 上；v4 在 runner 上只会被警告降级执行。
       - uses: actions/checkout@v5
+      # pnpm 的版本不在 workflow 里写死：action-setup 读 package.json 的 packageManager（pnpm@11.7.0），
+      # 与本地 corepack 用的是同一个版本。它必须排在 setup-node 前面——下面的 cache: pnpm 要靠它算 store 路径。
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
           # 跟官方 DSH 的 engines 下限一致，确保插件不会无意中依赖更高版本的 Node。
           node-version: 22.19.0
-          cache: npm
+          cache: pnpm
       # 仓库自己没有编译型依赖；安装带来 typescript、各 @deepseek-ai/* 的类型声明，以及打包器
-      # tsdown（它依赖的 rolldown 是预编译分发的平台绑定，不在本机编译）。装完 npm 会跑 prepare，
+      # tsdown（它依赖的 rolldown 是预编译分发的平台绑定，不在本机编译）。装完 pnpm 会跑 prepare，
       # 于是 lib/ 里的宿主单文件 ESM、按模块声明与浏览器 client.js 在这时就位。
-      - run: npm ci
+      # --frozen-lockfile：CI 只认仓库里那份 pnpm-lock.yaml，依赖漂移在这里就失败。
+      - run: pnpm install --frozen-lockfile
       # test/ 含 .ts 用例，靠 node 自带的类型擦除运行；完整类型检查由下一步负责。
-      # 客户端那一份测的是**产物** lib/client.js，所以 npm test 会先跑 pretest（build:client）重打一次，
-      # 免得对着上一次构建的字节做断言。
+      # 客户端那一份测的是**产物** lib/client.js，所以 pnpm test 会先跑 pretest（build:client）重打一次，
+      # 免得对着上一次构建的字节做断言。（pnpm 11 默认就会跑 pre/post 脚本，与 npm 一致。）
       # 端到端那一份也在 glob 里（test/live.test.ts）：它连的网关由 test/fake-gateway.ts 自己起，
       # 不写死端口、不要网络，因此这里不需要 DSH_APERTURE_LIVE_URL，也不必单独一步。
-      - run: npm test
+      - run: pnpm test
       # 两个 TS 项目：tsconfig.test.json（Host + test/）与 tsconfig.client.json（Web Client——
       # 它要 DOM 与 JSX，不能并进 Host 那份）。
-      - run: npm run typecheck
-      - run: npm run build
+      - run: pnpm run typecheck
+      - run: pnpm run build

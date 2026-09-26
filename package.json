@@ -3,6 +3,7 @@
   "version": "0.3.2",
   "description": "自动发现 Aperture 网关上的模型，并加进 DSH 的模型选择器。",
   "type": "module",
+  "packageManager": "pnpm@11.7.0",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "icon": "./icon.svg",
@@ -32,9 +33,9 @@
     "build:client": "tsdown --filter dsh-aperture/client",
     "watch": "tsdown --watch --concurrency 1",
     "watch:client": "tsdown --filter dsh-aperture/client --watch",
-    "prepare": "npm run build",
+    "prepare": "pnpm run build",
     "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.client.json",
-    "pretest": "npm run build:client",
+    "pretest": "pnpm run build:client",
     "test": "node --test \"test/**/*.test.ts\"",
     "test:live": "node --test test/live.test.ts",
     "inspect": "node scripts/inspect-live.mjs"
@@ -84,6 +85,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/cordis-plugin-loader": "1.0.5",
+    "@deepseek-ai/cosmokit": "1.8.5",
     "@deepseek-ai/dsh-api-gateway": "0.1.7-rc.1",
     "@deepseek-ai/dsh-api-remotes": "0.1.7-rc.1",
     "@deepseek-ai/dsh-app-boot": "0.1.7-rc.1",

@@ -32,7 +32,7 @@ allowBuilds:
 
 > That authorization lets this package run code on your machine at install time, outside any agent sandbox. Authorize only source you trust.
 
-When editing the code locally, install the checkout directory instead (run `npm run build` first):
+When editing the code locally, install the checkout directory instead (run `pnpm run build` first):
 
 ```sh
 npx @deepseek-ai/dsh plugin --profile web add /path/to/dsh-aperture
@@ -218,9 +218,9 @@ Writes touch only the three keys under `llm-pi-ai.providers` that this plugin ow
 ## Development
 
 ```sh
-npm install
-npm run build      # tsdown -> lib/index.js + lib/types/index.d.ts + lib/client.js
-npm test           # unit tests + end-to-end (offline; devDependencies must be installed)
+pnpm install
+pnpm run build      # tsdown -> lib/index.js + lib/types/index.d.ts + lib/client.js
+pnpm test           # unit tests + end-to-end (offline; devDependencies must be installed)
 ```
 
 Working on the plugin — build, tests, and a dedicated development instance — is in [docs/development.md](https://github.com/he0119/dsh-aperture/blob/main/docs/development.md) (Chinese); the release process and what the published package contains are in [docs/releasing.md](https://github.com/he0119/dsh-aperture/blob/main/docs/releasing.md) (Chinese).

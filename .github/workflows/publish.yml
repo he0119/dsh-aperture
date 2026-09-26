@@ -32,11 +32,14 @@ jobs:
           fetch-depth: 0
 
       # 发布固定使用 Node 24.11：它属于官方支持范围，并自带满足可信发布要求（>= 11.5.1）的 npm 11。
+      # pnpm 只负责装依赖与跑 prepare（版本同样来自 package.json 的 packageManager），
+      # 真正发布的那一步仍然是 npm —— 可信发布与 provenance 是 npm CLI 的能力。
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
           node-version: 24.11.0
           registry-url: https://registry.npmjs.org
-          cache: npm
+          cache: pnpm
 
       - name: 校验标签与 package.json
         run: |
@@ -104,11 +107,11 @@ jobs:
           fi
           echo "标签落点校验通过：${tag} -> ${tag_sha}（main 顶端，package.json 就是 ${version}）"
 
-      # lib/ 不进 git，靠 prepare（npm run build：tsdown 统一构建宿主、声明与浏览器）在发布时现场编译，
-      # 所以这里必须先装依赖：check job 里那份 npm ci 不会跨 job 共享工作目录，少了这一步 prepare
+      # lib/ 不进 git，靠 prepare（pnpm run build：tsdown 统一构建宿主、声明与浏览器）在发布时现场编译，
+      # 所以这里必须先装依赖：check job 里那份 pnpm install 不会跨 job 共享工作目录，少了这一步 prepare
       # 会因为找不到 @types/node / tsdown 直接失败，发布在打包阶段就死了，根本走不到 OIDC 换 token。
       # 放在校验之后：标签打错了就没必要花这几分钟装依赖。
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       # 发布成功的那一刻 registry 上就能查到，所以这里的判断是可靠的。
       - name: 判断该版本是否已经发布

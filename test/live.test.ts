@@ -24,8 +24,8 @@
  * 想对着真实实例跑就给它一个地址：
  *
  * ```sh
- * npm run test:live                                                   # 自己起假网关
- * DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run test:live    # 真实实例
+ * pnpm run test:live                                                   # 自己起假网关
+ * DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run test:live    # 真实实例
  * ```
  *
  * @module dsh-aperture/test/live

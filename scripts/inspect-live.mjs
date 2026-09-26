@@ -11,7 +11,7 @@
  * 拼出来的对象。它加载的是**构建产物** `lib/`，也就是 profile 实际加载的那个文件。
  *
  * ```sh
- * npm run build && DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run inspect
+ * pnpm run build && DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run inspect
  * ```
  *
  * @module dsh-aperture/scripts/inspect-live
@@ -41,7 +41,7 @@ const instance = process.env.DSH_APERTURE_LIVE_URL?.trim();
 if (!instance) {
   // 旧版本在这里回退到一个硬编码的实例；现在没有它了：走完整套 profile + Loader 只为
   // 猜一个地址，不如把该给的东西说清楚。
-  console.error('需要 DSH_APERTURE_LIVE_URL，例如：DSH_APERTURE_LIVE_URL=https://ai.example.ts.net npm run inspect');
+  console.error('需要 DSH_APERTURE_LIVE_URL，例如：DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run inspect');
   process.exit(1);
 }
 
