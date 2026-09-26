@@ -33,9 +33,9 @@
     "build:client": "tsdown --filter dsh-aperture/client",
     "watch": "tsdown --watch --concurrency 1",
     "watch:client": "tsdown --filter dsh-aperture/client --watch",
-    "prepare": "pnpm run build",
+    "prepare": "node --run prebuild && node --run build",
     "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.client.json",
-    "pretest": "pnpm run build:client",
+    "pretest": "node --run build:client",
     "test": "node --test \"test/**/*.test.ts\"",
     "test:live": "node --test test/live.test.ts",
     "inspect": "node scripts/inspect-live.mjs"

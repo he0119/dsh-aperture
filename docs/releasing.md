@@ -116,7 +116,7 @@ Release 条目还带一句「已发布到 npm」的说明，排在自动日志�
 
 Host 端与 Web Client 端都是构建产物、都不入库：同一份 `tsdown.config.ts` 生成 Host 单文件 ESM
 `lib/index.js`、`lib/types/**/*.d.ts`，以及 Web Client 的 `lib/client.js`（含 `.map`）。它们都由
-`prepare`（`pnpm run build`）在安装与发布时现场跑——原因见 [internals.md](internals.md)
+`prepare`（清 `lib/` 后跑完整 tsdown 构建）在安装与发布时现场跑——原因见 [internals.md](internals.md)
 的「Host 端与 Web Client 端统一由 tsdown 构建」。
 
 ## npm 侧的一次性登记
