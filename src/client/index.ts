@@ -12,7 +12,7 @@
  *
  * 运行时只 require 平台基线里的模块（`react` / `react/jsx-runtime` 与
  * `@deepseek-ai/dsh-client-ui-primitives`）；四个服务都从 `ctx` 上取，因此
- * `dsh.client.external` 是空的。产物是 `npm run build:client`（tsdown）打出来的
+ * `dsh.client.external` 是空的。产物是 `pnpm run build:client`（tsdown）打出来的
  * `lib/client.js`：一个用 `window.__ModuleLoader__.load({ id, factory })` 报名的经典脚本。
  *
  * @module dsh-aperture/client

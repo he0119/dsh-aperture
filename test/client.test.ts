@@ -15,7 +15,7 @@
  * prop 的名字与含义、按钮该在什么时候出现、`SettingsFormModel` 的草稿与围栏语义。官方组件的观感
  * 与行为不在本仓库的测试范围内，这里只保证被测代码依赖的那套语义与官方一致。
  *
- * 测的是**产物**而不是源码：Web Client 端要先打包（`npm run build:client`，`npm test` 的 pretest 已经
+ * 测的是**产物**而不是源码：Web Client 端要先打包（`pnpm run build:client`，`pnpm test` 的 pretest 已经
  * 做了），因为 `window.__ModuleLoader__.load` 那层包法是打包器套上去的——那正是要钉住的契约之一。
  *
  * 渲染走 `test/support/mini-react`：它实现 `createElement` 与 automatic runtime 的
@@ -798,7 +798,7 @@ function fakeDocument(styles: FakeStyle[]): Record<string, unknown> {
 function loadClient(): Harness {
   assert.ok(
     existsSync(CLIENT_FILE),
-    `${CLIENT_FILE} 不存在：先构建 Web Client 端（npm run build:client）。`,
+    `${CLIENT_FILE} 不存在：先构建 Web Client 端（pnpm run build:client）。`,
   );
   const reported: LoadedEntry[] = [];
   const styles: FakeStyle[] = [];

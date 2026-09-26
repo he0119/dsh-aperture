@@ -32,7 +32,7 @@ allowBuilds:
 
 > 这项授权等于允许该包在你机器上、于 agent 沙箱之外执行安装脚本。只对信任的源码授权。
 
-本地改代码时，直接装仓库目录（先 `npm run build`）：
+本地改代码时，直接装仓库目录（先 `pnpm run build`）：
 
 ```sh
 npx @deepseek-ai/dsh plugin --profile web add /path/to/dsh-aperture
@@ -207,9 +207,9 @@ GET {baseUrl}/v1/models
 ## 开发
 
 ```sh
-npm install
-npm run build      # tsdown -> lib/index.js + lib/types/index.d.ts + lib/client.js
-npm test           # 单元测试 + 端到端（离线运行；需要已安装的 devDependencies）
+pnpm install
+pnpm run build      # tsdown -> lib/index.js + lib/types/index.d.ts + lib/client.js
+pnpm test           # 单元测试 + 端到端（离线运行；需要已安装的 devDependencies）
 ```
 
 改代码、跑测试与开发实例见 [docs/development.md](https://github.com/he0119/dsh-aperture/blob/main/docs/development.md)，发布流程与产物构成见 [docs/releasing.md](https://github.com/he0119/dsh-aperture/blob/main/docs/releasing.md)。
