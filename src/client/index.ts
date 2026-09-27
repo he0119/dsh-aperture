@@ -10,10 +10,10 @@
  * `aperturePanel` Remote 往返；设置的读写面向 `configForms` 要——**包级**配置页页主只递
  * `view: 'page'`、不递 `form`（递 `form` 的是行级与条目级），所以得按设置命名空间自己取。
  *
- * 运行时只 require 平台基线里的模块（`react` / `react/jsx-runtime` 与
- * `@deepseek-ai/dsh-client-ui-primitives`）；四个服务都从 `ctx` 上取，因此
- * `dsh.client.external` 是空的。产物是 `pnpm run build:client`（tsdown）打出来的
- * `lib/client.js`：一个用 `window.__ModuleLoader__.load({ id, factory })` 报名的经典脚本。
+ * 运行时**只** require 平台基线里的模块（`react` / `react/jsx-runtime`）；控件与设置表单那一套是
+ * 本插件自己带的（[ui.tsx](./ui.tsx) 与 [forms.ts](./forms.ts)，从官方原语包抄来的那一份），四个
+ * 服务都从 `ctx` 上取，因此 `dsh.client.external` 是空的。产物是 `pnpm run build:client`（tsdown）
+ * 打出来的 `lib/client.js`：一个用 `window.__ModuleLoader__.load({ id, factory })` 报名的经典脚本。
  *
  * @module dsh-aperture/client
  */
@@ -26,8 +26,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client';
 import type {} from '@deepseek-ai/dsh-api-remotes/client';
-import { SettingsFormModel, settingsTextField } from '@deepseek-ai/dsh-client-ui-primitives';
-import type { SettingsFieldSpec, SettingsFormScope } from '@deepseek-ai/dsh-client-ui-primitives';
+import { SettingsFormModel, settingsTextField } from './forms.ts';
+import type { SettingsFieldSpec, SettingsFormScope } from './forms.ts';
 import type { Context } from '@deepseek-ai/cordis';
 import type { RemoteResult, TypertDisposer } from '@deepseek-ai/dsh-typert-protocol';
 import { AperturePanel, type PanelFace } from './AperturePanel.tsx';
@@ -48,7 +48,8 @@ const FIELDS = Object.freeze(['baseUrl', 'sync']);
 /**
  * 布尔字段的换算规格。
  *
- * 官方设置表单按「草稿文本」组织，规格只要求两个方向：值怎么写进文本、文本怎么变成一次写入。
+ * 设置表单按「草稿文本」组织（抄来的那一份语义与官方一致），规格只要求两个方向：值怎么写进文本、
+ * 文本怎么变成一次写入。
  * 开关用 `'true'` / `'false'` 当草稿，空串是「这一项不写」，值回落到组合层与 schema 默认。
  *
  * @returns {object} 字段规格。
@@ -68,12 +69,12 @@ function booleanField(field: string): SettingsFieldSpec {
 
 /**
  * 这份设置没有服务时用的替身：`configForms` 缺席时（注入表保证不会，但这一页不该因此整页消失）
- * 让 `SettingsFormModel` 读到 `unavailable` 快照，官方表单自己会画那句「读不到」，模型那一段
- * 照旧。写入一律回绝——没有服务时没有任何东西能接受它。
+ * 让 `SettingsFormModel`（[forms.ts](./forms.ts)）读到 `unavailable` 快照，表单外壳会画那句
+ * 「读不到」，模型那一段照旧。写入一律回绝——没有服务时没有任何东西能接受它。
  */
 const UNSERVED: SettingsFormScope<Record<string, unknown>> = Object.freeze({
   getSnapshot: () => ({
-    // `as const` 是必需的：`Object.freeze` 会把字面量摊成 `string`，而官方要的是那个三选一的联合。
+    // `as const` 是必需的：`Object.freeze` 会把字面量摊成 `string`，而那个字段要的是三选一的联合。
     status: 'unavailable' as const,
     value: undefined,
     base: undefined,
@@ -149,9 +150,13 @@ function apply(ctx: Context): void {
       writeModel: async (id, patch) => unwrap(await namespace().edit(id, patch)),
     };
 
-    // 官方设置表单那一套：这一份模型负责草稿、`revision` 围栏与「哪些字段已覆盖」，页面只读
-    // 它的投影。表单自己订阅控制器，因此设置一变，投影就会变新。
-    const controller = ctx.configForms === undefined ? UNSERVED : ctx.configForms.get(SETTINGS_NS);
+    // 官方设置表单那一套（[forms.ts](./forms.ts)，语义与官方一致）：这一份模型负责草稿、`revision`
+    // 围栏与「哪些字段已覆盖」，页面只读它的投影。表单自己订阅控制器，因此设置一变，投影就会变新。
+    // 命名空间那一份 section 的形状由宿主 schema 决定，这一页只按名字读那几个标量，因此明写
+    // `Record<string, unknown>`——与 `UNSERVED` 那一份替身同型。
+    const controller = ctx.configForms === undefined
+      ? UNSERVED
+      : ctx.configForms.get<Record<string, unknown>>(SETTINGS_NS);
     const form = new SettingsFormModel(controller, [settingsTextField('baseUrl'), booleanField('sync')]);
     const actions = form.actions();
     const card = form.bind(() => ({

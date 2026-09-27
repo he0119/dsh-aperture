@@ -18,7 +18,7 @@ import {
   SegmentedControl,
   SettingsValueField,
   Tag,
-} from '@deepseek-ai/dsh-client-ui-primitives';
+} from './ui.tsx';
 import type { ReactNode } from 'react';
 import type { PanelModel } from '../report.ts';
 import type { FactSource } from '../types.ts';
@@ -106,11 +106,11 @@ export function ModelEditor(props: ModelEditorProps): ReactNode {
   /**
    * 一个文本类覆盖字段。
    *
-   * 官方 `SettingsValueField` 的语义正好对得上：「已覆盖」= 用户层里有这个键（报告给的
-   * `overrideKeys`），「恢复默认」= 把草稿改回「不覆盖」，非法草稿只标出来、由保存拦住。
+   * 抄来的 `SettingsValueField`（与官方一致）的语义正好对得上：「已覆盖」= 用户层里有这个键
+   * （报告给的 `overrideKeys`），「恢复默认」= 把草稿改回「不覆盖」，非法草稿只标出来、由保存拦住。
    *
-   * 长解释进 `help`（官方那个「i」按钮），输入框下面只留一句来源；外层只负责补回跨组件壳的
-   * 相邻字段分隔线，字段自身的间距与控件仍完全交给官方组件。
+   * 长解释进 `help`（那个「i」按钮），输入框下面只留一句来源；外层只负责补回跨组件壳的
+   * 相邻字段分隔线，字段自身的间距与控件仍完全交给抄来的那个组件。
    */
   const textField = (key: TextFieldKey, copy: TextFieldCopy) => (
     <div className="dap-fieldCell">
