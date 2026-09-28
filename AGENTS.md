@@ -66,6 +66,10 @@ pnpm test && pnpm run typecheck && pnpm run build
   「验证：哪一层证明什么」）：`test/live.test.ts` 是唯一能证明「写进去的配置**合法**而不是看起来
   合理」的一份；各 `src/*.ts` 的单元测试钉端到端测不到的细节（请求头、URL 归一化、`planSync` 的
   逐条 op、写入被拒的分支）；`test/client.test.ts` 测的是**打包产物** `lib/client.js`。
+- `test/manifest.test.ts` 不属于上面那三层，它核的是**声明**：拿宿主自己的
+  `evaluatePluginCompatibility` 走一遍 `package.json` 的 peer 范围与 `engines.dsh`，要求它们接受
+  devDependencies 装的那条版本线、又不接受更早的宿主。**升级 devDependencies 而忘了跟 peer 范围**，
+  真机上就是插件整行被预检拒掉、界面上什么也不出现，而其余检查全绿——这份用例挡的就是它。
 - `test/live.test.ts` 连的网关默认由 `test/fake-gateway.ts` 自己起（内核挑端口，不要网络）。那份
   固定载荷与用例是**一份契约**，改一处就要改另一处。
 - **新断言要篡改验证**：把被测行为改回去，测试必须变红；报告里说明做了哪些篡改。
