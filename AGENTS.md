@@ -16,7 +16,7 @@
 | `AGENTS.md` | 本文件：协作约定、提交信息口径、验证清单、界面硬约束 |
 | `docs/internals.md` | 为什么这么做：约束、踩过的坑、刻意的取舍 |
 | `docs/development.md` | 怎么构建、怎么跑、怎么起一个专用开发实例 |
-| `docs/releasing.md` | 发布流程（推 `v*` 标签触发可信发布）、标签落点三道校验、PR 标题与日志分组 |
+| `docs/releasing.md` | 发布流程（Actions 里点 Release 按钮 → CI 在当刻 `main` 顶端打标签 → 可信发布）、落点三道校验、PR 标题与日志分组 |
 
 ## 官方文档
 

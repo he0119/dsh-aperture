@@ -1,0 +1,93 @@
+name: Release
+
+# 人工点一次按钮才开始发布：合并版本号 PR 不等于发布，main 上的版本号只表示「下一版是这个号」。
+#
+# 版本号**不来自入参**——它仍只从 main 上的 package.json 读；入参是发布者对自己要发什么的断言，
+# 对不上就什么都不做。标签在这一步由 CI 打在它刚检出的那个提交上，所以「版本提交」与「标签」
+# 按构造是同一个 SHA，不存在哪一步打晚了。见 docs/releasing.md。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 要发布的版本号，须与 main 上 package.json 的 version 一致（可带 v 前缀）
+        type: string
+        required: true
+
+# 同一时刻只允许一次发布在跑：两次并发会让 npm 的 latest 被后发的那次拽回旧版本。
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      # 打标签并推送。标签不受分支 ruleset 约束，这一推过得去。
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # 这一步只读 package.json 里的版本号，不装依赖、不构建：构建与发布都在下面的 publish.yml 里。
+      # 与 ci.yml 用同一个 Node 下限，避免这里的判断依赖一个比我们声称支持的更高的 Node。
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.19.0
+
+      - id: release
+        env:
+          WANT: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          # 1. 只认在 main 上触发：workflow_dispatch 允许在界面上挑分支或标签，挑错了就停在这儿。
+          #    标签会被打在别的提交上，Publish 里的落点校验虽然兜得住，但那要等一整轮 check 才报错。
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::这次运行是在 ${GITHUB_REF} 上触发的。请对着 main 触发：gh workflow run release.yml --ref main -f version=…"
+            exit 1
+          fi
+
+          # 2. 以**当刻** main 顶端为准，而不是点按钮那一刻检出的那个提交：点了按钮之后又合了别的 PR
+          #    （比如一份文档）不该让这次发布白失败一次。发的是 main 现在声明的版本。
+          git fetch --no-tags origin main
+          git checkout --detach origin/main
+          head_sha="$(git rev-parse HEAD)"
+
+          # 3. 入参只是断言：版本号仍只从 package.json 读，对不上就什么都不做。
+          #    它挡的是「记错了现在升到哪一版」「在错误的分支上点」「手滑点了两次」这三类事。
+          want="${WANT#v}"
+          version="$(node -p 'require("./package.json").version')"
+          if [ "$want" != "$version" ]; then
+            echo "::error::入参是 ${WANT}，而 main 上的 package.json 是 ${version}。对不上，不发布。"
+            exit 1
+          fi
+
+          # 4. 标签已经存在就直接用它——这是重试路径：同版本再点一次按钮不会重复打标签，也不会重复发布，
+          #    Publish 会先查 registry，已经在 npm 上就只补 Release 条目。
+          tag="v${version}"
+          if git ls-remote --exit-code --refs --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "${tag} 已经存在，直接进入发布。"
+          else
+            # 注解标签，提交信息与历史一致。tagger 是 bot：这个标签是 CI 打的，不是人手打的。
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "chore(release): ${version}" "$head_sha"
+            git push origin "refs/tags/${tag}"
+            echo "已在 ${head_sha} 上打好 ${tag}。"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: tag
+    uses: ./.github/workflows/publish.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    permissions:
+      contents: write   # 建 GitHub Release
+      id-token: write   # npm 可信发布与 provenance 都要 OIDC
