@@ -36,9 +36,14 @@ jobs:
 
       # 这一步只读 package.json 里的版本号，不装依赖、不构建：构建与发布都在下面的 publish.yml 里。
       # 与 ci.yml 用同一个 Node 下限，避免这里的判断依赖一个比我们声称支持的更高的 Node。
+      #
+      # package-manager-cache: false 是必须的：setup-node v5 默认按 lockfile 自动开包管理器缓存，那会去
+      # PATH 上找 pnpm——这个 job 故意没装 pnpm（CI 里要有 pnpm/action-setup 排在前面才成立），不关掉
+      # 它就在这一步直接失败：`Unable to locate executable file: pnpm`。
       - uses: actions/setup-node@v5
         with:
           node-version: 22.19.0
+          package-manager-cache: false
 
       - id: release
         env:
