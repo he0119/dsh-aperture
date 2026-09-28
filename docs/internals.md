@@ -134,7 +134,7 @@ scope.slots.inject('plugins.bundle.config', () => scope.slots.register(
 
 **行级槽位（`plugins.row.config`）不用。** 插件页里一行有「配置」按钮，是因为那一行有它自己的设置段；本插件的设置段与那一行是同一份，两个槽位只会让同一份界面出现在两个入口。包级页面是唯一入口（官方唯一一个包级配置页是 `dsh-experimental-client-ui-voice-input`，写法相同），也只有 `'page'` 一种用法：插件页只在这一处渲染它，没有行级页那种 `'summary'` 简写，也不像行级页与条目级页那样收到页主递来的 `form`。
 
-Web Client 端只注入 `slots` / `locale` / `remote` / `configForms` 四个服务。`baseUrl` 与 `sync` 这两项**设置**不自己往返：页主不递 `form`，因此按设置命名空间自己取——`ctx.configForms.get('aperture')`，服务按命名空间缓存控制器，拿到的与插件页自己那份是同一个。它给出的快照就是设置表单要的那个作用域（`status` / `value` / `base` / `user` / `revision` / `writable`，与官方 `SettingsFormScope` 同形），因此草稿、脏标记、`revision` 围栏写入、冲突拒绝、只读与「命名空间没在服务」的说明由本插件自己那份表单模型管（`src/client/forms.ts` 的 `SettingsFormModel`，语义抄自官方那一份，理由与抄法见「界面不借官方组件」一节）；写完仍然等一轮刷新落地（见下）。「已覆盖」看的是字段在不在用户层里（`overrideKeys`，与官方同一条判据），而不是值等不等于组合层，这两件事不是一回事。`configForms` 缺席时（注入表保证不会，但这一页不该因此整页消失）表单接到一个 `unavailable` 替身上，表单外壳自己画那句「读不到」，报告照旧显示：报告才是这一页每次都有的东西。
+Web Client 端只注入 `slots` / `locale` / `remote` / `configForms` 四个服务。`baseUrl` 与 `sync` 这两项**设置**不自己往返：页主不递 `form`，因此按设置命名空间自己取——`ctx.configForms.get('aperture')`，服务按命名空间缓存控制器，拿到的与插件页自己那份是同一个。它给出的快照就是官方设置表单要的那个作用域（`status` / `value` / `base` / `user` / `revision` / `writable`），于是草稿、脏标记、`revision` 围栏写入、冲突拒绝、只读与「命名空间没在服务」的说明全交给设置接缝（`SettingsFormModel`），本插件不复制一套；写完仍然等一轮刷新落地（见下）。「已覆盖」看的是字段在不在用户层里（`overrideKeys`，与官方同一条判据），而不是值等不等于组合层，这两件事不是一回事。`configForms` 缺席时（注入表保证不会，但这一页不该因此整页消失）表单接到一个 `unavailable` 替身上，官方表单自己画那句「读不到」，报告照旧显示：报告才是这一页每次都有的东西。
 
 Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://github.com/xiaoyuyu6420/dsh-backup)）。除此之外：
 
@@ -145,31 +145,23 @@ Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://
 - **写完等一轮刷新落地才回答。** 配置页拿到回答就会重读报告，而报告里的路由与模型事实来自**最近一次刷新**（只有「已覆盖」与别名来自实时配置）。因此两条写路径在写入之后都 `await runtime.refresh('配置变更')`——Remote 的 `edit` 在 Host 端做，地址与同步在 Web Client 端等 `form.save()` 回来之后做；不等它，界面重读到的还是旧配置算出来的那一份，也就是「保存了却没变」。这里不必担心多跑一轮：设置变更本身就会唤起同一轮刷新（Loader 的 `loader/volatile-update`），而 `refresh` 的承诺是「返回的那一轮读的是**此刻**的配置」——正在跑的那一轮读的就是此刻这份配置时调用方并进它，读的是更早的配置时才排到它后面（排队者共享排上的那一轮）。配置的身份可以直接比：设置服务每次提交都换一份深冻结的解析结果，没变就还是同一个对象（`memoizedConfig` 按源缓存，那个对象身份**就是**配置版本）。
 - **只做按行编辑，没有批量。** 端点就是 `(id, patch)`，一次一个模型、一次版本校验。「恢复默认」也是这一行的补丁，只是全是 `null`。把多个模型打包成一个批次在这里没有对应场景——界面上不存在「一次改好几个再一起提交」这种动作——却会多出「一半写下去怎么办」这种必须解释的失败态。
 
-### 界面不借官方组件，颜色只引用「主题里真的定义过」的 token
+### 界面用官方原语，颜色只引用「这一页真的定义过」的 token
 
-界面里没有自己的设计语言，也没有手抄的字面量：控件是把官方原语包（`@deepseek-ai/dsh-client-ui-primitives` 的 `SettingsForm` / `SettingsValueField` / `Button` / `Switch` / `Checkbox` / `SegmentedControl` / `Tag` / `StateDot`）里这一页真正用到的那几个**抄进本仓库**的一份——`src/client/ui.tsx` 加 `src/client/ui.css`，设置表单那套草稿与 `revision` 围栏的语义抄进 `src/client/forms.ts`。本仓库另外只补排版（分组间距、字段栅格、事实的排法）与模型行那张卡：`border-l4` 一档发丝描边加 `--dsw-radius-xl`，编辑器内嵌面用 `bg-layer-3` 加一圈 `border-l2`。
+界面里没有自己的设计语言，也没有手抄的字面量：控件全是官方原语包（`@deepseek-ai/dsh-client-ui-primitives` 的 `SettingsForm` / `SettingsValueField` / `Button` / `Switch` / `Checkbox` / `SegmentedControl` / `Tag` / `StateDot`），本仓库只补排版（分组间距、字段栅格、事实的排法）与模型行那张卡：`border-l4` 一档发丝描边加 `--dsw-radius-xl`，编辑器内嵌面用 `bg-layer-3` 加一圈 `border-l2`。原先那份「对着官方「模型」页逐条抄字面量」的自画 CSS 删掉了：抄来的字面量会随官方改动过期，而原语包不会——在 `dsh.client.inject` 里声明依赖，客户端模块系统就把它的工厂注册进来供 `require`。
 
-**为什么不 require 它。** 官方插件指南（`cordis-plugin-development` 的 `references/practices.md`）明写不要 `require` 任何 Harness Client 包，这一条对纯 JS 插件尤其要紧：它是随 Harness 走的包、改版不打招呼，纯 JS 插件没有类型检查，错位了也没人告诉你；而且它一抛，槽位条目就被渲染器的错误边界换成空的 `data-slot-error` 占位，用户只看到少了一块。这不是理论风险：本仓库 `devDependencies` 里钉的是 rc.1，而本机 `dsh web` 服务的是 rc.2，两版之间这几个控件的几何**已经全变过一遍**——`Button` 的圆角从写死的 18px / 14px 换成 `radius-md` / `radius-sm`，`SegmentedControl` 的内边距从 3px 变成 4px，焦点环从 `2px solid var(--dsw-alias-brand-primary)` 换成 `focus-ring-width` / `focus-ring-color` 两个 token，`Switch` 的轨道圆角从 10px 变成 999px。抄进自己包里的这一份取自**运行中的那一版**（rc.2），因此这次改动在像素上是不动的；日后上游再改，改动落在上游、不会在我们不知情的时候改掉这一页。
+**别引用只在别的页面定义过的 token。** 卡片最初写的是官方「模型」页那张卡的配方（`--dsw-alias-settings-card-fill` / `--dsw-alias-settings-card-stroke`），在插件页上却连边都看不见：那两个名字只活在官方「模型」页自己那份组件 CSS 里，这一页根本没有，于是 `var()` 落到回落值——白 16% 的描边画在白底上，亮色主题下等于没有（暗色主题反而正常，这就是它一直没被发现的原因）。能放心用的只有两类：Theme 检查面列出的那十几个名字，以及官方原语自己用的那几个（`bg-layer-3`、`border-l4`、`interactive-bg-hover`）。另外亮色主题下 `bg-layer-*` 全是白色——官方那些层靠阴影分开——所以卡片只能靠描边立住，底色只是给暗色主题加一点抬起感。
 
-抄的规矩：标记、类名结构与行为逐条照抄，类名换成 `dap-ui-` 前缀、选择器收进 `[data-dsh-aperture]`；组件名与官方保持一致，方便对着上游同名文件逐行比对；只抄用得到的部分（`Button` 没有 `toolbar` 变体，`Tag` 只有三种 tone，`StateDot` 没有需要动画的 `ongoing`）。**唯一还与宿主共享的东西只剩主题 token**——token 改名只会让外观变差，不会炸渲染，这也是官方指南推荐这条路的理由。
+**组靠标题与间距，行才配一张卡。** 页面上从上到下两块：设置表单（官方 `SettingsForm`，它自带保存按钮、只读与「读不到」的说明）与模型清单。分组之间 20px、组内 12px，分组标题就是一行小字。摘要不值得一个卡头，而一行模型值得：它是一个能展开、能改、能单独写回去的对象，卡片的边框把「这一行的边界」画出来，行与行之间也就有了 8px 的呼吸。
 
-代价是产物大了一点：这份 client bundle 从 70KB 出头变成约 113KB（控件、图标与它们那份 CSS 都内联进来了，gzip 约 34KB），换来的是不再依赖一个随 Harness 走的 RC 包。抄的时候也顺手做了两件核对：一是把这些 CSS 的每一条声明与上游那八份 `*.module.css` 对了一遍（我这边的声明**全部**逐字来自上游，少掉的只有有意裁掉的那些变体），二是挑上游那份 rc.1 与运行中的 rc.2 逐文件 diff 了一遍——几何、内边距、焦点环、圆角全都动过，这正是「借来的控件会在我不知情的时候改掉这一页」的实证。
-
-**别引用只在别的页面定义过的 token。** 卡片最初写的是官方「模型」页那张卡的配方（`--dsw-alias-settings-card-fill` / `--dsw-alias-settings-card-stroke`），在插件页上却连边都看不见：那两个名字只活在官方「模型」页自己那份组件 CSS 里，这一页根本没有，于是 `var()` 落到回落值——白 16% 的描边画在白底上，亮色主题下等于没有（暗色主题反而正常，这就是它一直没被发现的原因）。判据是**主题里定义了没有**，而不是「别的页面用过」或「官方组件用过」：对照的清单是主题包自己的定义（`@deepseek-ai/dsh-client-ui-theme` 的 `client.js`，本机那一版有 395 个名字），`test/client.test.ts` 把这一页用到的 28 个逐个钉住，多一个就失败。
-
-按这条判据去核上游那些组件 CSS，会发现它们自己就带了两处**引用空 token** 的写法，抄的时候换成了主题里真正存在的那个（`src/client/ui.css` 里各留了一句说明）：`SettingsForm` 里「保存失败」那句话的颜色写的是 `--dsw-alias-label-error`，而主题只有 `state-error-primary`／`label-*` 那一套，没有这个名字——那句话一直用的是继承色；字段上那颗「i」按钮的悬停底色写的是 `--dsw-alias-bg-layer-4`，而主题只定义了 `bg-layer-1…3`——那次悬停等于没生效。另外亮色主题下 `bg-layer-*` 全是白色——官方那些层靠阴影分开——所以卡片只能靠描边立住，底色只是给暗色主题加一点抬起感。
-
-**组靠标题与间距，行才配一张卡。** 页面上从上到下两块：设置表单（`ui.tsx` 里抄来的 `SettingsForm`，它自带保存按钮、只读与「读不到」的说明）与模型清单。分组之间 20px、组内 12px，分组标题就是一行小字。摘要不值得一个卡头，而一行模型值得：它是一个能展开、能改、能单独写回去的对象，卡片的边框把「这一行的边界」画出来，行与行之间也就有了 8px 的呼吸。
-
-**设置表单那一套管草稿与写入。** `SettingsFormModel(scope, specs)`（`src/client/forms.ts`，语义抄自官方那一份）收的是「字段怎么在存下来的值与输入框里的文本之间换算」：`settingsTextField('baseUrl')` 加一个布尔字段的规格（`'true'` / `'false'` 两个词，空串表示这一项不写）。草稿、脏标记、非法值、只读与 `revision` 围栏都在它自己手里，页面只读 `form.bind(...)` 的投影（`shell()` 加那两个字段），动作是注入面里的 `edit` / `resetField` / `discard` / `save`。因此「已覆盖 / 恢复默认」跟着字段走，用的就是官方那一对词与那个位置；同步开关也是同一份表单里的一个字段，不另写一套写路径。
+**设置表单那一套管草稿与写入。** `SettingsFormModel(scope, specs)` 收的是「字段怎么在存下来的值与输入框里的文本之间换算」：`settingsTextField('baseUrl')` 加一个布尔字段的规格（`'true'` / `'false'` 两个词，空串表示这一项不写）。草稿、脏标记、非法值、只读与 `revision` 围栏都在它自己手里，页面只读 `form.bind(...)` 的投影（`shell()` 加那两个字段），动作是注入面里的 `edit` / `resetField` / `discard` / `save`。因此「已覆盖 / 恢复默认」跟着字段走，用的就是官方那对词与那个位置；同步开关也是同一份表单里的一个字段，不另写一套写路径。
 
 **模型行的卡头是自己画的按钮，不用 `DisclosureRow`。** 官方那个是根 24px 高、`overflow: hidden` 的横条，标题又是 `flex: none` 不许收缩，于是名字一长就把右边的事实与标签挤出可视区；它也只收一个 `icon` 与一行 `title`，塞不下「名字与标签一行、事实另一行」这种两行身份。现在行首是一颗盖满整行的 `button`（自己带 `aria-expanded`），里面三段：状态点、身份、箭头。身份第一行是名字（过长省略，`title` 里留着全名）加「未服务 / 已覆盖 N 项 / 有未保存的改动」几枚标签，第二行是事实。事实写成**带标签的**短语（`路由 aperture`，不是裸的 `aperture`）并用 `·` 分隔、随宽度换行：原先那串用 `·` 连起来的十一项，用户得自己数到第几项才知道哪个是协议。展开/收起仍是本地 state、按行记；收起**不丢草稿**——收起来不等于放弃，那颗「有未保存的改动」会一直挂着，要放弃得按「取消」。状态点仍是官方 `StateDot`，但它现在说三件事：绿是这一轮写进了路由、灰是这一轮同步过而它没写进去、黄是根本没有路由能服务它；同步那一轮没跑（关着）时不装作「没写进去」，而是说「这一轮没有同步，写没写进去看不出来」——报告里根本没有这一项。官方 `StateDot` 自己是 `aria-hidden`，说给谁听得由外层 `role="img"` 的 `aria-label` 给。
 
 **页面持有状态，行与编辑器只按 props 画。** 草稿与展开是两张按模型 id 记的表，长在 `AperturePanel` 上，动作也在那里按这一行绑好（`onToggle` / `onStage` / `onSave` / `onCancel` / `onClear`）再递下去；`ModelRow` 与 `ModelEditor` 自己不持有 state。这不是「为了拆而拆」：这几件状态本来就不属于某一行——收起一行不丢草稿、写完一行页面顺手把它收起来、两行各改各的，说的都是「同一份状态喂给多行」。草稿到补丁的换算（改了哪几项、该发什么出去、容量读不读得出来）在 `draft.ts` 里，因此行首那颗「有未保存的改动」与编辑器底部那句「有 N 项改动还没写下去」问的是同一个函数，两处说法不会打架。
 
-**编辑器里的字段也是抄来的那两个字段组件。** 文本字段用 `SettingsValueField`，按「名称与协议」（名字、别名、协议）与「容量」（上下文容量、最大输出）分两组，每组内部是 `auto-fit minmax(210px, 1fr)` 的栅格；模态是两个 `Checkbox`、推理是一个 `SegmentedControl`（跟随发现 / 开 / 关，「跟随发现」就是这一项不写），这两块并排——它们都是「一个开关加一句话」，横着放比竖着叠省一半高度。不摆成一个大栅格是因为官方那份 `.field + .field`（抄来的是 `.dap-ui-field + .dap-ui-field`）会给相邻字段画一条半宽的分隔线（specificity 0,2,0），`auto-fit` 一换行线就对不齐了；每个字段外面套一层 `.dap-fieldCell` 就绕开了，不必动 `!important`。一行的动作是「保存 / 清空覆盖 / 取消」（都是 `sm`）：官方「改完点卡片底部的应用」在只有一个编辑对象时很自然，而一份草稿对应多行时「按了保存到底写了哪几行」没有答案，因此一行一个保存按钮（它就在这一行里面，不必再自称「这一行」），版本校验也只管这一次写入。动作左边还有一句「和已保存的值相同 / 有 N 项改动还没写下去」：按下去之前先知道这一按会不会真的写。
+**编辑器里的字段也是官方那两个字段组件。** 文本字段用 `SettingsValueField`，按「名称与协议」（名字、别名、协议）与「容量」（上下文容量、最大输出）分两组，每组内部是 `auto-fit minmax(210px, 1fr)` 的栅格；模态是两个 `Checkbox`、推理是一个 `SegmentedControl`（跟随发现 / 开 / 关，「跟随发现」就是这一项不写），这两块并排——它们都是「一个开关加一句话」，横着放比竖着叠省一半高度。不摆成一个大栅格是因为官方 `.field + .field` 会给相邻字段画一条半宽的分隔线（specificity 0,2,0），`auto-fit` 一换行线就对不齐了；每个字段外面套一层 `.dap-fieldCell` 就绕开了，不必动 `!important`。一行的动作是「保存 / 清空覆盖 / 取消」（都是 `sm`）：官方「改完点卡片底部的应用」在只有一个编辑对象时很自然，而一份草稿对应多行时「按了保存到底写了哪几行」没有答案，因此一行一个保存按钮（它就在这一行里面，不必再自称「这一行」），版本校验也只管这一次写入。动作左边还有一句「和已保存的值相同 / 有 N 项改动还没写下去」：按下去之前先知道这一按会不会真的写。
 
-**来源跟着字段走，长解释收进「i」。** `provenance` 是「这一项事实从哪儿来」的诊断信息。字段下面只留一句来源（字段组件的 `hint`：`来源：Aperture`）；「留空即用发现到的名字」这类怎么做的话收进它的 `help`，也就是标签旁边那颗「i」（与官方一致）——点开才占位置（`fieldHelp` 给 `aria-label`：`显示名称的说明`）。勾选框与分段开关那两行没有 `hint`，来源就挨着控件写一句。理由：一个字段下面挂两句（怎么做 + 从哪来），五个字段就是十行灰字，正文被诊断信息盖住。协议没有单独一项来源：写过就是配置，没写过就是从通告的端点推导出来的。
+**来源跟着字段走，长解释收进「i」。** `provenance` 是「这一项事实从哪儿来」的诊断信息。字段下面只留一句来源（`SettingsValueField` 的 `hint`：`来源：Aperture`）；「留空即用发现到的名字」这类怎么做的话收进官方的 `help`，也就是标签旁边那颗「i」——点开才占位置（`fieldHelp` 给 `aria-label`：`显示名称的说明`）。勾选框与分段开关那两行官方组件没有 `hint`，来源就挨着控件写一句。理由：一个字段下面挂两句（怎么做 + 从哪来），五个字段就是十行灰字，正文被诊断信息盖住。协议没有单独一项来源：写过就是配置，没写过就是从通告的端点推导出来的。
 
 **「发现报告」那一块删掉了，但它那两句诊断留下了。** 原先它自己占一段：路由一列（`provider`、协议、模型数、「已写入 / 未写入」）加一张 `dl` 事实表（触发、时间、耗时、结果、清单、端点、写入）。删的理由是它讲的账在别处都讲过了：写没写进去，每一行开头那颗状态点就在说；模型属于哪条路由，「路由 x」那项事实就在说；刷新整个失败，`run()` 已经把 Host 端那句话贴到提示语上了。真正只有它说过的剩下两句——**清单读不到**（`catalog.available === false`，这时模型列表会是空的，不说原因等于没说）与**这一轮该写的没写进去**（`sync.applied === false`）——它们现在挂在模型那一段的提示语下面，正常的一轮（同步关着、或者写成功了）一个字都不说（`roundProblem`）。没有实例地址时的空状态也换成了那句「还没有实例地址：填上并保存之后才会去发现模型」：地址空着发现根本不会跑，「还没发现到模型」在那儿等于没说。Host 端的报告一个字段没动——它是数据，界面只是不再整块摊开它。
 
@@ -177,7 +169,7 @@ Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://
 
 **容量读写同一套 K/M 词汇（与官方「模型」页共用一套写法）。** 输入框认 `1M`、`100K`，后缀是**十进制**的（`1M` = 1000000，不是 1048576），存下去的仍是普通 token 数；回写成能原样读回来的**最短**形式（`384000` → `384K`，而 `1048576` 不是整千，照原样写出来）；提交时按**解析后的值**比较，因此 `100k` 与 `100K` 是同一个数、不算改动——否则值没变却会往用户层里写一笔，那一行就凭空多一颗「已覆盖」。两边就是官方那两个函数（`parseCapacity` / `formatCapacity`）：空串是「这一项不覆盖」，读不出来的在本地挡下——`1G`、`1.5`、`0` 都不发端点，因为面板那一层只收不小于 1 的整数，让它过去只会换来一次没必要的往返。挡的是同一条判定（`capacityBad`）：输入框上标出「读不出来」，按保存则弹一句带字段名的提示，两处不会给出不同答案。容量在收起那一行的事实里仍写成 `1,048,576` 这种带千位分隔符的原文：那说的是**生效值**，不是你要填的那个数。
 
-控件不再是从别的包里 `require` 来的名字，而是本仓库自己的 TypeScript（`src/client/ui.tsx`）：prop 名字写错，`tsc -p tsconfig.client.json` 当场就报，不必等到挂载时抛一句 `undefined is not a function`。它们与这一页在同一个模块图里，因此 `test/client.test.ts` 跑的是**真的那些控件**——开关的 `role="switch"` 与 `aria-checked`、分段控件的 tablist 语义与选中项、字段上那颗「i」按钮把长解释收起来这些行为本来就进了测试范围，而不是靠替身「保证语义一致」。
+官方原语包只有运行时导出、没有随包发布的类型声明，因此这一页 `require` 的是构建产物里的名字；拼错一个名字只会在挂载时抛一句 `undefined is not a function`，所以那份名单与每个原语的 prop 语义由 `test/client.test.ts` 的替身模块钉住（替身只保证接缝语义，官方组件的观感不在本仓库的测试范围内）。
 
 ### 端点描述符是手写的，但线格式只有一层直通
 
@@ -196,10 +188,8 @@ Remote 端点的形状来自参考实现（[`@xiaoyuyu6420/dsh-backup`](https://
 `exports["./client"]` 指向产物。DSH 的客户端模块系统只要求一个**经典脚本**：用
 `window.__ModuleLoader__.load({ id, factory })` 把自己上报，交给工厂一个同步的 `require`（解析平台模块表里的
 模块）。它不要求这份脚本经过打包器，也不检查它是否被压缩过——所以「手写一份 CJS 工厂体」在契约上完全成立
-（本插件 0.3.x 就是这么做的），代价全在源码侧：`ctx` 上那四个服务的形状只能靠记忆（宿主改一个
-prop 名字，编译期不会有任何声音）——当年连控件也是借官方原语包的，那份形状同样只能靠记忆；现在控件与设置表单那一套
-都在本仓库里（`src/client/ui.tsx` 与 `forms.ts`），因此这一半的形状风险已经不存在了。另一个代价是
-`lib/` 不入库而那份手写产物入库，同一个仓库里两端的命运不同；当时那
+（本插件 0.3.x 就是这么做的），代价全在源码侧：官方原语与 `ctx` 上那四个服务的形状只能靠记忆（官方改一个
+prop 名字，编译期不会有任何声音）；`lib/` 不入库而那份手写产物入库，同一个仓库里两端的命运不同；当时那
 1566 行 `createElement` 没有 JSX，也没有 sourcemap。
 
 因此现在与官方插件同一条路：源码留在 `src/client/`，产物落 `lib/client.js`（+ `.map`），包法照抄官方
@@ -246,10 +236,10 @@ error TS2742: The inferred type of 'Config' cannot be named without a reference 
 
 以下运行期契约不变：
 
-- 运行时**只** `require('react')` 与 `require('react/jsx-runtime')`（平台基线模块），别无其他：控件、图标与设置表单那一套都在本仓库里（`src/client/ui.tsx` / `ui.css` / `forms.ts`），因此 `dsh.client.external` 是空的（`tsdown.config.ts` 里那份 `EXTERNALS` 就这两个）。官方的 UI 原语包从两处去掉了：`package.json` 的 `dsh.client.inject` 不再声明它，`devDependencies` 也不再装它（理由见「界面不借官方组件」一节）。`dsh.client.inject` 剩下的是给宿主客户端模块系统的声明——它按这份清单把那些包的工厂注册成可 `require` 的模块，清单与 `src/client/index.ts` 顶部那几条只为取服务声明的 `import type {} from '…/client'` 一一对应，来源是各包**发布出来的类型声明**而不是猜的（`ctx.slots` 在 `dsh-client-ui-renderer/client`、`ctx.locale` 在 `dsh-client-locale/client`、`ctx.configForms` 在 `dsh-client-ui-settings/client`、`ctx.remote` 在 `dsh-api-remotes/client`；`dsh-client-ui-plugin-manager` 是声明 `plugins.bundle.config` 那个槽位的插件页）。宿主只校验它是字符串数组，因此这份清单与插件页自己声明的槽位保持一致，不另立一套；多写一个客户端模块图里没有的 id 不会报错、也不会连出边（`arriveGraphRow` 找不到就跳过），所以它仍然只是**声明**——`apply` 真正等的是服务，不是清单；
+- 运行时只 `require('react')`（平台基线模块）与 `require('@deepseek-ai/dsh-client-ui-primitives')`（控件与设置表单那一套），槽位、字典与 Remote 都从 `ctx` 上取服务，因此 `dsh.client.external` 是空的（`tsdown.config.ts` 里那份 `EXTERNALS` 就是这两个加上 `react/jsx-runtime`）；`dsh.client.inject` 是给宿主客户端模块系统的声明——它按这份清单把那些包的工厂注册成可 `require` 的模块，清单与 `src/client/index.ts` 顶部那几条只为取服务声明的 `import type {} from '…/client'` 一一对应，来源是各包**发布出来的类型声明**而不是猜的（`ctx.slots` 在 `dsh-client-ui-renderer/client`、`ctx.locale` 在 `dsh-client-locale/client`、`ctx.configForms` 在 `dsh-client-ui-settings/client`、`ctx.remote` 在 `dsh-api-remotes/client`；`dsh-client-ui-plugin-manager` 是声明 `plugins.bundle.config` 那个槽位的插件页，`dsh-client-ui-primitives` 提供控件）。宿主只校验它是字符串数组，因此这份清单与插件页自己声明的槽位保持一致，不另立一套；多写一个客户端模块图里没有的 id 不会报错、也不会连出边（`arriveGraphRow` 找不到就跳过），所以它仍然只是**声明**——`apply` 真正等的是服务，不是清单；
 - 配置页注册必须走 `ctx.slots.inject('plugins.bundle.config', …)`：这个槽位由**插件页**自己声明，而那个声明完全可能晚于本插件的 `apply`，直接 `register` 会撞上「槽位尚未声明」；
 - 字典用 `ctx.locale.register(NS, { zh, en })` 注册，两种语言必须一次交齐；注册配置页时声明 `locale: NS`，槽位渲染器才会把绑定好的 `t` 交给组件；
-- 样式在 `apply` 的 effect 里注入一个 `<style data-plugin-css="dsh-aperture/styles.css">`（同时写上 `data-plugin="dsh-aperture"` 归属；`data-plugin-css` 取官方那套「包名/文件名」的写法），页面根节点带 `data-dsh-aperture`，选择器全收在那个属性之下；颜色一律引用 dsh web 的主题 token，卸载时由 effect 的 disposer 移除。这一张表由两份源码拼成（`styles.ts`）：`ui.css` 是抄来的那几个控件自己的配方（`dap-ui-` 前缀，与上游逐字一致、不留回落值），`styles.css` 是本页自己的排版（`dap-` 前缀，颜色 token 各带回落值）；两边的类名各自成段，没有同名规则，`test/client.test.ts` 连这一点也钉住——同一个选择器写两遍，后一条会整条压掉前一条；
+- 样式在 `apply` 的 effect 里注入一个 `<style data-plugin-css="dsh-aperture/styles.css">`（同时写上 `data-plugin="dsh-aperture"` 归属；`data-plugin-css` 取官方那套「包名/文件名」的写法），页面根节点带 `data-dsh-aperture`，选择器全收在那个属性之下；颜色一律引用 dsh web 的主题 token，卸载时由 effect 的 disposer 移除。这一份只剩排版：控件自己带底色与文字色（官方原语），本插件不再自画按钮，也就不必再配那对颜色；
 - **effect 的依赖里不放注入面**：`inject` 面由渲染器每轮渲染重新组装，依赖它的身份会让 effect 每轮重跑、再触发渲染，于是界面一直转圈。刷新信号用自增计数器，`test/client.test.ts` 除了钉住渲染轮数，还直接检查每个 effect 的依赖里没有对象。
 
 Host 端也由同一份 `tsdown.config.ts` 构建：内部源码合成官方 Host 插件同款的单一 ESM
@@ -268,7 +258,7 @@ Host 端也由同一份 `tsdown.config.ts` 构建：内部源码合成官方 Hos
 - 它自己搭的那套里只有一个替身：`hmr`（`hmrSeam`）。真实的 HMR 要 `--expose-internals` 与 `timer` 服务才挂得起来，而它恰好决定了写入落不落得下来（见「写入行为」里那条「写入必须从 HMR 事务之外发起」）——少了这个替身，事件里发起的那一轮刷新被事务嵌套拒绝的样子，与「写成功了只是没变化」在断言上分不开。替身只留 `runExclusive()` 的两条语义：事务里再来一次就拒绝、否则排在上一件工作后面。
 - 它连的网关是仓库里的 `test/fake-gateway.ts`：内核挑一个空闲端口，`/v1/models` 回一份与断言一一对应的固定载荷。因此这一份不依赖 Tailscale 网络，CI 里也跑得动；`DSH_APERTURE_LIVE_URL` 给定时改连真实实例（那份载荷与用例是一份契约，改一处就要改另一处）。
 - 各 `src/*.ts` 的单元测试钉的是端到端**测不到**的那些：请求头与 URL 归一化、解析失败时的具体原因、`planSync` 的逐条 op、单飞语义、写入被拒的分支。端到端只会告诉你「文档里没有 `llm-pi-ai` 那一行」，不会告诉你「`accept` 头丢了」。因此两边都留：端到端负责「真的能用」，单元测试负责「坏在哪」。
-- Web Client 端（`test/client.test.ts`）测的是**打包产物** `lib/client.js`（`pnpm test` 的 pretest 会先重打一次），因为 `window.__ModuleLoader__.load` 那层包法正是要钉住的契约之一；替身只喂 `react`（vm 里没有模块表，也没有真的 React），因此这一页自己的控件就是**真跑的那一份**。它走 `test/support/mini-react`（实现了 `createElement` 与 automatic runtime 的 `jsx` / `jsxs` / `Fragment`，加上 `useState` / `useEffect` / `useRef` / `forwardRef`），钉住的是**接缝**（注册到哪个槽位、注入面上的名字与形状、effect 依赖里不许有对象、提交轮数不许自激、卸载时收不收回订阅与样式）、控件自己那几条语义（开关的 `aria-checked`、分段控件恰有一项 `aria-selected`、状态点写在 `data-state` 上）与页面行为（改哪一项写哪一项、失败时界面说不说实话）。`SettingsFormModel` 的草稿、`revision` 围栏与 `stored` 口径也在这一份里跑——它就在产物里。它证明不了**宿主那一侧**长什么样（真实主题下的观感要连着页面看），那不在纯 Node 测试的范围内。
+- Web Client 端（`test/client.test.ts`）测的是**打包产物** `lib/client.js`（`pnpm test` 的 pretest 会先重打一次），因为 `window.__ModuleLoader__.load` 那层包法正是要钉住的契约之一；官方原语虽然有真实类型，但运行时仍然喂替身模块。它走 `test/support/mini-react`（实现了 `createElement` 与 automatic runtime 的 `jsx` / `jsxs` / `Fragment`），钉住的是**接缝**（注册到哪个槽位、注入面上的名字与形状、effect 依赖里不许有对象、提交轮数不许自激、卸载时收不收回订阅与样式）与页面行为（改哪一项写哪一项、失败时界面说不说实话）。它证明不了「官方组件长什么样」，那不在本仓库的测试范围内；替身只保证被测代码依赖的那套语义与官方一致（`SettingsFormModel` 的草稿、`revision` 围栏与 `stored` 口径）。
 
 ## 已知边界
 

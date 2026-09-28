@@ -4,7 +4,7 @@
  * 配置页的逻辑几乎都在组件里：草稿与生效值的差异、按钮的可用性、动作按下之后把结果贴出来。
  * 这些没法靠「模块加载成功」证明，也没法在无浏览器、无 `react-dom` 的环境里用真 React 渲染
  * ——SSR 不跑 effect，因此只能看到加载态那一帧。这个替身实现 `createElement` + `jsx` / `jsxs` /
- * `Fragment`（automatic runtime）+ `useState` + `useEffect` + `useRef`，按提交循环驱动到稳定，于是
+ * `Fragment`（automatic runtime）+ `useState` + `useEffect`，按提交循环驱动到稳定，于是
  * 「挂载 → 拉配置 → 改输入 → 按保存」这条路径可以在纯 Node 里走完。
  *
  * 它刻意带两件测试用能力：
@@ -130,34 +130,6 @@ export class MiniReact {
       slot.pending = callback;
     }
   };
-
-  /**
-   * `React.useRef`。
-   *
-   * 槽位里存一个稳定的盒子。替身不挂真实 DOM，因此 `current` 永远停在初始值（真 React 会把它填成
-   * 节点）：组件里那些「先看 `current` 是不是空的」的写法因此走提前返回那一条——正是没有 DOM 时该
-   * 有的行为，而不是崩掉。
-   */
-  readonly useRef = <T>(initial: T): { readonly current: T } => {
-    const instance = this.requireCurrent('useRef');
-    const slot = this.slot(instance);
-    if (!slot.initialized) {
-      slot.initialized = true;
-      slot.value = { current: initial };
-    }
-    return slot.value as { readonly current: T };
-  };
-
-  /**
-   * `React.forwardRef`。
-   *
-   * 替身没有 ref 可传，因此直接把渲染函数当组件用（第二个参数恒为 `null`）。组件身份仍然由
-   * `forwardRef` 每次调用返回的那个函数决定，所以必须像真 React 一样**在模块级建一次**——每轮
-   * 渲染都新建一个的话，按类型认实例的这套 hook 槽位就会每次都从头来。
-   */
-  readonly forwardRef = <P, R>(
-    render: (props: P, ref: R | null) => unknown,
-  ): ((props: P) => unknown) => (props: P) => render(props, null);
 
   /**
    * 挂载一棵树。

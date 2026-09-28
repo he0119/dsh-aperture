@@ -16,8 +16,8 @@ import {
   IconChevronRightOutlineRegular,
   StateDot,
   Tag,
-} from './ui.tsx';
-import type { StateDotState } from './ui.tsx';
+} from '@deepseek-ai/dsh-client-ui-primitives';
+import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { ReactNode } from 'react';
 import type { PanelModel } from '../report.ts';
 import { overrideKeyNames, pendingChanges, type RowDraft } from './draft.ts';
@@ -54,8 +54,8 @@ export interface ModelRowProps {
 /**
  * 这一行的状态点：绿是写进去了、灰是没写进去、黄是根本没有路由能服务它。
  *
- * 点旁边那句 `title` 就是它的说法——抄来的 `StateDot`（与官方一致）自己是 `aria-hidden`，说给谁听
- * 得由这里给。同步那一轮没跑（`writtenRoutes` 缺失）时不装作「没写进去」：报告里根本没有这一项。
+ * 点旁边那句 `title` 就是它的说法——官方 `StateDot` 自己是 `aria-hidden`，说给谁听得由这里给。
+ * 同步那一轮没跑（`writtenRoutes` 缺失）时不装作「没写进去」：报告里根本没有这一项。
  *
  * @param {object} model - 报告里的这一行。
  * @param {readonly string[]|undefined} writtenRoutes - 最近一轮写进路由的名字。
@@ -127,8 +127,8 @@ export function ModelRow(props: ModelRowProps): ReactNode {
             {overrides.length === 0
               ? null
               : (
-                // 这一层只为挂 `title`：抄来的 `Tag`（与官方一致）除了 tone/className/children 什么
-                // 都不透传，想让人 hover 看出「覆盖的是哪几项」就得自己在外面套一层。
+                // 这一层只为挂 `title`：官方 `Tag` 除了 tone/className/children 什么都不透传，
+                // 想让人 hover 看出「覆盖的是哪几项」就得自己在外面套一层。
                 <span className="dap-tagWrap" title={overrideKeyNames(overrides, t)}>
                   <Tag tone="neutral">{t('overriddenCount', { count: overrides.length })}</Tag>
                 </span>
