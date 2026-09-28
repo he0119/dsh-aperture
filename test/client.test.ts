@@ -9,16 +9,17 @@
  * - **页面**：挂载之后读设置、改输入、按保存会走哪个端点、写成什么补丁、失败时界面说不说
  *   实话。页面逻辑几乎都在组件里，因此只能在能跑 effect 的渲染器里走一遍。
  *
- * 这一页的控件与设置表单模型都是**本插件自己的代码**（`src/client/ui.tsx` 与 `src/client/forms.ts`，
- * 从官方原语包抄来的那一份），因此它们就在被测产物里，跟着一起跑：替身只喂 `react`——vm 里没有模块
- * 表、也没有真的 React。于是控件自身的规矩（开关的 `aria-checked`、字段那一颗「i」按钮的披露、
- * 分段控件的键盘语义）也进了这一份测试的范围，而不再只是「被测代码依赖的那套语义」。
+ * 官方组件（`@deepseek-ai/dsh-client-ui-primitives`）按真实版本装在 devDependencies 里，但那只是
+ * 为了让 `tsc -p tsconfig.client.json` 和打包器看见真实类型：这里**不跑**它们——vm 里没有模块表、
+ * 也没有真的 React。因此 `react` 与官方原语都喂替身模块，替身钉住的是被测代码依赖的那个接缝——
+ * prop 的名字与含义、按钮该在什么时候出现、`SettingsFormModel` 的草稿与围栏语义。官方组件的观感
+ * 与行为不在本仓库的测试范围内，这里只保证被测代码依赖的那套语义与官方一致。
  *
  * 测的是**产物**而不是源码：Web Client 端要先打包（`pnpm run build:client`，`pnpm test` 的 pretest 已经
  * 做了），因为 `window.__ModuleLoader__.load` 那层包法是打包器套上去的——那正是要钉住的契约之一。
  *
  * 渲染走 `test/support/mini-react`：它实现 `createElement` 与 automatic runtime 的
- * `jsx` / `jsxs` / `Fragment`，加上 `useState` / `useEffect` / `useRef`，按提交循环驱动到稳定，于是
+ * `jsx` / `jsxs` / `Fragment`，加上 `useState` + `useEffect`，按提交循环驱动到稳定，于是
  * 「挂载 → 拉设置 → 改输入 → 按保存」这条路径可以在纯 Node 里走完。
  *
  * @module dsh-aperture/test/client
@@ -44,6 +45,7 @@ const CLIENT_FILE = join(HERE, '..', 'lib', 'client.js');
 /** Web Client 端上报的模块 id。 */
 const PACKAGE = 'dsh-aperture';
 /** 官方 UI 原语包名（本仓库里只有替身）。 */
+const PRIMITIVES = '@deepseek-ai/dsh-client-ui-primitives';
 /** 配置页注册的槽位。 */
 const CONFIG_SLOT = 'plugins.bundle.config';
 /** 字典命名空间。 */
@@ -321,6 +323,446 @@ function section(overrides: Partial<SectionState> = {}): SectionState {
   };
 }
 
+// ------------------------------------------------------------ 官方组件的替身
+
+/** 官方设置表单交给页面的那份状态。 */
+interface ShellState {
+  readonly available: boolean;
+  readonly writable: boolean;
+  readonly dirty: boolean;
+  readonly invalid: boolean;
+  readonly saving: boolean;
+  readonly failed: boolean;
+}
+
+/** 官方设置表单里一个字段此刻的样子。 */
+interface FieldState {
+  readonly text: string;
+  readonly overridden: boolean;
+  readonly invalid: boolean;
+}
+
+/** 一个字段的读写规格（`SettingsFieldSpec`）。 */
+interface FieldSpec {
+  readonly field: string;
+  readonly format: (value: unknown) => string;
+  readonly parse: (text: string) =>
+    | { readonly kind: 'clear' }
+    | { readonly kind: 'set'; readonly value: unknown }
+    | undefined;
+}
+
+/** 文本字段：原样读写，空串是「这一项不覆盖」。被测代码只从这个包里要这一种字段规格。 */
+function settingsTextField(field: string): FieldSpec {
+  return {
+    field,
+    format: (value) => (typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value)),
+    parse: (text) => (text === '' ? { kind: 'clear' } : { kind: 'set', value: text }),
+  };
+}
+
+/**
+ * `SettingsFormModel` 的替身：官方那一份的**语义**，不是它的实现。
+ *
+ * 被测代码只经手它这四件事，因此这四件必须像真的：
+ *
+ * - `shell()`：`available` 来自快照的 `status`；`dirty` / `invalid` 由草稿算出来；
+ *   `saving` / `failed` 是这一份模型自己的状态。
+ * - `field(name)` 的 `overridden` 是「这一刻这一项算不算覆盖」：没动过的时候看**用户层里在不在**
+ *   （`stored`），落过草稿就按草稿会不会写成 `set` 算。于是文档里早就写过 baseUrl 时，页面一挂载
+ *   就该挂着「已覆盖」，而把输入框清空又会让这个标签当场消失。
+ * - `resetField` 与 `edit` 都只**落草稿**，落笔全在 `save()`；`save()` 只把改动过的字段拼成 op，
+ *   带上**第一次落草稿时读到的那个 `revision`**（不是保存那一刻的）交给控制器；回绝时 `failed`
+ *   亮起、草稿留着（用户写的东西不该因为一次冲突没写成就消失）。没有可写的改动、只读、或草稿
+ *   非法时，`save()` 连端点都不碰。
+ * - `bind(project)`：返回官方的选择器 store；草稿或快照一变就重新投影并叫醒订阅者。
+ */
+class FakeSettingsFormModel {
+  private readonly scope: FormFace;
+  private readonly specs: readonly FieldSpec[];
+  /** 落下的草稿：`clear` 是「恢复默认」那一路（真模型把两者存在同一个 `staged` 里）。 */
+  private readonly staged = new Map<string, { readonly text: string; readonly clear: boolean }>();
+  private readonly listeners = new Set<() => void>();
+  private readonly stop: () => void;
+  /** 第一次落草稿时读到的快照；写入的 `revision` 围栏取自它。 */
+  private baseline: SectionState | undefined;
+  private saving = false;
+  private failed = false;
+  private projected: unknown = null;
+
+  constructor(scope: FormFace, specs: readonly FieldSpec[]) {
+    this.scope = scope;
+    this.specs = specs;
+    this.stop = scope.subscribe(() => this.invalidate());
+  }
+
+  /** 官方表单要的那份状态。 */
+  shell(): ShellState {
+    const snapshot = this.scope.getSnapshot();
+    const plan = this.plan();
+    return {
+      available: snapshot.status === 'ready',
+      writable: snapshot.writable === true,
+      // 非法草稿也是一条计划（它挡下保存），因此同样算「有改动」。
+      dirty: plan.ops.length > 0 || plan.invalid,
+      invalid: plan.invalid,
+      saving: this.saving,
+      failed: this.failed,
+    };
+  }
+
+  /** 一个字段在输入框里的样子。 */
+  field(name: string): FieldState {
+    const spec = this.specOf(name);
+    const staged = this.staged.get(name);
+    if (staged === undefined) {
+      return { text: spec.format(this.sectionValue(name)), overridden: this.stored(name), invalid: false };
+    }
+    const write = staged.clear ? { kind: 'clear' as const } : spec.parse(staged.text);
+    return { text: staged.text, overridden: write?.kind === 'set', invalid: write === undefined };
+  }
+
+  /** 页面拿得到的动作面。 */
+  actions(): {
+    edit: (field: string, text: string) => void;
+    resetField: (field: string) => void;
+    save: () => void;
+    discard: () => void;
+  } {
+    return {
+      edit: (field, text) => {
+        this.stage(field, { text, clear: false });
+      },
+      resetField: (field) => {
+        // 官方那一份把「恢复默认」也落成草稿：输入框回到用户层之下的值，写入要等保存那一下。
+        this.stage(field, { text: this.specOf(field).format(this.baseValue(field)), clear: true });
+      },
+      save: () => {
+        void this.save();
+      },
+      discard: () => {
+        if (this.staged.size === 0 && !this.failed) return;
+        this.staged.clear();
+        this.baseline = undefined;
+        this.failed = false;
+        this.invalidate();
+      },
+    };
+  }
+
+  /** 官方表单那颗保存按钮走的路：把改动过的那几项拼成一次带版本围栏的写入。 */
+  async save(): Promise<void> {
+    const plan = this.plan();
+    // 官方的围栏：没有可写的改动、正在保存、文档只读、草稿非法，四样里占一样就直接返回。
+    if (plan.ops.length === 0 || this.saving || this.scope.getSnapshot().writable !== true || plan.invalid) return;
+    this.saving = true;
+    this.failed = false;
+    this.invalidate();
+    try {
+      if (!(await this.scope.mutate(plan.ops, this.baseline?.revision))) {
+        this.failed = true;
+        return;
+      }
+      this.staged.clear();
+      this.baseline = undefined;
+    } catch {
+      this.failed = true;
+    } finally {
+      this.saving = false;
+      this.invalidate();
+    }
+  }
+
+  /** 给渲染器的选择器 store（投影缓存到下一次通知为止）。 */
+  bind(project: () => unknown): { getSnapshot: () => unknown; subscribe: (listener: () => void) => () => void } {
+    return {
+      getSnapshot: () => {
+        if (this.projected === null) this.projected = project();
+        return this.projected;
+      },
+      subscribe: (listener: () => void) => {
+        this.listeners.add(listener);
+        return () => {
+          this.listeners.delete(listener);
+        };
+      },
+    };
+  }
+
+  /** 卸载：断开对控制器的订阅。 */
+  dispose(): void {
+    this.stop();
+    this.listeners.clear();
+  }
+
+  private specOf(name: string): FieldSpec {
+    const spec = this.specs.find((candidate) => candidate.field === name);
+    if (spec === undefined) throw new Error(`没有这个字段：${name}`);
+    return spec;
+  }
+
+  /** 生效值：用户层盖过之后这一页实际读到的那个。 */
+  private sectionValue(name: string): unknown {
+    return this.scope.getSnapshot().value?.[name as 'baseUrl' | 'sync'];
+  }
+
+  /** 用户层之下的合成值；「恢复默认」把输入框摆回这里。 */
+  private baseValue(name: string): unknown {
+    return this.scope.getSnapshot().base?.[name as 'baseUrl' | 'sync'];
+  }
+
+  /** 这一项在不在用户层里——真模型就是这么判「覆盖过没有」的，不比值。 */
+  private stored(field: string): boolean {
+    const user = this.scope.getSnapshot().user;
+    return user !== undefined && Object.hasOwn(user, field);
+  }
+
+  /** 落一份草稿；第一次落的时候记住基线快照（写入的 `revision` 围栏取自它）。 */
+  private stage(field: string, edit: { readonly text: string; readonly clear: boolean }): void {
+    this.baseline ??= this.scope.getSnapshot();
+    this.staged.set(field, edit);
+    this.failed = false;
+    this.invalidate();
+  }
+
+  /** 一次保存会写什么：按落草稿的顺序，逐项算出 op 或「这一项不合法」。 */
+  private plan(): { ops: SettingsOp[]; invalid: boolean } {
+    const ops: SettingsOp[] = [];
+    let invalid = false;
+    for (const [field, staged] of this.staged) {
+      const spec = this.specOf(field);
+      // 「恢复默认」只有在这一项**确实覆盖过**时才有东西可撤。（真模型的 `stored`。）
+      if (staged.clear) {
+        if (this.stored(field)) ops.push({ op: 'unset', path: [field] });
+        continue;
+      }
+      // 与生效值字面相同的草稿不算改动（真模型比的是解析后的值）。
+      if (staged.text === spec.format(this.sectionValue(field))) continue;
+      const write = spec.parse(staged.text);
+      if (write === undefined) {
+        invalid = true;
+        continue;
+      }
+      ops.push(write.kind === 'clear'
+        ? { op: 'unset', path: [field] }
+        : { op: 'set', path: [field], value: write.value });
+    }
+    return { ops, invalid };
+  }
+
+  private invalidate(): void {
+    this.projected = null;
+    for (const listener of this.listeners) listener();
+  }
+}
+
+/** 造出官方原语替身：只有被测代码用到的那些组件与那一个模型。 */
+function createPrimitives(renderer: MiniReact): Record<string, unknown> {
+  /** `React.createElement`；替身渲染出来的全是宿主标签（`form` / `input` / `button`…）。 */
+  const h = renderer.createElement;
+
+  const SettingsForm = (raw: Record<string, unknown>): unknown => {
+    const props = raw as {
+      labels: { unavailable: string; readOnly: string; saveFailed: string; save: string; saving: string };
+      state: ShellState;
+      onSave: () => void;
+      children?: unknown;
+    };
+    const { labels, state } = props;
+    if (!state.available) return h('form', null, labels.unavailable);
+    return h(
+      'form',
+      null,
+      state.writable ? null : h('p', { className: 'sf-readOnly' }, labels.readOnly),
+      state.failed ? h('p', { className: 'sf-saveFailed' }, labels.saveFailed) : null,
+      h(
+        'button',
+        { type: 'button', disabled: !state.writable || state.saving, onClick: props.onSave },
+        state.saving ? labels.saving : labels.save,
+      ),
+      props.children,
+    );
+  };
+
+  const SettingsValueField = (raw: Record<string, unknown>): unknown => {
+    const props = raw as {
+      id: string;
+      label: string;
+      hint: string;
+      placeholder?: string;
+      text: string;
+      overridden: boolean;
+      invalid: boolean;
+      disabled: boolean;
+      overriddenLabel: string;
+      resetLabel: string;
+      invalidLabel: string;
+      onEdit: (text: string) => void;
+      onReset: () => void;
+      help?: { label: string; content: unknown };
+    };
+    return h(
+      'label',
+      null,
+      props.label,
+      h('span', { className: 'sf-hint' }, props.hint),
+      // 真字段把长解释收在「i」按钮里，替身也留一个，好让那些句子仍进得了断言。
+      props.help === undefined
+        ? null
+        : h('button', { type: 'button', className: 'sf-help', title: props.help.label }, props.help.content),
+      h('input', {
+        id: props.id,
+        ...(props.placeholder === undefined ? {} : { placeholder: props.placeholder }),
+        value: props.text,
+        disabled: props.disabled,
+        onChange: (event: { target: { value: string } }) => props.onEdit(event.target.value),
+      }),
+      props.overridden ? h('span', { className: 'sf-badges' }, props.overriddenLabel) : null,
+      props.overridden
+        ? h(
+          'button',
+          { type: 'button', id: `${props.id}-reset`, onClick: props.onReset, disabled: props.disabled },
+          props.resetLabel,
+        )
+        : null,
+      props.invalid ? h('span', { className: 'sf-invalid' }, props.invalidLabel) : null,
+    );
+  };
+
+  const Switch = (raw: Record<string, unknown>): unknown => {
+    const props = raw as {
+      checked: boolean;
+      label?: string;
+      disabled?: boolean;
+      onChange: (checked: boolean) => void;
+    };
+    return h(
+      'button',
+      {
+        type: 'button',
+        role: 'switch',
+        'aria-checked': props.checked ? 'true' : 'false',
+        disabled: props.disabled === true,
+        onClick: () => props.onChange(!props.checked),
+      },
+      props.label ?? null,
+    );
+  };
+
+  const Checkbox = (raw: Record<string, unknown>): unknown => {
+    const props = raw as { checked: boolean; label?: string; disabled?: boolean; onChange: (checked: boolean) => void };
+    return h(
+      'button',
+      {
+        type: 'button',
+        role: 'checkbox',
+        'aria-checked': props.checked ? 'true' : 'false',
+        disabled: props.disabled === true,
+        onClick: () => props.onChange(!props.checked),
+      },
+      props.label ?? null,
+    );
+  };
+
+  const Button = (raw: Record<string, unknown>): unknown => {
+    const props = raw as { onClick?: () => void; disabled?: boolean; title?: string; icon?: unknown; children?: unknown };
+    return h(
+      'button',
+      {
+        type: 'button',
+        onClick: props.onClick,
+        disabled: props.disabled === true,
+        ...(props.title === undefined ? {} : { title: props.title }),
+      },
+      props.icon ?? null,
+      props.children,
+    );
+  };
+
+  /** 图标替身：真图标是 svg，这里只要能进树、能认出来就够。 */
+  const Icon = (raw: Record<string, unknown>): unknown => h('span', { className: 'sf-icon', size: raw.size });
+
+  const Tag = (raw: Record<string, unknown>): unknown => {
+    const props = raw as { tone?: string; children?: unknown };
+    return h('span', { tone: props.tone ?? 'neutral' }, props.children);
+  };
+
+  const StateDot = (raw: Record<string, unknown>): unknown => {
+    const props = raw as { state?: string; size?: number };
+    return h('span', { state: props.state ?? 'idle', size: props.size ?? 8 });
+  };
+
+  const DisclosureRow = (raw: Record<string, unknown>): unknown => {
+    const props = raw as {
+      icon?: unknown;
+      title?: unknown;
+      open: boolean;
+      expandable?: boolean;
+      onToggle?: () => void;
+      collapsedContent?: unknown;
+      children?: unknown;
+    };
+    return h(
+      'div',
+      { className: 'sf-disclosure', 'aria-expanded': props.open ? 'true' : 'false' },
+      props.icon ?? null,
+      h('span', { className: 'sf-title' }, props.title),
+      // 真的折叠按钮里是一枚图标；替身拿一个字符顶着，好让渲染出来的树看得懂。
+      h(
+        'button',
+        { type: 'button', 'aria-expanded': props.open ? 'true' : 'false', onClick: props.onToggle },
+        props.open ? '▾' : '▸',
+      ),
+      props.open ? props.children : props.collapsedContent,
+    );
+  };
+
+  const SegmentedControl = (raw: Record<string, unknown>): unknown => {
+    const props = raw as {
+      id: string;
+      label?: string;
+      value: string;
+      options: ReadonlyArray<{ value: string; label: string }>;
+      onChange: (value: string) => void;
+      disabled?: boolean;
+    };
+    return h(
+      'div',
+      { className: 'sf-segmented' },
+      props.options.map((option) => h(
+        'button',
+        {
+          type: 'button',
+          id: `${props.id}-${option.value}`,
+          disabled: props.disabled === true,
+          // 选中的那一项同时挂上两个标记，替身之外的两个方向都能认出来。
+          ...(option.value === props.value
+            ? { 'aria-pressed': 'true', 'data-active': '' }
+            : { 'aria-pressed': 'false' }),
+          onClick: () => props.onChange(option.value),
+        },
+        option.label,
+      )),
+    );
+  };
+
+  return {
+    SettingsForm,
+    SettingsValueField,
+    Switch,
+    Checkbox,
+    Button,
+    Tag,
+    StateDot,
+    DisclosureRow,
+    SegmentedControl,
+    SettingsFormModel: FakeSettingsFormModel,
+    settingsTextField,
+    IconChevronRightOutlineRegular: Icon,
+    IconRefreshOutlineRegular: Icon,
+  };
+}
+
 // ------------------------------------------------------------------ 假 DOM
 
 /** 一张样式表要像的那点样子：`dataset`、`textContent`、`parentNode.removeChild`。 */
@@ -352,7 +794,7 @@ function fakeDocument(styles: FakeStyle[]): Record<string, unknown> {
 
 // --------------------------------------------------------------- 加载 Web Client 端
 
-/** 加载 Web Client 端：给它一个 `window` 与一个假的 `document`，`react` 给替身。 */
+/** 加载 Web Client 端：给它一个 `window` 与一个假的 `document`，`react` 与官方原语给替身。 */
 function loadClient(): Harness {
   assert.ok(
     existsSync(CLIENT_FILE),
@@ -362,6 +804,7 @@ function loadClient(): Harness {
   const styles: FakeStyle[] = [];
   const consoleErrors: unknown[] = [];
   const mini = new MiniReact();
+  const primitives = createPrimitives(mini);
   const sandbox = {
     window: {
       __ModuleLoader__: {
@@ -385,6 +828,7 @@ function loadClient(): Harness {
     if (id === 'react') return mini;
     // JSX 走 automatic runtime：`jsx` / `jsxs` / `Fragment` 由替身一并提供。
     if (id === 'react/jsx-runtime') return mini;
+    if (id === PRIMITIVES) return primitives;
     throw new Error(`Web Client 端不应在运行时 require "${id}"：平台基线之外没有模块可解析`);
   }) as ClientExports;
   return {
@@ -656,29 +1100,13 @@ function rowSave(mini: MiniReact, id: string): HostElement {
   return found;
 }
 
-/** 设置表单那块外壳：本插件那份 `SettingsForm` 渲染的 `div.dap-ui-form`。 */
-function settingsForm(mini: MiniReact): HostElement {
-  const [form] = findAll(mini.tree(), (node) => node.props.className === 'dap-ui-form');
-  assert.ok(form, '页面里应当有设置表单');
-  return form;
-}
-
-/** 设置表单那颗保存按钮：文案随 `state.saving` 变，因此按「在外壳里」定位。 */
+/** 设置表单那颗保存按钮：文案随 `state.saving` 变，因此按「在 form 里」定位。 */
 function settingsSave(mini: MiniReact): HostElement {
-  const form = settingsForm(mini);
+  const [form] = findAll(mini.tree(), (node) => node.type === 'form');
+  assert.ok(form, '页面里应当有官方设置表单');
   const [save] = findAll(form, (node) => node.type === 'button' && (text(node) === '保存' || text(node) === '保存中…'));
   assert.ok(save, '设置表单应当有一颗保存按钮');
   return save;
-}
-
-/**
- * 页面上那几颗「恢复默认」。
- *
- * 字段的 reset 没有自己的 id（官方那一份也没有，它挂在「已覆盖」那一组徽章里），因此按类名找；
- * 设置页那一段里只有 `baseUrl` 一项被覆盖过，所以这一份列表的长度本身就是断言。
- */
-function fieldResets(mini: MiniReact): HostElement[] {
-  return findAll(mini.tree(), (node) => node.props.className === 'dap-ui-field-reset');
 }
 
 /** 设置表单那两行：`baseUrl` 的输入框与 `sync` 的开关。 */
@@ -692,18 +1120,18 @@ function syncSwitch(mini: MiniReact): HostElement {
   return found;
 }
 
-/** 页面上的标签（本插件那份 `Tag` 把 tone 写成 `data-tone`）。 */
+/** 页面上的标签（替身把官方 `Tag` 渲染成带 `tone` 的 `span`）。 */
 function tags(node: unknown): HostElement[] {
-  return findAll(node, (element) => element.type === 'span' && element.props['data-tone'] !== undefined);
+  return findAll(node, (element) => element.type === 'span' && element.props.tone !== undefined);
 }
 
-/** 分段控件此刻选中的那一项（选中项是 `role="tab"` 加 `aria-selected`）。 */
+/** 分段控件此刻选中的那一项（替身把选中项写成 `aria-pressed="true"` 加 `data-active`）。 */
 function activeSegment(node: unknown): string {
-  const tabs = findAll(node, (element) => element.props.role === 'tab');
-  assert.ok(tabs.length > 0, '分段控件应当有段');
-  const selected = tabs.filter((tab) => tab.props['aria-selected'] === true);
-  assert.deepEqual(selected.length, 1, '分段控件应当恰有一项是选中的');
-  return text(selected[0]!);
+  const [pressed] = findAll(node, (element) => element.props['aria-pressed'] === 'true');
+  assert.ok(pressed, '分段控件应当有一项是选中的');
+  const marked = findAll(node, (element) => element.props['data-active'] !== undefined);
+  assert.deepEqual(marked, [pressed], '选中的标记只该有一处');
+  return text(pressed);
 }
 
 /** 千位分隔符跟随语言环境，跟着被测代码一起算就不会跟 locale 打架。 */
@@ -864,43 +1292,35 @@ describe('Web Client 端', () => {
     );
     assert.ok(counts.size > 20, `样式表里应当有几十条规则，实际 ${String(counts.size)} 条`);
 
-    // 颜色只许用「主题里真的定义过」的名字——分界线是**主题定义**，不是「别的页面用过」。
+    // 颜色只许用「这一页真的定义过」的名字，两类：Theme 检查面列出的那些，以及官方原语自己引用的那些。
     // 反例是 `--dsw-alias-settings-card-*`：它只活在官方「模型」页那份组件 CSS 里，插件页上没有定义，
     // `var()` 于是落到回落值（白 16% 的描边），亮色主题下白底白边——卡片连边都看不见。
-    //
-    // 这一份清单就是**这一页此刻用到的全部名字**，逐条对着主题包自己的定义核过
-    // （`@deepseek-ai/dsh-client-ui-theme` 的 `client.js`，本机那一版定义了 395 个；28 个全中）。
-    // 因此多出一个名字就会在这里失败，逼着人回去核一遍——抄来的控件那两条正是这么发现的：
-    // `--dsw-alias-label-error` 与 `--dsw-alias-bg-layer-4` 在上游 CSS 里，主题里却没有这两个定义。
     const allowed = new Set([
-      // 底色、描边与文字：这一页的排版与抄来的控件共用
+      // Theme 检查面（client / Theme / listTokens）列出的
+      '--dsw-alias-bg-base',
       '--dsw-alias-bg-layer-1',
       '--dsw-alias-bg-layer-2',
-      '--dsw-alias-bg-layer-3',
-      '--dsw-alias-bg-module-platform',
+      '--dsw-alias-bg-overlay',
+      '--dsw-alias-border-l1',
       '--dsw-alias-border-l2',
-      '--dsw-alias-border-l3',
-      '--dsw-alias-border-l4',
       '--dsw-alias-brand-primary',
       '--dsw-alias-label-primary',
-      '--dsw-alias-label-primary-foreground',
       '--dsw-alias-label-secondary',
-      '--dsw-alias-label-tertiary',
-      '--dsw-alias-interactive-bg-active',
-      '--dsw-alias-interactive-bg-hover',
-      // 状态色：状态点与几种 tag 的 tone
-      '--dsw-alias-state-business-primary',
       '--dsw-alias-state-error-primary',
       '--dsw-alias-state-idle-primary',
       '--dsw-alias-state-success-primary',
       '--dsw-alias-state-warn-primary',
-      // 控件自己的那几套：主按钮、抬升与焦点环
-      '--dsw-alias-button-primary-fill',
-      '--dsw-alias-button-primary-hover',
-      '--dsw-elevation-soft',
-      '--dsw-focus-ring-color',
-      '--dsw-focus-ring-width',
-      // 圆角：主题里定义的一整套，这一页用到四档
+      '--dsw-specific-sidebar-fill',
+      // 官方原语包自己引用的（在 primitives 的 *.module.css 里能搜到）
+      '--dsw-alias-bg-layer-3',
+      '--dsw-alias-border-l3',
+      '--dsw-alias-border-l4',
+      '--dsw-alias-interactive-bg-hover',
+      '--dsw-alias-label-tertiary',
+      '--dsw-alias-label-dimmed',
+      '--dsw-alias-bg-module-platform',
+      // 圆角：主题里定义的一整套，原语用的是 sm / md / lg
+      '--dsw-radius-xs',
       '--dsw-radius-sm',
       '--dsw-radius-md',
       '--dsw-radius-lg',
@@ -935,7 +1355,7 @@ describe('Web Client 端', () => {
     assert.match(text(tree), /Aperture 的地址/u);
     assert.equal(findAll(tree, (node) => node.type === 'li' && node.props.className === 'dap-card').length, 2);
     assert.equal(findById(tree, 'dap-base-url').props.value, 'https://ai.example.ts.net');
-    assert.equal(syncSwitch(mini).props['aria-checked'], true);
+    assert.equal(syncSwitch(mini).props['aria-checked'], 'true');
   });
 
   it('设置投影跟着控制器变，不必重挂', async () => {
@@ -948,7 +1368,7 @@ describe('Web Client 端', () => {
     await mini.flush();
 
     assert.equal(addressInput(mini).props.value, 'https://elsewhere.example.ts.net');
-    assert.equal(syncSwitch(mini).props['aria-checked'], false);
+    assert.equal(syncSwitch(mini).props['aria-checked'], 'false');
     assert.ok(harness.formReads.length > before, '投影应当重新读一次快照');
   });
 
@@ -979,7 +1399,7 @@ describe('Web Client 端', () => {
 
     click(syncSwitch(mini));
     await mini.flush();
-    assert.equal(syncSwitch(mini).props['aria-checked'], false);
+    assert.equal(syncSwitch(mini).props['aria-checked'], 'false');
     click(settingsSave(mini));
     await mini.flush();
 
@@ -998,7 +1418,7 @@ describe('Web Client 端', () => {
     // 就算覆盖过，不必等用户先动一下手。
     assert.match(text(mini.tree()), /已覆盖/u);
     assert.equal(
-      fieldResets(mini).length,
+      findAll(mini.tree(), (node) => node.props.id === 'dap-base-url-reset').length,
       1,
       '用户层里覆盖过的项才给「恢复默认」',
     );
@@ -1016,7 +1436,7 @@ describe('Web Client 端', () => {
     mini.mount(element);
     await mini.flush();
 
-    click(fieldResets(mini)[0]!);
+    click(findById(mini.tree(), 'dap-base-url-reset'));
     await mini.flush();
 
     // 官方那一份把「恢复默认」也落成草稿：此刻一个 op 都还没写。输入框摆回用户层之下的值，
@@ -1024,7 +1444,7 @@ describe('Web Client 端', () => {
     assert.deepEqual(harness.writes, [], '按一下「恢复默认」不落笔');
     assert.equal(addressInput(mini).props.value, '', '输入框回到用户层之下的值');
     assert.equal(
-      fieldResets(mini).length,
+      findAll(mini.tree(), (node) => node.props.id === 'dap-base-url-reset').length,
       0,
       '撤掉覆盖，「已覆盖」跟着消失',
     );
@@ -1049,7 +1469,7 @@ describe('Web Client 端', () => {
     await mini.flush();
 
     assert.equal(harness.writes.length, 1, '没有覆盖可撤，就不写任何 op');
-    assert.equal(syncSwitch(mini).props['aria-checked'], true, '撤掉的是覆盖，不是生效值');
+    assert.equal(syncSwitch(mini).props['aria-checked'], 'true', '撤掉的是覆盖，不是生效值');
   });
 
   it('注入面上的 discard 就是官方表单那颗「放弃」：丢草稿，不写任何东西', async () => {
@@ -1118,20 +1538,9 @@ describe('Web Client 端', () => {
 
     assert.deepEqual([...harness.configNamespaces], [], '没有服务就不该去要命名空间');
     assert.match(text(mini.tree()), /这一份设置现在读不到/u);
-    // 命名空间读不到时，外壳换成一句话：控件与保存按钮都不画（抄来的那一份与官方同一条路）。
-    const [missing] = findAll(mini.tree(), (node) => node.props.className === 'dap-ui-form-unavailable');
-    assert.ok(missing, '读不到时要在控件的位置上说明这件事');
-    assert.equal(missing.props.role, 'status');
-    assert.equal(
-      findAll(mini.tree(), (node) => node.props.className === 'dap-ui-form').length,
-      0,
-      '读不到就没有表单外壳',
-    );
-    assert.equal(
-      findAll(mini.tree(), (node) => node.type === 'button' && text(node) === '保存').length,
-      0,
-      '读不到就没有可按的保存',
-    );
+    const [form] = findAll(mini.tree(), (node) => node.type === 'form');
+    assert.ok(form, '表单本身还要在');
+    assert.equal(findAll(form, (node) => node.type === 'button').length, 0, '读不到就没有可按的东西');
     assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-base-url').length, 0);
     assert.match(text(mini.tree()), /一行一个模型/u, '模型那一段与设置服务无关');
     assert.equal(findAll(mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-card').length, 2);
@@ -1170,15 +1579,11 @@ describe('模型行与刷新', () => {
     mini.mount(element);
     await mini.flush();
 
-    // 点自己不说话（抄来的 `StateDot`，与官方一致，是 aria-hidden 的），说给谁听得看外面那层的
-    // aria-label；点把状态写在 `data-state` 上。
+    // 点自己不说话（官方 `StateDot` 是 aria-hidden 的），说给谁听得看外面那层的 aria-label。
     const dots = (instance: MiniReact): Array<[string, string]> => findAll(
       instance.tree(),
       (node) => node.props.role === 'img',
-    ).map((node) => [
-      String(node.props['aria-label']),
-      String(findAll(node, (child) => child.props['data-state'] !== undefined)[0]?.props['data-state']),
-    ]);
+    ).map((node) => [String(node.props['aria-label']), String(findAll(node, (child) => typeof child.props.state === 'string')[0]?.props.state)]);
 
     assert.deepEqual(dots(mini), [
       [t('statusPublished'), 'done'],
@@ -1224,9 +1629,8 @@ describe('模型行与刷新', () => {
       ['', 'openai-completions', 'openai-responses', 'anthropic-messages'],
     );
     assert.deepEqual(
-      findAll(rowOf(mini, 'deepseek-flash'), (node) => node.type === 'input' && node.props.type === 'checkbox')
-        .map((node) => node.props.checked),
-      [true, true],
+      findAll(rowOf(mini, 'deepseek-flash'), (node) => node.props.role === 'checkbox').map((node) => node.props['aria-checked']),
+      ['true', 'true'],
     );
     assert.equal(activeSegment(rowOf(mini, 'deepseek-flash')), t('reasoningOn'));
     assert.equal(findById(tree, 'dap-deepseek-flash-api').props.disabled, false);

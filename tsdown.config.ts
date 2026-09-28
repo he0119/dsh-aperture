@@ -28,18 +28,14 @@ const ROOT = process.cwd()
 
 /**
  * 模块表里由宿主提供、本插件直接 `require` 的模块：平台基线（官方
- * `PLATFORM_MODULES`）里的 `react` 与 `react/jsx-runtime`，**仅此两个**。
- * 它们必须保持外部依赖——同一份实例由模块表提供；其余（本插件自己的代码、控件与设置表单那一套、
- * 将来引入的普通第三方库）一律内联。
- *
- * 官方 UI 原语包曾经在这里：不 `require` 它是官方插件指南（`cordis-plugin-development` 的
- * `references/practices.md`）明写的一条——它是随 Harness 走的 Client 包，改版不打招呼，一抛还会把
- * 整个槽位条目刷成空的崩溃占位。控件与表单模型因此抄进了 [src/client/ui.tsx](./src/client/ui.tsx)
- * 与 [src/client/forms.ts](./src/client/forms.ts)，唯一仍旧共享的只剩下主题 token。
+ * `PLATFORM_MODULES`）里的 `react` 与 `react/jsx-runtime`，加上官方 UI 原语包。
+ * 它们必须保持外部依赖——同一份实例由模块表提供；其余（本插件自己的代码、将来引入的普通
+ * 第三方库）一律内联。
  */
 const EXTERNALS = [
   'react',
   'react/jsx-runtime',
+  '@deepseek-ai/dsh-client-ui-primitives',
 ] as const
 
 /** `?inline` 的虚拟模块前缀；结尾不能是 `.css`，否则会撞上 tsdown 自己的 CSS 管线。 */

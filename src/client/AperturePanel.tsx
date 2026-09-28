@@ -1,10 +1,9 @@
 /**
  * 配置页：插件列表里本插件那个包页上的设置页（实例地址、同步开关，以及逐模型的覆盖）。
  *
- * 页面只交内容，控件是本插件自己那几个（[ui.tsx](./ui.tsx)，从官方原语包抄来），**没有卡片**——
- * 标题与面包屑由页主画。表单状态读注入面里的 `useApertureCard`（[forms.ts](./forms.ts) 那份模型的
- * 投影），报告、提示语与每行的草稿、展开状态是这一页的局部状态；报告里的事实（`panel.status` 那一份
- * 结构化数据）只是不再整块摊开给用户看。
+ * 页面只交内容，控件用官方原语，**没有卡片**——标题与面包屑由页主画。表单状态读注入面里的
+ * `useApertureCard`（官方 `SettingsFormModel` 的投影），报告、提示语与每行的草稿、展开状态是这一页
+ * 的局部状态；报告里的事实（`panel.status` 那一份结构化数据）只是不再整块摊开给用户看。
  *
  * 这一层是唯一持有状态的地方：草稿与展开按模型 id 记成两张表，动作在这里按行绑好，然后整份递给
  * 只画不记的 [ModelRow.tsx](./ModelRow.tsx)（展开之后是 [ModelEditor.tsx](./ModelEditor.tsx)）。
@@ -26,12 +25,12 @@ import {
   SettingsValueField,
   Switch,
   Tag,
-} from './ui.tsx';
+} from '@deepseek-ai/dsh-client-ui-primitives';
 import type {
   SettingsFieldState,
   SettingsFormActions,
   SettingsFormShell,
-} from './forms.ts';
+} from '@deepseek-ai/dsh-client-ui-primitives';
 import type { PanelAction, PanelModelPatch } from '../panel.ts';
 import type { PanelModel, PanelReport } from '../report.ts';
 import {
@@ -63,7 +62,7 @@ export interface PanelFace {
   writeModel(id: string, patch: PanelModelPatch | null): Promise<PanelAction>;
 }
 
-/** 注入面里 `useApertureCard` 交给组件的快照：表单外壳（ui.tsx）加上这一页那两个字段。 */
+/** 注入面里 `useApertureCard` 交给组件的快照：官方表单外壳加上这一页那两个字段。 */
 type ApertureCardSnapshot = SettingsFormShell & {
   baseUrl: SettingsFieldState;
   sync: SettingsFieldState;
@@ -80,7 +79,7 @@ export interface AperturePanelProps {
   useApertureCard: <T>(select: (snapshot: ApertureCardSnapshot) => T) => T;
   /** 报告与两个写端点。 */
   panel: PanelFace;
-  /** 设置表单模型的动作（[forms.ts](./forms.ts)；`save` 用的是可等待的那一个，见下）。 */
+  /** 官方表单模型的动作（`save` 用的是可等待的那一个，见下）。 */
   edit: SettingsFormActions['edit'];
   resetField: SettingsFormActions['resetField'];
   discard: SettingsFormActions['discard'];
@@ -161,7 +160,7 @@ export function AperturePanel(props: AperturePanelProps) {
   /**
    * 保存设置里那两个字段，然后等一轮重新发现落地再说话。
    *
-   * 写入走那份表单模型的 `save()`：它自带 `revision` 围栏（期间别处改过就拒绝，而不是覆盖别人的
+   * 写入走官方表单模型的 `save()`：它自带 `revision` 围栏（期间别处改过就拒绝，而不是覆盖别人的
    * 改动）并从宿主接受的那份重新播种，因此写完不重读设置——投影会自己变新。报告里的模型事实
    * 与状态点来自最近一次刷新，写完必须等一轮，否则就是「保存了却没变」。设置变更自己也会唤起同一轮
    * 刷新（单飞判定按配置版本合并），因此这里通常并进那一轮。

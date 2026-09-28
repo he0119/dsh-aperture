@@ -1,27 +1,18 @@
 /**
  * 配置页的样式表。
  *
- * 两份 `.css` 拼成一张表，由 `tsdown.config.ts` 里的 `cssInline()` 编译成文本内联进产物
+ * 源码是真正的 `styles.css`，由 `tsdown.config.ts` 里的 `cssInline()` 编译成文本内联进产物
  * （对应官方 `dsh-css-text-inline`）：客户端模块系统只服务 `<包名>/client.js` 这一条经典脚本，
  * 没有旁挂 `.css` 的路由，所以 CSS 必须进产物。
- *
- * - [ui.css](./ui.css)：本插件自己那几个控件的配方，从官方原语包逐条抄来（类名换成 `dap-ui-` 前缀）。
- * - [styles.css](./styles.css)：这一页自己的排版——分组间距、字段栅格、模型行那张卡。
- *
- * 顺序是先基础控件、后页面排版；两边的类名各自成段（`dap-ui-*` 与 `dap-*`），没有同名规则。
  *
  * @module dsh-aperture/client/styles
  */
 
-import uiStyles from './ui.css?inline';
-import pageStyles from './styles.css?inline';
+import styles from './styles.css?inline';
 
 /** 样式归属：官方 `data-plugin` 写包名，`data-plugin-css` 写「包名/文件名」。 */
 const PLUGIN_ID = 'dsh-aperture';
 const STYLE_OWNER = `${PLUGIN_ID}/styles.css`;
-
-/** 注入用的那张表：控件在前、页面排版在后。 */
-const STYLESHEET = `${uiStyles}\n${pageStyles}`;
 
 /**
  * 配置页样式。
@@ -29,18 +20,19 @@ const STYLESHEET = `${uiStyles}\n${pageStyles}`;
  * 页面在独立 bundle 里，用不了仓库的 CSS module 管线，因此样式随包分发、按 effect 生命周期注入，
  * 卸载时移除；元素按 `data-plugin-css` 认领，与自己重名的那份先删掉（热替换）。
  *
- * 两份表的写法有意不同：
+ * 选择器全部收在根节点的 `[data-dsh-aperture]` 之下，颜色只引用 dsh web 的主题 token
+ * （`--dsw-alias-*`，各带回落值），深浅色自动跟随。
  *
- * - 页面排版（`styles.css`）的颜色 token 各带回落值——它写的是本页自己的配方，token 落空时还有
- *   一个能看的兜底。
- * - 控件那一段（`ui.css`）不留回落值，与上游逐字一致（见该文件开头的说明）：那几条就是宿主自己
- *   的配方，`var()` 落空说明主题里那个 token 没了，那是该看见的故障。
+ * 排版照官方「模型」页：一个模型一张卡片（发丝描边 + 大圆角），展开的编辑器是卡片里一块内嵌面，
+ * 字段用官方 `SettingsValueField`，因此徽章、重置、提示这些细活与官方设置页逐像素一致。官方那些
+ * 类名是打包器哈希出来的私有产物，抄不到，能抄的只有配方（描边、圆角、内边距、字号）。
  *
- * 两边共同遵守的一条：只许用**主题里真的定义过**的 token。分界线是「主题定义」而不是「别的页面
- * 用过」——`--dsw-alias-settings-card-stroke` 那种只活在官方「模型」页自己那份组件 CSS 里的名字，
- * 引用它等于引用一个空值，回落值又是白色，于是亮色主题下卡片连边都看不见（暗色主题反而正常，
- * 因为回落值是白 16%）。界定这一页可用范围的那份清单来自主题包自己的定义
- * （`@deepseek-ai/dsh-client-ui-theme`，本机那一版定义了 395 个名字），用例里钉住的也是它。
+ * 颜色只许用「这一页真的定义过」的 token：官方原语自己用的那几个（`bg-layer-3`、`border-l4`、
+ * `interactive-bg-hover`）与 Theme 检查面列出的那十几个。像 `--dsw-alias-settings-card-stroke`
+ * 这种只活在官方「模型」页自己那份组件 CSS 里的名字，在插件页上根本没定义——引用它等于引用一个
+ * 空值，回落值又是白色，于是亮色主题下卡片连边都看不见（暗色主题反而正常，因为回落值是白 16%）。
+ * 亮色主题下 `bg-layer-*` 全是白色（层与层靠阴影分开），所以卡片只能靠描边立住，底色只是给暗色
+ * 主题加一点抬起感。
  *
  * @returns {Function} 卸载时移除样式表的 disposer。
  */
@@ -51,7 +43,7 @@ export function installStyles() {
   const element = document.createElement('style');
   element.dataset.plugin = PLUGIN_ID;
   element.dataset.pluginCss = STYLE_OWNER;
-  element.textContent = STYLESHEET;
+  element.textContent = styles;
   document.head.appendChild(element);
   return () => {
     if (element.parentNode !== null) element.parentNode.removeChild(element);
