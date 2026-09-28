@@ -9,7 +9,7 @@
 pnpm install               # 若机器级 pnpm store 不可写：pnpm install --store-dir ./.pnpm-store
 pnpm run build             # tsdown 统一生成宿主、声明与浏览器产物
 pnpm run typecheck         # Host/test 与 Web Client 两个 tsc 项目
-pnpm test                  # 单元测试 + 端到端（232 个，离线运行；需要已安装的 devDependencies）
+pnpm test                  # 单元测试 + 端到端（237 个，离线运行；需要已安装的 devDependencies）
 
 DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run test:live   # 只跑端到端，且指向真实实例
 DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run inspect     # 手动走查：打印写入后的补丁文档与 LLM 解析结果（先 pnpm run build）

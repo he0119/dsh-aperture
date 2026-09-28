@@ -259,6 +259,7 @@ Host 端也由同一份 `tsdown.config.ts` 构建：内部源码合成官方 Hos
 - 它连的网关是仓库里的 `test/fake-gateway.ts`：内核挑一个空闲端口，`/v1/models` 回一份与断言一一对应的固定载荷。因此这一份不依赖 Tailscale 网络，CI 里也跑得动；`DSH_APERTURE_LIVE_URL` 给定时改连真实实例（那份载荷与用例是一份契约，改一处就要改另一处）。
 - 各 `src/*.ts` 的单元测试钉的是端到端**测不到**的那些：请求头与 URL 归一化、解析失败时的具体原因、`planSync` 的逐条 op、单飞语义、写入被拒的分支。端到端只会告诉你「文档里没有 `llm-pi-ai` 那一行」，不会告诉你「`accept` 头丢了」。因此两边都留：端到端负责「真的能用」，单元测试负责「坏在哪」。
 - Web Client 端（`test/client.test.ts`）测的是**打包产物** `lib/client.js`（`pnpm test` 的 pretest 会先重打一次），因为 `window.__ModuleLoader__.load` 那层包法正是要钉住的契约之一；官方原语虽然有真实类型，但运行时仍然喂替身模块。它走 `test/support/mini-react`（实现了 `createElement` 与 automatic runtime 的 `jsx` / `jsxs` / `Fragment`），钉住的是**接缝**（注册到哪个槽位、注入面上的名字与形状、effect 依赖里不许有对象、提交轮数不许自激、卸载时收不收回订阅与样式）与页面行为（改哪一项写哪一项、失败时界面说不说实话）。它证明不了「官方组件长什么样」，那不在本仓库的测试范围内；替身只保证被测代码依赖的那套语义与官方一致（`SettingsFormModel` 的草稿、`revision` 围栏与 `stored` 口径）。
+- 上面三份之外还有一份 `test/manifest.test.ts`，它不测行为、只核**声明**：拿宿主的 `evaluatePluginCompatibility`（0.2.0 起组合层挂载前用的就是它）走一遍 `package.json` 的 peer 范围与 `engines.dsh`，要求它们既接受 devDependencies 装的那条版本线、又不接受 0.1.7 之前的宿主。**升级 devDependencies 而忘了跟 peer 范围**时，真机上是插件整行被拒、界面上什么也不出现，而上面三层全绿——盯着这件事的只有它。
 
 ## 已知边界
 
@@ -269,6 +270,6 @@ Host 端也由同一份 `tsdown.config.ts` 构建：内部源码合成官方 Hos
 - **改了 `route` 的路由名之后，旧键会留在 `llm-pi-ai.providers` 里**（插件只认自己当前拥有的三个键，无法知道历史上用过哪些名字）。它不会报错，只是不再刷新；要清理就手动删掉那一行。
 - **配置页只存在于 Web 界面**（插件页 + Typert 注册表）；没有它的部署里发现照常，只是没有可点按的界面。从非本机来源打开的页面拿不到宿主设置，配置页会把失败原因摆在页面上（而不是假装可编辑）；设置文档本身不接受写入时（表单快照的 `state.writable === false`），表单会置灰并说明原因；连快照都拿不到时（`state.status === 'unavailable'`）设置那一段只剩官方表单的一句说明，报告照常显示。
 - **更高优先级的补丁层能盖住写入**：profile 的补丁文档之上还有 `$DSH_HOME/cordis.patch.yml` 这类层。同一行在那里也被写过时，配置页的保存写进 profile 的补丁文档、却不生效——写入本身可能被设置接缝拒收（配置页会说这一笔没被收下），也可能落盘了却仍是那一层说了算；两种都得去那一层改。
-- **peer 范围收得很紧**（`^0.1.7-rc.1`）：0.1.7 之前的宿主会被 peer 预检挡下——这一版起 `installSection` / `SettingsProvider` 这套接缝已经不存在，本插件的界面代码在旧宿主上无法工作。因此从 `0.2.0` 升上来是一次有意的破坏性升级。
+- **peer 范围是一条并集**（`^0.1.7-rc.1 || ^0.2.0-rc.1`）：下界是 0.1.7——更早的宿主在预检处就被挡下，那一版起 `installSection` / `SettingsProvider` 这套接缝已经不存在，本插件的界面代码在旧宿主上无法工作。上到 0.2.0 那一线同样在内，因为 0.2.0 起组合层会在挂载前拿**每个** `@deepseek-ai/dsh-*` 的 peer 范围去比运行时版本（`evaluatePluginCompatibility`），不满足的那一行整行被拒——界面上什么也不出现，只有一行诊断，而 `pnpm test` 与类型检查照样全绿。写成并集而不是只留 0.2.0，是因为发布线：dsh 的 `latest` 停在 0.1.7-rc.2，0.2.0 只在 `next`，只留后者会让还在 `latest` 上的人一升级插件就被挡下。两条线上本插件用到的接缝一致：`dsh-settings`、`dsh-typert-protocol`、`dsh-client-ui-renderer/client` 与 `dsh-client-ui-slots` 的产物逐字节相同，原语包那一版改了观感（按钮圆角、新增 `MenuSurface` 一类），但本插件引用的导出与 `SettingsFormModel` 的草稿 / `revision` 围栏语义没动；同一份源码在两条线上都跑过同一套用例，0.2.0 那一版还在真宿主里量过两种主题。丢掉 0.1.7 是一次有意的破坏性升级，改范围时 `test/manifest.test.ts` 会跟着红。
 - **想让已发布的路由消失就关掉同步开关**：那一轮刷新会把本插件的三个键从 `llm-pi-ai.providers` 撤下来（同段里别的 provider 不动）。
 - **动作端点的一句结论仍是中文**：`PanelAction.summary` 由 Host 端写好（「已写入 2 条路由…」），因此英文界面里那一行也是中文。报告已经不走这条路（它是结构化数据），但这个动作用的还是「Host 端说一句话」的形态；要让它跟着语言走，得把 `summary` 换成「码 + 实参」再由界面渲染。地址与同步的写入不再是端点，它们的话由界面自己按语言组织。
