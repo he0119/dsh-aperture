@@ -135,6 +135,7 @@ pnpm test && pnpm run typecheck && pnpm run build
 
 ## Git
 
-- **不要自己 push**（含 `--force`），也不要自己发版（`pnpm version` 会改 `package.json` 并打标签）；
-  改完把状态与下一步命令交给维护者，由他决定。发布流程见 [docs/releasing.md](docs/releasing.md)。
+- `main` 上的 ruleset **没有 bypass actor**：只能开 PR，`check` 绿了才合得了，`git push origin main`
+  会被 `GH013` 拒掉（`--force` 更不行）。因此改完就推一个分支、开 PR，把 PR 链接与验证结果交给
+  维护者，由他决定合不合、发不发版——发布流程见 [docs/releasing.md](docs/releasing.md)。
 - 改写历史前先留一个备份 ref，并在报告里给出新旧 sha 的对应关系，以及「树有没有变化」的核对方式。
