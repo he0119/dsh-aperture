@@ -1,13 +1,20 @@
 name: Publish
 
-# 推一个 v* 标签（例如 v0.4.0）就把该版本发到 npm（trusted publishing），成功后自动建 GitHub Release
-# ——见 docs/releasing.md。
+# 把某个标签指向的提交发到 npm（trusted publishing），成功后自动建 GitHub Release——见 docs/releasing.md。
 #
-# 没有 workflow_dispatch：发布只能由标签触发。手动触发会在默认分支上跑，等于凭空指定一个版本发出去，
-# 正是「标签是唯一版本来源」要防的事。要发版就打标签。
+# 两条入口，都通向「同一个提交上的同一个标签」：
+#   - release.yml：人工在 Actions 里点 Release 按钮，它把标签打在当刻 main 顶端，再以 workflow_call
+#     调进来。用 GITHUB_TOKEN 推的标签不会再触发别的 workflow，所以只能显式调用，不是多此一举。
+#   - 直接推一个 v* 标签（例如 v0.4.0）：手动补发与善后走这条。
 on:
   push:
     tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        description: 要发布的标签（vX.Y.Z）
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -20,6 +27,9 @@ jobs:
   publish:
     needs: check
     runs-on: ubuntu-latest
+    # 标签名：workflow_call 由 release.yml 传进来，标签推送触发时从 ref 里取。
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     permissions:
       # contents: write 是给最后那步建 Release 的；npm 那两步不需要它。
       contents: write
@@ -44,7 +54,7 @@ jobs:
       - name: 校验标签与 package.json
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF#refs/tags/}"
+          tag="${TAG}"
           version="${tag#v}"
 
           # 标签必须能解析成 x.y.z（可带预发布后缀）。package.json 已由发布 PR 写好版本号，这里只核对、不改写：
@@ -58,10 +68,10 @@ jobs:
           fi
           echo "标签与 package.json 一致：$version"
 
-      - name: 校验标签落点（在 main 上 · 该提交就是版本提交 · 没被后续提交取代）
+      - name: 校验标签落点（在 main 上 · 该提交就是版本提交 · 这个版本仍是 main 的当前版本）
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF#refs/tags/}"
+          tag="${TAG}"
           version="${tag#v}"
 
           # 取远程那个标签来核对，但**不能**取进 refs/tags/ 里：checkout 在标签上检出的，
@@ -71,41 +81,34 @@ jobs:
           remote_tag_ref="refs/dsh-remote-tags/${tag}-${GITHUB_RUN_ID}"
           git fetch --no-tags origin "refs/tags/${tag}:${remote_tag_ref}"
           tag_sha="$(git rev-parse "${remote_tag_ref}^{commit}")"
-          main_sha="$(git rev-parse origin/main)"
+          git fetch --no-tags origin main
 
           if ! git merge-base --is-ancestor "$tag_sha" origin/main; then
             echo "::error::标签 ${tag} 指向的提交 ${tag_sha} 不在 main 上。"
             exit 1
           fi
 
-          # 「标签指向的提交里 package.json 就是 vX.Y.Z」——这才是 publish 工作流里那句
-          # 「标签打错 commit 时挡在 npm 之外」真正断言的事。第 4 步校验的是当前 checkout，
-          # 标签落在发布提交**之后**的某个提交上时，两者仍然相等，只有这一句拦得住。
+          # 「标签指向的提交里 package.json 就是 vX.Y.Z」——这才是「标签打错 commit 时挡在 npm 之外」
+          # 真正断言的事。上一道核的是当前 checkout（也就是标签那个提交），标签落在发布提交**之后**
+          # 的某个提交上时两者仍然相等，只有这一句拦得住。
           version_in_file="$(git show "${tag_sha}:package.json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')"
           if [ "$version_in_file" != "$version" ]; then
             echo "::error::标签 ${tag} 指向的提交里 package.json 是 ${version_in_file}——这个标签落在版本提交之后的提交上了。"
             exit 1
           fi
 
-          # 发布提交必须还在 main 顶端：否则这个版本号已被后来的发布取代，发出去就是往 old 版本上倒灌。
-          # 这也顺带禁止了「一个标签对应一段区间」——版本提交之后又推了别的提交再打标签。
-          #
-          # 推标签一般会连 main 一起推（git push --follow-tags），但只推标签时 origin/main 不会动，
-          # 而 job 里那次 fetch 就发生在推标签之后几秒，可能还差一小步。等它追上来：最多两次、每次 10 秒。
-          for attempt in 1 2; do
-            if [ "$main_sha" = "$tag_sha" ]; then break; fi
-            echo "origin/main 还停在 ${main_sha}，等它追上标签……（${attempt}/2）"
-            sleep 10
-            git fetch --no-tags origin main
-            main_sha="$(git rev-parse origin/main)"
-          done
-
-          if [ "$main_sha" != "$tag_sha" ]; then
-            echo "::error::main 顶端是 ${main_sha}，不是标签指向的 ${tag_sha}。"
-            echo "::error::发布提交不再是 main 顶端：要么标签落在旧提交上，要么打完标签之后 main 又前进了。"
+          # 「这个版本仍是 main 现在要发的版本」防的是往旧版本倒灌：main 升到 0.4.2 之后再补发 0.4.1，
+          # npm 的 latest 会被拽回去。判据不能是「标签仍是 main 顶端」——所有改动都走 PR 之后 main
+          # 一直在动，一次无关的合并就能把它打破，而且打破之后连重跑都救不回来（v0.3.3 就是这么卡的）。
+          # 也不需要比较版本号大小：main 上的版本号还是这一个，这次发布就仍是「当前意图」；
+          # 反过来说，main 已经不再声明的版本，不该再往 npm 上发。
+          main_version="$(git show origin/main:package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')"
+          if [ "$main_version" != "$version" ]; then
+            echo "::error::main 上的 package.json 已经是 ${main_version}，而这次要发 ${version}。"
+            echo "::error::main 不再声明这个版本，发出去就是把 npm 的 latest 往旧版本拽。"
             exit 1
           fi
-          echo "标签落点校验通过：${tag} -> ${tag_sha}（main 顶端，package.json 就是 ${version}）"
+          echo "标签落点校验通过：${tag} -> ${tag_sha}（在 main 上 · 那个提交的 package.json 就是 ${version} · main 现在仍是 ${main_version}）"
 
       # lib/ 不进 git，靠 prepare（清 lib/ 后跑完整 tsdown 构建）在发布时现场编译，
       # 所以这里必须先装依赖：check job 里那份 pnpm install 不会跨 job 共享工作目录，少了这一步 prepare
@@ -113,7 +116,8 @@ jobs:
       # 放在校验之后：标签打错了就没必要花这几分钟装依赖。
       - run: pnpm install --frozen-lockfile
 
-      # 发布成功的那一刻 registry 上就能查到，所以这里的判断是可靠的。
+      # 判断依据是 npm view，而 registry 收下发布不是瞬时的（见 docs/releasing.md）：刚发完的那几分钟里
+      # 这里仍可能判成「没发过」，复查发布结果时别把那段延迟当成漏发。
       - name: 判断该版本是否已经发布
         id: check
         run: |
@@ -142,7 +146,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF#refs/tags/}"
+          tag="${TAG}"
           version="$(node -p 'require("./package.json").version')"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "${tag} 的 Release 已经存在。"
