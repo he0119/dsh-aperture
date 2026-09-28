@@ -36,9 +36,13 @@ jobs:
       # 下面两步都要 OIDC：npm 可信发布用它换取短期凭据，provenance 用它签名。
       id-token: write
     steps:
+      # ref 显式钉在标签上：标签推送触发时默认检出的就是它，但被 release.yml 以 workflow_call 调进来时
+      # 默认检出的是**调用方**的 ref（main 顶端），那样发出去的会是 main 的树、而版本号来自标签，
+      # 「标签指着哪个提交就发哪个提交」这条就断了。两条入口必须落在同一个提交上。
       # fetch-depth: 0 —— 下面的落点校验要判断标签是不是 origin/main 的祖先，浅克隆没有这段历史。
       - uses: actions/checkout@v5
         with:
+          ref: ${{ env.TAG }}
           fetch-depth: 0
 
       # 发布固定使用 Node 24.11：它属于官方支持范围，并自带满足可信发布要求（>= 11.5.1）的 npm 11。
