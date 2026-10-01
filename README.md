@@ -202,7 +202,7 @@ GET {baseUrl}/v1/models
         └─ 生成 llm-pi-ai 的 providers.<route>，按 revision 写进 profile 的补丁文档
 ```
 
-写入只碰 `llm-pi-ai.providers` 下属于本插件的三个键：内容没变就不写；用路径操作写，你手写的其它 provider 原样保留；探测失败绝不删空已有目录；路由没模型了就删掉。实现细节（协议分流、容量与推理的来源优先级、生命周期与依赖、写入行为）见 [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md)。
+写入只碰 `llm-pi-ai.providers` 下属于本插件的三个键：内容没变就不写；用路径操作写，你手写的其它 provider 原样保留；探测失败绝不删空已有目录；路由没模型了就删掉。每条决策为什么是这样、放弃了哪些替代方案，见 [.agents/notes/implemented/](https://github.com/he0119/dsh-aperture/tree/main/.agents/notes/implemented)（中文）；当前机制与已知边界见 [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md)。
 
 ## 开发
 

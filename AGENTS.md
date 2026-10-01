@@ -1,7 +1,8 @@
 # AGENTS.md
 
 本仓库的协作约定，给 AI 助手与贡献者看。安装与用法在 [README](README.md)（英文版
-[README.en.md](README.en.md) 与它对齐），实现与取舍的「为什么」在
+[README.en.md](README.en.md) 与它对齐），决策的依据与被放弃的备选方案在
+[.agents/notes/](.agents/notes/AGENTS.md)，当前机制与已知边界在
 [docs/internals.md](docs/internals.md)，目录结构与逐文件职责在
 [docs/development.md](docs/development.md)，发布在 [docs/releasing.md](docs/releasing.md)。
 文档、提交信息、给维护者的报告一律用中文。
@@ -14,9 +15,16 @@
 | --- | --- |
 | `README.md` / `README.en.md` | 安装、配置、插件页怎么用；两份的键与结构保持对齐 |
 | `AGENTS.md` | 本文件：协作约定、提交信息口径、验证清单、界面硬约束 |
-| `docs/internals.md` | 为什么这么做：约束、踩过的坑、刻意的取舍 |
+| `.agents/notes/` | 决策的依据、被否决的备选方案与后果；一条决策一篇，格式由 `test/notes.test.ts` 核 |
+| `.agents/skills/` | 判断密集、步骤长的可复用走查流程；宿主从 `<项目根>/.agents/skills/<name>/SKILL.md` 发现 |
+| `docs/AGENTS.md` | `docs/` 这一层的文档规范与写作规则 |
+| `docs/internals.md` | 当前机制里没有笔记承载的那部分：界面实现细节、已知边界、决策地图 |
 | `docs/development.md` | 怎么构建、怎么跑、怎么起一个专用开发实例 |
 | `docs/releasing.md` | 发布流程（Actions 里点 Release 按钮 → CI 在当刻 `main` 顶端打标签 → 可信发布）、落点三道校验、PR 标题与日志分组 |
+
+一次改动**引入了新的决策**（功能的取舍、修掉一个有现象可查的缺陷、拿掉一整块行为）时，
+与代码同一个提交里写一篇笔记，判据见 [.agents/notes/AGENTS.md](.agents/notes/AGENTS.md)；
+已经有一篇笔记持有该决策就更新它，不新建重复记录。局部 UI 调整与机械改动豁免。
 
 ## 官方文档
 
@@ -62,14 +70,18 @@ pnpm test && pnpm run typecheck && pnpm run build
 （`pnpm test` 的 `pretest` 会先重打 Web Client 产物；`pnpm install` 会跑 `prepare`，也就是一次完整
 构建。CI 跑的是同一串，见 [.github/workflows/ci.yml](.github/workflows/ci.yml)。）
 
-- 三份测试各证一件不同的事，谁也顶替不了谁（分层见 [docs/internals.md](docs/internals.md) 的
-  「验证：哪一层证明什么」）：`test/live.test.ts` 是唯一能证明「写进去的配置**合法**而不是看起来
-  合理」的一份；各 `src/*.ts` 的单元测试钉端到端测不到的细节（请求头、URL 归一化、`planSync` 的
-  逐条 op、写入被拒的分支）；`test/client.test.ts` 测的是**打包产物** `lib/client.js`。
+- 三份测试各证一件不同的事，谁也顶替不了谁（分层见
+  [三份测试各证一件不同的事](.agents/notes/implemented/testing/2026-09-24-three-test-layers.md)）：
+  `test/live.test.ts` 是唯一能证明「写进去的配置**合法**而不是看起来合理」的一份；各 `src/*.ts`
+  的单元测试钉端到端测不到的细节（请求头、URL 归一化、`planSync` 的逐条 op、写入被拒的分支）；
+  `test/client.test.ts` 测的是**打包产物** `lib/client.js`。
 - `test/manifest.test.ts` 不属于上面那三层，它核的是**声明**：拿宿主自己的
   `evaluatePluginCompatibility` 走一遍 `package.json` 的 peer 范围与 `engines.dsh`，要求它们接受
   devDependencies 装的那条版本线、又不接受更早的宿主。**升级 devDependencies 而忘了跟 peer 范围**，
   真机上就是插件整行被预检拒掉、界面上什么也不出现，而其余检查全绿——这份用例挡的就是它。
+- `test/notes.test.ts` 同样只核**声明**：`.agents/notes/` 下的路径形状、头部三行、`Status:` 与所在
+  目录是否一致、`## Problem` 是不是第一个二级标题、必备章节在不在、`implemented/` 里有没有混进
+  提案用语、相对链接能不能解析。改笔记格式就同一次改动里改它。
 - `test/live.test.ts` 连的网关默认由 `test/fake-gateway.ts` 自己起（内核挑端口，不要网络）。那份
   固定载荷与用例是**一份契约**，改一处就要改另一处。
 - **新断言要篡改验证**：把被测行为改回去，测试必须变红；报告里说明做了哪些篡改。
