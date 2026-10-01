@@ -213,7 +213,7 @@ GET {baseUrl}/v1/models
         └─ llm-pi-ai providers.<route>, written into the profile patch document by revision
 ```
 
-Writes touch only the three keys under `llm-pi-ai.providers` that this plugin owns: an unchanged section is not rewritten; writes are path-addressed so your hand-written providers survive untouched; a failed discovery never wipes the published catalog; a route that lost its models is removed. Design notes — protocol routing, where each fact comes from, lifecycle and dependencies, write behaviour — are in [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md) (Chinese).
+Writes touch only the three keys under `llm-pi-ai.providers` that this plugin owns: an unchanged section is not rewritten; writes are path-addressed so your hand-written providers survive untouched; a failed discovery never wipes the published catalog; a route that lost its models is removed. Why each decision is what it is — and which alternatives were rejected — is in [.agents/notes/implemented/](https://github.com/he0119/dsh-aperture/tree/main/.agents/notes/implemented) (Chinese); current mechanisms and known limits are in [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md) (Chinese).
 
 ## Development
 
