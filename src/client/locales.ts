@@ -21,7 +21,7 @@ export const zh = {
   addressHint: '填 Aperture 的地址；留空即休眠，不再发现模型。',
   addressPlaceholder: 'http://127.0.0.1:54117',
   syncLabel: '自动同步',
-  syncHint: '每轮发现之后，把模型与参数写进 dsh 的 llm-pi-ai 路由。',
+  syncHint: '每轮发现之后，把这批模型注册成 dsh 里本插件自己的 provider 路由。',
 
   overridden: '已覆盖',
   overriddenCount: '已覆盖 {count} 项',
@@ -29,7 +29,7 @@ export const zh = {
   invalidField: '要填不小于 1 的整数，或留空',
 
   refresh: '立刻刷新',
-  refreshHint: '立刻重新发现并发布一次，清单与每一行的状态都按这一轮刷新。',
+  refreshHint: '立刻重新发现并注册一次，清单与每一行的状态都按这一轮刷新。',
   refreshing: '刷新中…',
   loading: '读取中…',
 
@@ -41,7 +41,7 @@ export const zh = {
   // 「发现报告」那一块删掉之后留下的三句：没有地址时的空状态，以及这一轮两处可能出问题的地方。
   dormantHint: '还没有实例地址：填上并保存之后才会去发现模型。',
   catalogUnavailable: '清单不可用（{reason}）',
-  syncSkipped: '没写（{reason}）',
+  registerSkipped: '没注册（{reason}）',
 
   modelsTitle: '模型',
   modelsHint: '一行一个模型；展开改这一行的覆盖，「保存」只写这一行。顺序来自发现顺序，没有路由可服务的排在最后。',
@@ -50,9 +50,9 @@ export const zh = {
   unservedTag: '未服务',
   dirtyTag: '有未保存的改动',
   statusUnserved: '没有路由能服务这个模型',
-  statusUnknown: '这一轮没有同步，写没写进去看不出来',
-  statusPublished: '已写入 dsh 的路由',
-  statusNotPublished: '还没写进 dsh 的路由',
+  statusUnknown: '这一轮没有注册，是否可用看不出来',
+  statusPublished: '已注册为 dsh 的路由',
+  statusNotPublished: '还没注册成 dsh 的路由',
 
   factContextWindow: '上下文 {count}',
   factMaxTokens: '输出 {count}',
@@ -86,7 +86,7 @@ export const zh = {
   editNameHint: '留空即用发现到的名字。',
   editApiHint: '未服务的模型只有这里能救：填上协议它才有路由；留空即用网关通告的协议。',
   editCapacityHint: '可以写 1M、384K；留空即用发现到的容量。',
-  editAliasHint: '写进 llm-pi-ai 清单的别名。',
+  editAliasHint: '在 models.dev 清单里查这个模型时用的名字。',
   editInputHint: '这里能覆盖报告说它接收的模态。',
   editReasoningHint: '「跟随发现」就是这一项不写。',
   fieldHelp: '{field}的说明',
@@ -113,7 +113,7 @@ export const en = {
   addressHint: 'Where Aperture listens; leave it empty to go dormant and stop discovering models.',
   addressPlaceholder: 'http://127.0.0.1:54117',
   syncLabel: 'Sync automatically',
-  syncHint: 'After each discovery round, write the models and their parameters into dsh\u2019s llm-pi-ai routes.',
+  syncHint: 'After each discovery round, register these models as this plugin\u2019s own provider routes in dsh.',
 
   overridden: 'overridden',
   overriddenCount: '{count} overridden',
@@ -121,7 +121,7 @@ export const en = {
   invalidField: 'Enter an integer of at least 1, or leave it empty',
 
   refresh: 'Refresh now',
-  refreshHint: 'Discover and republish once; the list and every row’s status follow this round.',
+  refreshHint: 'Discover and register once; the list and every row’s status follow this round.',
   refreshing: 'Refreshing…',
   loading: 'Loading…',
 
@@ -134,7 +134,7 @@ export const en = {
   // things that can go wrong in a round.
   dormantHint: 'No instance address yet: models are discovered once you set and save one.',
   catalogUnavailable: 'catalog unavailable ({reason})',
-  syncSkipped: 'skipped ({reason})',
+  registerSkipped: 'not registered ({reason})',
 
   modelsTitle: 'Models',
   modelsHint: 'One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery, with anything no route can serve last.',
@@ -143,9 +143,9 @@ export const en = {
   unservedTag: 'unserved',
   dirtyTag: 'unsaved edits',
   statusUnserved: 'No route can serve this model',
-  statusUnknown: 'This round synced nothing, so whether it was written is unknown',
-  statusPublished: 'Written into the dsh routes',
-  statusNotPublished: 'Not written into the dsh routes yet',
+  statusUnknown: 'This round registered nothing, so whether the route is live is unknown',
+  statusPublished: 'Registered as a dsh route',
+  statusNotPublished: 'Not registered as a dsh route yet',
 
   factContextWindow: '{count} context',
   factMaxTokens: 'output {count}',
@@ -179,7 +179,7 @@ export const en = {
   editNameHint: 'Leave it empty to use the discovered name.',
   editApiHint: 'The only way an unserved model gets a route is a protocol here; leave it empty to use the advertised one.',
   editCapacityHint: 'Write 1M or 384K; leave it empty to use the discovered capacity.',
-  editAliasHint: 'The alias written into the llm-pi-ai catalog.',
+  editAliasHint: 'The name looked up in the models.dev catalog for this model.',
   editInputHint: 'This overrides the modalities the report says it accepts.',
   editReasoningHint: '\u201cFollow discovery\u201d leaves this key unwritten.',
   fieldHelp: 'About {field}',

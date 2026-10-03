@@ -41,7 +41,10 @@ describe('buildProfilePlan', () => {
       result.routes.map((candidate) => candidate.provider),
       ['aperture', 'aperture-anthropic'],
     );
-    assert.deepEqual(result.ownedRoutes, ['aperture', 'aperture-responses', 'aperture-anthropic']);
+    assert.deepEqual(
+      result.owned.map((owned) => owned.provider),
+      ['aperture', 'aperture-responses', 'aperture-anthropic'],
+    );
     assert.equal(result.unserved.length, 4);
   });
 
@@ -149,6 +152,9 @@ describe('buildProfilePlan', () => {
       result.routes.map((candidate) => candidate.provider),
       ['aperture-anthropic'],
     );
-    assert.deepEqual(result.ownedRoutes, ['aperture', 'aperture-responses', 'aperture-anthropic']);
+    assert.deepEqual(
+      result.owned.map((owned) => owned.provider),
+      ['aperture', 'aperture-responses', 'aperture-anthropic'],
+    );
   });
 });

@@ -1,14 +1,17 @@
 /**
- * 手动走查用的脚手架：对着真实网关启动真实服务栈，打印出插件发布了什么、
+ * 手动走查用的脚手架：对着真实网关启动真实服务栈，打印出本插件注册了哪些路由、
  * LLM 服务又解析出了什么。
  *
  * 这不是测试——带断言的那份是 `test/live.test.ts`。它存在的意义是：东西一旦变动，
- * 人能亲眼看一眼生成的配置段。
+ * 人能亲眼看一眼**注册之后**的路由，以及那份「什么都没写」的证据。
  *
  * 它走的是与部署同一条路：临时建一个 profile 目录（`cordis.patch.yml` 里带上 `aperture`
- * 那一行），由 `boot()` 交给 Cordis Loader 真正挂起来，因此看到的是**真实写入之后**的
- * 结果——写入经 `dsh-config-editor` + `dsh-settings` 落进 profile 的补丁文档，而不是内存里
- * 拼出来的对象。它加载的是**构建产物** `lib/`，也就是 profile 实际加载的那个文件。
+ * 那一行），由 `boot()` 交给 Cordis Loader 真正挂起来。它加载的是**构建产物** `lib/`，
+ * 也就是 profile 实际加载的那个文件。
+ *
+ * 打印 profile 补丁文档是**反证**：本插件不写任何配置，那一份跑完之后应当与跑之前逐字相同。
+ * 这里不做任何断言（补丁文档是否原样、路由是否真的会流式回答，都由 `test/live.test.ts` 核），
+ * 它只把事实摆出来给人看。
  *
  * ```sh
  * pnpm run build && DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run inspect
@@ -32,8 +35,16 @@ const PLUGIN_ENTRY = join(REPO, 'lib', 'index.js');
 /** 本插件自己的设置段，也是它的 entry id。 */
 const APERTURE = 'aperture';
 
-/** 承载已发布路由的适配器设置段。 */
-const PI_AI = 'llm-pi-ai';
+// 本插件注册的三条路由键：三种线缆协议各一条。它们必须在跑完之后都出现在
+// `ctx.llm.listProviders()` 里，晚到或缺失都会让下面那段等待空转到超时。
+const ROUTES = [APERTURE, `${APERTURE}-responses`, `${APERTURE}-anthropic`];
+
+/** 每条路由配一个模型来展示 `resolveModelInfo`；不存在的模型会被接缝拒绝并打印原因。 */
+const SAMPLES = [
+  [APERTURE, 'deepseek-v4-pro'],
+  [`${APERTURE}-responses`, 'deepseek-v4-codex'],
+  [`${APERTURE}-anthropic`, 'MiniMax-M3'],
+];
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
@@ -65,8 +76,10 @@ await writeFile(rootConfig, '[]\n');
 // 顶层 YAML 数组，而组合从空根开始，所以行必须用 `insert:` 建；本地路径的插件用 `name:`
 // 寻址，且值必须是**字面** `file://` URL——写成裸路径时 name 会在每次写入后来回翻转，
 // `Entry.update` 于是重建整棵 Include 子树，而不是就地提交活引用。`aperture` 的 `config`
-// 写在另一个省略 `name:` 的顶层行里，否则 `ConfigEditor.edit()` 会追加一行重复的
-// `aperture` 并报「被更高优先级的层覆盖」。
+// 写在另一个省略 `name:` 的顶层行里。
+//
+// 这里**没有** `llm-pi-ai`：本插件不往别的插件的配置段里写路由，它自己就是那三条路由的
+// provider。下面打印的补丁文档因此是「插件什么都没写」的证据。
 const patchPath = join(directory, PROFILE_PATCH_FILENAME);
 await writeFile(
   patchPath,
@@ -78,8 +91,6 @@ await writeFile(
     `      name: '@deepseek-ai/dsh-config-editor'`,
     `    - id: settings`,
     `      name: '@deepseek-ai/dsh-settings'`,
-    `    - id: ${PI_AI}`,
-    `      name: '@deepseek-ai/dsh-llm-pi-ai'`,
     `    - id: ${APERTURE}`,
     `      name: '${pathToFileURL(PLUGIN_ENTRY).href}'`,
     `- id: ${APERTURE}`,
@@ -95,6 +106,9 @@ const logs = [];
 const record = ({ name, type, args }) => {
   logs.push(`[${type} ${name}] ${args.map((value) => (value instanceof Error ? value.message : String(value))).join(' ')}`);
 };
+
+/** 插件自己报出的发现失败；有它就不必在这里干等满 30 秒。 */
+const failed = () => logs.some((line) => line.includes('发现失败') || line.includes('刷新失败'));
 
 let ctx;
 try {
@@ -123,13 +137,12 @@ try {
     pathToFileURL(join(REPO, 'package.json')).href,
   );
 
-  /** 设置接缝报告的某个 entry 的生效值（`describe()` 是唯一的读法）。 */
-  const section = (ns) => ctx.settings.describe().find((descriptor) => descriptor.ns === ns)?.value;
-  const published = () => section(PI_AI)?.providers?.[APERTURE] !== undefined;
-  const failed = () => logs.some((line) => line.includes('发现失败') || line.includes('刷新失败'));
+  /** 本插件当前注册出去的路由键；注册是被拒绝还是晚到，全由这个方法回答。 */
+  const registered = () => ctx.llm.listProviders().map((provider) => provider.id);
+  const published = () => ROUTES.every((route) => registered().includes(route));
 
-  // 等第一轮发现落地：要么路由出现在 `llm-pi-ai` 配置段里，要么插件自己报了失败——
-  // 不可达的网关不该让人在这里干等满 30 秒。
+  // 等第一轮发现落地：三条路由都出现在 LLM 服务里，或插件自己报了失败——不可达的网关不该
+  // 让人在这里干等满 30 秒。
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline && !published() && !failed()) {
     await sleep(200);
@@ -138,25 +151,20 @@ try {
   console.log(`=== 实例 ===\n${instance}`);
   console.log(`=== profile 补丁文档（${patchPath}）===`);
   console.log(await readFile(patchPath, 'utf8'));
-  console.log(`=== ${PI_AI}（设置接缝解析后的值）===`);
-  console.log(JSON.stringify(section(PI_AI), undefined, 2));
-  console.log('=== providers ===');
-  console.log(ctx.llm.listProviders());
-  console.log('=== aperture 的模型 ===');
-  for (const provider of [APERTURE, `${APERTURE}-anthropic`]) {
+  console.log('=== 已注册的 providers ===');
+  console.log(registered());
+  console.log('=== 三条路由各自的模型 ===');
+  for (const route of ROUTES) {
     try {
-      console.log(`${provider}:`, (await ctx.llm.listModels(provider)).map((model) => model.id));
+      console.log(`${route}:`, (await ctx.llm.listModels(route)).map((model) => model.id));
     } catch (error) {
-      // 一条路由都没发布时，这里不是「零个模型」而是「没有这个 provider」。
-      console.log(`${provider}:`, error instanceof Error ? error.message : String(error));
+      // 一条路由都没注册时，这里不是「零个模型」而是「没有这个 provider」。
+      console.log(`${route}:`, error instanceof Error ? error.message : String(error));
     }
   }
-  for (const [provider, model] of [
-    [APERTURE, 'deepseek-v4-pro'],
-    [APERTURE, 'deepseek-flash'],
-    [`${APERTURE}-anthropic`, 'MiniMax-M3'],
-  ]) {
-    console.log(`=== 解析结果 ${model} ===`);
+  console.log('=== LLM 服务解析出的模型信息 ===');
+  for (const [provider, model] of SAMPLES) {
+    console.log(`--- ${provider} / ${model} ---`);
     try {
       console.log(JSON.stringify(await ctx.llm.resolveModelInfo(provider, model), undefined, 2));
     } catch (error) {

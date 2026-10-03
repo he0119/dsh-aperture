@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { ProviderPublisher } from '../src/runtime.ts';
 import type { BuildOptions } from '../src/types.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -29,6 +30,16 @@ export function apertureEntries(): unknown[] {
 export function catalogDocument(): unknown {
   return fixture<unknown>('models-dev.json');
 }
+
+/**
+ * 一个不做真事的注册层：只把方案里的路由键当成「已注册」报回去。
+ *
+ * 只关心发现与报告的用例（运行时、配置页）不该被真正的 provider 注册拖进来——那件事有自己的
+ * 用例（`test/provider.test.ts`），而端到端那一份（`test/live.test.ts`）用的是真的 LLM 服务。
+ */
+export const fakeProvider: ProviderPublisher = {
+  publish: (plan) => Promise.resolve({ routes: plan.routes.map((route) => route.provider) }),
+};
 
 /** 所有字段都取默认值的构建选项，使测试只陈述自身要验证的内容。 */
 export function options(overrides: Partial<BuildOptions> = {}): BuildOptions {

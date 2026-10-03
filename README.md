@@ -1,6 +1,6 @@
 # dsh-aperture
 
-把 [Aperture](https://tailscale.com/kb/1542/aperture) 网关上的模型自动发现出来，写进 DeepSeek Harness 的 `llm-pi-ai` 设置，让它们直接出现在模型选择器里。装好后你只需要填一个 Aperture 地址，其余交给插件。
+把 [Aperture](https://tailscale.com/kb/1542/aperture) 网关上的模型自动发现出来，按模型自己在哪个端点上应答，注册成 DeepSeek Harness 里本插件自己的 provider 路由，让它们直接出现在模型选择器里。装好后你只需要填一个 Aperture 地址，其余交给插件。
 
 ## 安装
 
@@ -59,7 +59,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 
 ### 4. 确认
 
-模型会出现在选择器里，路由名 `Aperture`。**插件 → dsh-aperture** 这个包的配置页就是这一页——上面是实例地址与同步开关，下面按行列出发现的模型。
+模型会出现在选择器里，路由名 `Aperture`。**插件 → dsh-aperture** 这个包的配置页就是这一页——上面是实例地址与注册开关，下面按行列出发现的模型。
 
 ```
 实例地址   已覆盖 恢复默认
@@ -67,7 +67,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 填 Aperture 的地址；留空即休眠，不再发现模型。
 
 自动同步                              已覆盖 恢复默认   ●━
-每轮发现之后，把模型与参数写进 dsh 的 llm-pi-ai 路由。   [保存]
+每轮发现之后，把这批模型注册成 dsh 里本插件自己的 provider 路由。   [保存]
 
 已保存：已重新发现并发布。
 
@@ -84,7 +84,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
   （点开一行，就是这一行的覆盖编辑器：名称与协议一组、容量一组，模态与推理并排，下面是「保存 / 清空覆盖 / 取消」）
 ```
 
-**地址与同步开关**是同一份官方设置表单里的两个字段：写着「已覆盖」时，右边那颗「恢复默认」把它从设置文件里删掉（与官方「插件配置」页同一对词、同一个位置），按「保存」只发真的改动过的那一项。逐模型的覆盖编辑器见[使用](#使用)。分组靠标题与间距分开，模型那一行则是一张卡（发丝描边加大圆角，颜色只用本页真的定义过的主题 token），能点开的只有模型行。
+**地址与注册开关**是同一份官方设置表单里的两个字段：写着「已覆盖」时，右边那颗「恢复默认」把它从设置文件里删掉（与官方「插件配置」页同一对词、同一个位置），按「保存」只发真的改动过的那一项。逐模型的覆盖编辑器见[使用](#使用)。分组靠标题与间距分开，模型那一行则是一张卡（发丝描边加大圆角，颜色只用本页真的定义过的主题 token），能点开的只有模型行。
 
 ## 使用
 
@@ -93,9 +93,9 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 | 位置 | 作用 |
 | --- | --- |
 | 配置页 · 实例地址 | 改 `baseUrl`（写入设置接缝；写着「已覆盖」时旁边那颗「恢复默认」把它放回缺省值） |
-| 配置页 · 同步开关 | 改 `sync`：关掉就只探测、不写 `llm-pi-ai`——那一轮刷新会顺手把本插件已经发布的路由撤下来（只撤它拥有的三个键，配置段里其他 provider 原样留着）；同样带「已覆盖 / 恢复默认」这一对 |
+| 配置页 · 注册开关 | 改 `sync`：关掉就只探测、不注册——那一轮刷新会把本插件已经注册出去的三条路由撤下来，别处注册的同名路由不受影响；同样带「已覆盖 / 恢复默认」这一对 |
 | 配置页 · 保存 | 表单下方，把地址与开关的草稿写进设置文档；有版本设栅，表单已经与设置文档脱节时会拒绝写入，而不是覆盖别处的改动；写完等这一轮重新发现落地才返回，界面随即显示新配置 |
-| 配置页 · 模型 | 一行一个模型，一行一张卡：行首一颗状态点（绿=这一轮写进了路由，灰=这一轮同步过而它没写进去，黄=没有路由能服务它，鼠标停在上面或读屏都能听到这句话），第一行是名字与「未服务 / 已覆盖 N 项 / 有未保存的改动」几枚标签，第二行是带标签的事实（路由、协议、容量、模态、推理、别名），长名字省略、事实随宽度换行；点开就是这一行的覆盖编辑器——显示名、别名、协议三个输入框一组，「容量」一组（上下文容量、最大输出），模态两个勾选框与推理一个三段开关（跟随发现 / 开 / 关）并排；字段下面只留一句来源（「来源：Aperture」），「留空即用发现到的名字」这类怎么做的话在标签旁边那颗「i」里，点开才占位置；右上角「立刻刷新」立刻重新发现并发布，清单与每一行的状态跟着变新 |
+| 配置页 · 模型 | 一行一个模型，一行一张卡：行首一颗状态点（绿=这一轮注册上了路由，灰=这一轮注册过而它没注册上，黄=没有路由能服务它，鼠标停在上面或读屏都能听到这句话），第一行是名字与「未服务 / 已覆盖 N 项 / 有未保存的改动」几枚标签，第二行是带标签的事实（路由、协议、容量、模态、推理、别名），长名字省略、事实随宽度换行；点开就是这一行的覆盖编辑器——显示名、别名、协议三个输入框一组，「容量」一组（上下文容量、最大输出），模态两个勾选框与推理一个三段开关（跟随发现 / 开 / 关）并排；字段下面只留一句来源（「来源：Aperture」），「留空即用发现到的名字」这类怎么做的话在标签旁边那颗「i」里，点开才占位置；右上角「立刻刷新」立刻重新发现并发布，清单与每一行的状态跟着变新 |
 | 配置页 · 保存 / 清空覆盖 / 取消 | 只写这一行，或者只清掉后台报告里确实被覆盖过的那几项，或者把这一行的草稿整个丢掉；「保存」同样等一轮重新发现落地，所以按完看到的就是新值 |
 
 就地编辑写的都是配置：容量与模态等落在 `aperture.models` 的对应条目上，清单别名落在 `aperture.modelAliases[id]`，写入按字段合并——界面没提到的字段原样留着（比如 `reasoningEfforts`），留空则表示这一项不覆盖、回落到发现值与清单。容量认 `1M`、`100K` 这种写法（十进制后缀，跟官方「模型」页同一套词汇：`1M` 是 1000000，不是 1048576），存下去的仍是普通 token 数，输入框回写成能原样读回来的最短那个（`384000` → `384K`，而 `1048576` 不是整千，照原样写）。协议那一项是「未服务」模型唯一的出路：填上它就能让只在原生端点上应答的模型在对应路由上发布。
@@ -106,20 +106,20 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
-| `baseUrl` | `''` | Aperture 实例地址。末尾 `/v1` 会被容忍并去掉；空值表示休眠（不探测、不写入） |
+| `baseUrl` | `''` | Aperture 实例地址。末尾 `/v1` 会被容忍并去掉；空值表示休眠（不探测、不注册） |
 | `route` | `aperture` | Chat Completions 模型的路由名；Responses、Anthropic 路由分别追加 `-responses`、`-anthropic`，三个选择器名称也由它推出来 |
-| `apiKeyEnv` | `''` | 凭据 seam 里的引用名；非空时不再写占位头 |
-| `headers` | `{}` | 每条请求额外带的头，**优先于**占位头 |
+| `apiKeyEnv` | `''` | 凭据 seam 里的引用名；非空时不再带占位凭据 |
+| `headers` | `{}` | 每条请求额外带的头；同名时**归因头**与**占位凭据**仍会按协议补齐 |
 | `enabledModelIds` | `[]` | 非空时只保留这些 id（`models` 里显式列出的不受限） |
 | `modelAliases` | `{}` | 网关 id → models.dev id |
 | `models` | `[]` | 逐模型覆盖或补充：`id`、`name`、`api`、`contextWindow`、`maxTokens`、`input`、`thinking`、`reasoningEfforts` |
 | `modelMetadataUrl` | `https://models.dev/models.json` | 目录地址；设成 `''` 关闭补全 |
 | `images` | `ignore` | `metadata` = 采用 models.dev 的输入模态（图片） |
 | `reasoning` | `auto` | `off` = 所有模型都当不会推理 |
-| `sync` | `true` | `false` = 只探测不写设置（配置页仍可查看） |
+| `sync` | `true` | `false` = 只探测不注册路由（配置页仍可查看） |
 | `refreshIntervalMinutes` | `0` | 定时刷新间隔；`0` = 只在启动和配置变化时刷新 |
 
-容量与推理档位缺失时，按 Aperture 字段 → [models.dev](https://models.dev) → 保守默认值补全（兜底容量 128000、单次请求超时 20s 是代码里的常量，不是配置项）；`maxTokens` 没人声明时**故意不写**（在 `llm-pi-ai` 里它同时是每次请求的 `max_tokens` 上限，凭空编一个值会把请求截断）。
+容量与推理档位缺失时，按 Aperture 字段 → [models.dev](https://models.dev) → 保守默认值补全（兜底容量 128000、单次请求超时 20s、流式空闲上限 5 分钟是代码里的常量，不是配置项）。`maxTokens` 只有模型自己声明过才会作为**默认输出上限**报给宿主：没人声明时不报，凭空编一个值会让每次请求都按它截断。
 
 ## 常见问题
 
@@ -175,17 +175,17 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
       k3: moonshotai/kimi-k3
 ```
 
-**配置页上说 `设置：未写入（已处于同步状态）`？** 正常状态，表示设置里已经是最新内容。
+**配置页上说 `没注册（路由 aperture 已被另一个适配器注册…）`？** 说明请求的路由键里有一个已经被别人服务了——最常见的原因是**旧版本的本插件**：0.2 及更早只做发现，它会把自己发现的路由写进 `llm-pi-ai.providers`，那份配置现在与本插件直接冲突。本插件不替你改别人的配置，照那一行给出的键名手工处理：删掉 `llm-pi-ai` 段里对应的 `providers.<键>`；如果那个路由名是别的插件在用的，就改本插件配置里的 `route`（三个路由键一起变）。下一个适配器集合变化（改完配置的重载、或者按「立刻刷新」）就会重新尝试注册，不必重启。
 
 **保存了但没生效？** DSH 的补丁层是叠加的：profile 的补丁文档之上还有 `$DSH_HOME/cordis.patch.yml` 这类更高优先级的层。如果 `aperture` 这一行在那里也被写过，配置页上的保存会落在 profile 的补丁文档里、却被上面那层盖住（这一笔也可能被设置接缝直接拒收，配置页会说没被收下）。把那一行从高优先级的层里删掉，或者直接改那一处。
 
 **从 0.2 升上来，我的 `settings.yaml` 去哪了？** 0.1.7 起设置不再有独立文件，而是落在 profile 的补丁文档里。首次启动时 `$DSH_HOME/settings.yaml` 会被改名成 `settings.yaml.imported`，各段按设置命名空间搬进补丁文档——`aperture:` 段原样搬过去，仍能过 schema 的键与值都不变，所以地址与逐模型覆盖都还在。此后被读的只有补丁文档，`settings.yaml.imported` 只是留档，改它没有用；搬不过去的段（值已不合法）也只留在那份留档里，并在日志里说一声。
 
-**本部署没有「插件」页 / 没有界面？** 配置页只在 Web 界面里有（它靠 Typert Remote 端点工作）。headless profile 里插件照常发现、照常写入，只是没有可点按的页面。若这个部署连可管理的 profile 都没有，`settings` 服务不存在，插件按硬依赖停在 `PENDING`——它唯一的职责就是写设置，没有设置可写时宁可不动。
+**本部署没有「插件」页 / 没有界面？** 配置页只在 Web 界面里有（它靠 Typert Remote 端点工作）。headless profile 里插件照常发现、照常注册路由，只是没有可点按的页面。模型在官方「模型」页里也会出现一行，但那边的编辑器对本插件的路由是只读的：这些路由由发现结果决定，改它们要在本插件的配置页或配置里改。
 
-**需要真密钥而不是占位头？** Aperture 靠网络身份（Tailscale）认证，本不需要密钥；插件默认写入 `authorization: Bearer dsh-aperture` / `x-api-key: dsh-aperture`，只是让适配器愿意发请求，**不是密钥**。真要密钥时把 `apiKeyEnv` 指向凭据 seam 里的记录，占位头就不会写入。
+**需要真密钥而不是占位凭据？** Aperture 靠网络身份（Tailscale）认证，本不需要密钥；插件默认在每条请求上带 `authorization: Bearer dsh-aperture`（Anthropic 路由是 `x-api-key: dsh-aperture`），只是让 pi-ai 愿意把请求发出去，**不是密钥**。真要密钥时把 `apiKeyEnv` 指向凭据 seam 里的记录，占位凭据就不再带。
 
-**改了 `route` 之后旧路由还在？** 插件只认自己当前拥有的三个键（`route`、`route` + `-responses`、`route` + `-anthropic`），不知道历史上用过哪些名字，所以旧键会留在 `llm-pi-ai.providers` 里。它不报错、只是不再刷新；要清理就手动删掉那一行。
+**改了 `route` 之后旧路由还在？** 插件只认自己当前请求的三个键（`route`、`route` + `-responses`、`route` + `-anthropic`），进程退出后旧键就没有服务者了；它不再出现在选择器里，也不需要清理，除非有别的适配器顶上那个键。
 
 ## 它做了什么
 
@@ -199,10 +199,10 @@ GET {baseUrl}/v1/models
         │     只有原生 generateContent     ──► 不发布（列进「未服务」）
         ├─ 容量：Aperture 字段 ─► models.dev ─► 默认值
         ├─ 推理：Aperture 字段 ─► models.dev ─► 关闭
-        └─ 生成 llm-pi-ai 的 providers.<route>，按 revision 写进 profile 的补丁文档
+        └─ 注册成三条 provider 路由（route / route-responses / route-anthropic）
 ```
 
-写入只碰 `llm-pi-ai.providers` 下属于本插件的三个键：内容没变就不写；用路径操作写，你手写的其它 provider 原样保留；探测失败绝不删空已有目录；路由没模型了就删掉。每条决策为什么是这样、放弃了哪些替代方案，见 [.agents/notes/implemented/](https://github.com/he0119/dsh-aperture/tree/main/.agents/notes/implemented)（中文）；当前机制与已知边界见 [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md)。
+三条路由各自只承载一种协议，模型 id 就是网关的 id；本插件不写任何配置，发现结果只活在这一次注册里（重启后由第一轮发现重新决定）。路由键被别的适配器占着时本插件不硬闯：它跳过注册、在报告里点名那个键，并在适配器集合发生变化时自己重试。每条决策为什么是这样、放弃了哪些替代方案，见 [.agents/notes/implemented/](https://github.com/he0119/dsh-aperture/tree/main/.agents/notes/implemented)（中文）；当前机制与已知边界见 [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md)。
 
 ## 开发
 
@@ -220,7 +220,7 @@ pnpm test           # 单元测试 + 端到端（离线运行；需要已安装�
 - [xiaoyuyu6420/dsh-backup](https://github.com/xiaoyuyu6420/dsh-backup)：界面接线的参考实现，Remote 端点的形状来自这个插件；配置页本身的挂载方式在 0.1.7 之后改由插件页的槽位契约给出。
 - [Aperture](https://tailscale.com/kb/1542/aperture)（Tailscale）：提供被发现的网关。
 - [models.dev](https://models.dev)：为 Aperture 未声明的容量与能力做补全。
-- `@deepseek-ai/dsh-llm-pi-ai`：本插件只做发现，协议对接交给它。
+- [pi-ai](https://www.npmjs.com/package/@earendil-works/pi-ai)（`@earendil-works/pi-ai`）：三种线缆协议的实现来自它，本插件只负责把发现结果翻译成它的模型描述符。
 
 ## License
 

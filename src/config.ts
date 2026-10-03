@@ -2,8 +2,8 @@
  * 配置 schema 与解析。
  *
  * 本插件拥有自己的 entry（`aperture`，用户层就是 profile patch 里那一行的 `config`），
- * 但发布出去的一切都写进**另一个** entry `llm-pi-ai`：本插件决定有哪些模型，那个适配器
- * 决定怎么跟它们说话。
+ * 也是**唯一**由它读写的 entry：发现出来的模型由本插件自己作为 provider 注册出去，不写进任何
+ * 别人的配置段。
  *
  * 整份 schema 都是 volatile 的：设置接缝**只**暴露 volatile 字段（没有 volatile 节点的
  * entry 不出现在 `describe()` 里，界面就无从编辑），而这里每个字段都只影响下一轮发现、
@@ -13,7 +13,9 @@
  * @module dsh-aperture/config
  */
 
+import type { Dict } from '@deepseek-ai/cosmokit';
 import z from '@deepseek-ai/schemastery';
+import { REASONING_LEVELS } from './types.ts';
 import { normalizeBaseUrl } from './url.ts';
 
 /** 本插件拥有、并可通过它配置的设置命名空间。 */
@@ -31,6 +33,15 @@ export const DEFAULT_TIMEOUT_MS = 20_000;
 /** provider 路由键的文法，与 Models 页面自身的规则一致。 */
 const ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
+/**
+ * 推理档位的键，故意声明成 `string` 而不是字面量联合。
+ *
+ * 运行期校验用的是同一份值（`z.union` 逐个比对），但 schemastery 的字典类型是
+ * `{ [key in K]: V }`：键写成字面量联合时它变成「每个档位都必须出现」的必填类型，于是任何一份
+ * 只声明了两三个档位的配置在类型上都成了错的——而配置面正是「只写用得到的档位」。
+ */
+const EFFORT_KEYS: readonly string[] = REASONING_LEVELS;
+
 /** 一个配置好的模型：对已发现模型的覆盖，或者一个额外的模型。 */
 const modelConfig = z.object({
   /** 模型 id；与已发现的 id 对应，或者新增一个网关没有列出的模型。 */
@@ -47,11 +58,19 @@ const modelConfig = z.object({
   input: z.array(z.union([z.const('text'), z.const('image')])),
   /** 强制打开或关闭推理能力。 */
   thinking: z.boolean(),
-  /** 提供的推理档位：键 = 档位，值 = 协议里的写法。 */
-  reasoningEfforts: z.dict(z.union([z.string(), z.const(null)])),
+  /** 提供的推理档位：键 = 档位，值 = 协议里的写法；只有 `off` 可以留空。 */
+  reasoningEfforts: z.dict(z.union([z.string(), z.const(null)]), z.union(EFFORT_KEYS)),
 });
 
-/** 插件配置。 */
+/**
+ * 插件配置。
+ *
+ * 三个字典字段（`headers`、`modelAliases`、`reasoningEfforts`）的类型写作 cosmokit 的 `Dict`：
+ * 那正是 `z.dict()` 的输出类型，而**声明产物必须能写出这个名字**——本模块自己引用它一次，
+ * 产物的 `.d.ts` 里才有名字可写。只写 `Record<string, string>` 时两者在类型上等价，但
+ * `pnpm run build` 的声明打包会因为推断出的 schema 类型里含 `Dict` 而报 TS2742
+ * （「inferred type ... cannot be named」）并中断。
+ */
 export interface Config {
   /** Aperture 实例根地址，例如 `https://ai.example.ts.net`。留空则关闭发现。 */
   baseUrl?: string;
@@ -60,11 +79,11 @@ export interface Config {
   /** 按请求解析的凭据引用；留空则改为发布一个占位请求头。 */
   apiKeyEnv?: string;
   /** 每条路由的请求都会带上的额外请求头；它们优先于占位凭据。 */
-  headers?: Record<string, string>;
+  headers?: Dict<string>;
   /** 非空时，只发现这些模型 id。 */
   enabledModelIds?: string[];
   /** 网关模型 id → models.dev 模型 id，用于两边写法不同的 id。 */
-  modelAliases?: Record<string, string>;
+  modelAliases?: Dict<string>;
   /** 覆盖与追加，按 id 合并。 */
   models?: Array<{
     id: string;
@@ -74,7 +93,7 @@ export interface Config {
     maxTokens?: number;
     input?: Array<'text' | 'image'>;
     thinking?: boolean;
-    reasoningEfforts?: Record<string, string | null>;
+    reasoningEfforts?: Dict<string | null>;
   }>;
   /** models.dev 清单地址；留空则关闭这次补齐。 */
   modelMetadataUrl?: string;
@@ -82,7 +101,7 @@ export interface Config {
   images?: 'ignore' | 'metadata';
   /** `auto` 映射模型的推理能力；`off` 声明所有模型都不推理。 */
   reasoning?: 'auto' | 'off';
-  /** 是否把发现的模型清单写进 `llm-pi-ai` 段。 */
+  /** 是否把发现的路由注册给 dsh；关掉即撤下它们（本插件不写任何配置）。 */
   sync?: boolean;
   /** 自动刷新间隔（分钟）；`0` 表示只在加载时与配置变更时刷新。 */
   refreshIntervalMinutes?: number;
@@ -225,6 +244,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       throw new Error(`models 里重复列出了 "${id}"`);
     }
     seen.add(id);
+    assertEfforts(id, model.reasoningEfforts);
     if (
       model.api !== undefined &&
       model.api !== 'openai-completions' &&
@@ -255,6 +275,28 @@ export function resolveConfig(config: Config): ResolvedConfig {
     sync: config.sync ?? true,
     refreshIntervalMinutes: config.refreshIntervalMinutes ?? 0,
   };
+}
+
+/**
+ * 校验一条模型声明的推理档位。
+ *
+ * 键的名字由 schema 挡住（写错的档位名进不了这一步），这里挡的是值：除 `off` 之外的档位都必须在
+ * 协议里有一个非空写法，否则这一档声明了却发不出去，而发出去的东西是空串只会得到一次 400。
+ *
+ * @param id - 模型 id，用来把错误指到具体那一行。
+ * @param efforts - 用户写下的档位；没写时什么也不查。
+ * @throws Error 当某个档位没有可用的线缆写法时抛出。
+ */
+function assertEfforts(id: string, efforts: Record<string, string | null> | undefined): void {
+  for (const [level, wire] of Object.entries(efforts ?? {})) {
+    if (level === 'off') continue;
+    if (wire === null) {
+      throw new Error(`models["${id}"].reasoningEfforts.${level} 不能为 null；只有 off 可以留空`);
+    }
+    if (wire.trim().length === 0) {
+      throw new Error(`models["${id}"].reasoningEfforts.${level} 不能是空串`);
+    }
+  }
 }
 
 /**

@@ -298,7 +298,7 @@ function report(overrides: Partial<Report> = {}): Report {
       ok: true,
       catalog: { available: true, entries: 422 },
       endpoint: { url: 'https://ai.example.ts.net/v1/models', listed: 16 },
-      sync: { applied: true, ops: 2, routes: ['aperture', 'aperture-anthropic'] },
+      publish: { routes: ['aperture', 'aperture-anthropic'] },
     },
     routes: [
       { provider: 'aperture', api: 'openai-completions', baseURL: 'https://ai.example.ts.net/v1', models: 1 },
@@ -1590,8 +1590,8 @@ describe('模型行与刷新', () => {
       [t('statusUnserved'), 'warning'],
     ]);
 
-    // 同步没跑起来（关着）时不能说成「没写进去」：报告里根本没有这一项。
-    const unknown = driveClient({ report: report({ refresh: { ...report().refresh!, sync: undefined } }) });
+    // 这一轮没走到注册时不能说成「没注册上去」：报告里根本没有这一项。
+    const unknown = driveClient({ report: report({ refresh: { ...report().refresh!, publish: undefined } }) });
     unknown.mini.mount(unknown.element);
     await unknown.mini.flush();
     assert.deepEqual(dots(unknown.mini).map(([label]) => label), [
@@ -1833,21 +1833,21 @@ describe('模型行与刷新', () => {
     const skipped = report({
       refresh: {
         ...report().refresh!,
-        sync: { applied: false, ops: 0, routes: [], reason: '没有配置变更' },
+        publish: { routes: [], reason: '没有配置变更' },
       },
     });
     const second = driveClient({ report: skipped });
     second.mini.mount(second.element);
     await second.mini.flush();
-    assert.match(text(second.mini.tree()), /没写（没有配置变更）/u);
+    assert.match(text(second.mini.tree()), /没注册（没有配置变更）/u);
     assert.equal(findAll(second.mini.tree(), (node) => node.props.className === 'dap-warnNote').length, 1);
 
-    // 正常的一轮（写进去了）什么都不说；同步关着（报告里没有这一项）也不说「没写」。
+    // 正常的一轮（注册上去了）什么都不说；注册关着（没有原因可报）也不说「没注册」。
     const quiet = driveClient();
     quiet.mini.mount(quiet.element);
     await quiet.mini.flush();
     assert.equal(findAll(quiet.mini.tree(), (node) => node.props.className === 'dap-warnNote').length, 0);
-    const off = driveClient({ report: report({ refresh: { ...report().refresh!, sync: undefined } }) });
+    const off = driveClient({ report: report({ refresh: { ...report().refresh!, publish: { routes: [] } } }) });
     off.mini.mount(off.element);
     await off.mini.flush();
     assert.equal(findAll(off.mini.tree(), (node) => node.props.className === 'dap-warnNote').length, 0);

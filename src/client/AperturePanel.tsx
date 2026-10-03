@@ -258,19 +258,20 @@ export function AperturePanel(props: AperturePanelProps) {
 
   const refreshReport = () => run('refresh', () => props.panel.refresh(), () => setRevision((value) => value + 1));
 
-  /** 最近一轮写入过的路由名；`undefined` 是「这一轮没同步」，不是「没写」——同步关着的时候报告里
-   * 根本没有这一项，界面不能把「不知道」说成「没写」。
+  /** 最近一轮注册出去的路由名；`undefined` 是「这一轮没走到注册」，不是「没注册成」——报告里
+   * 根本没有这一项时，界面不能把「不知道」说成「没注册」。
    */
-  const writtenRoutes = report === null || report.refresh === undefined || report.refresh.sync === undefined
-    ? undefined
-    : report.refresh.sync.routes;
+  const registeredRoutes =
+    report === null || report.refresh === undefined || report.refresh.publish === undefined
+      ? undefined
+      : report.refresh.publish.routes;
 
   /**
    * 这一轮哪里不对：清单读不到、或者该写的东西没写进去。
    *
    * 「发现报告」那一块删掉之后，这些原本只写在报告事实表里的话得有地方落脚——否则清单挂了的时候，
    * 用户看到的就只是「还没有发现任何模型」，没有任何理由。刷新整个失败（`ok: false`）不在这里说：
-   * 那句话由 `run()` 贴到提示语上，比这里更显眼。正常的一轮（同步关着 / 同步成功）什么都不说。
+   * 那句话由 `run()` 贴到提示语上，比这里更显眼。
    */
   const roundProblem = (current: PanelReport | null): string | null => {
     const refresh = current === null ? undefined : current.refresh;
@@ -278,8 +279,8 @@ export function AperturePanel(props: AperturePanelProps) {
     if (!refresh.catalog.available) {
       return t('catalogUnavailable', { reason: refresh.catalog.reason ?? '—' });
     }
-    if (refresh.sync !== undefined && !refresh.sync.applied) {
-      return t('syncSkipped', { reason: refresh.sync.reason ?? '—' });
+    if (refresh.publish?.reason !== undefined) {
+      return t('registerSkipped', { reason: refresh.publish.reason });
     }
     return null;
   };
@@ -392,7 +393,7 @@ export function AperturePanel(props: AperturePanelProps) {
                       draft={draftOf(model)}
                       open={opened[model.id] === true}
                       busy={busy}
-                      writtenRoutes={writtenRoutes}
+                      registeredRoutes={registeredRoutes}
                       t={t}
                       onToggle={() => toggleRow(model)}
                       onStage={(changes) => stage(model, changes)}

@@ -6,7 +6,8 @@
  * 一轮读的就是此刻这份配置就并进它，否则排在它后面（见 {@link ApertureRuntime.refresh}）；
  * 排队者共享同一轮，所以再多的调用方也只多跑一轮。
  *
- * 记住的结果只是设置文档里那份的影子：配置页报告它，真正服务请求的是文档里已生效的那份。
+ * 记住的结果是配置页报告的那一份，而真正服务请求的是适配器里那一代路由：两者由同一次刷新
+ * 一起更新，因此报告与线上行为不会各说各话。
  *
  * @module dsh-aperture/runtime
  */
@@ -17,7 +18,7 @@ import { ModelCatalog, type CatalogLoad } from './catalog.ts';
 import { DEFAULT_TIMEOUT_MS, type ResolvedConfig } from './config.ts';
 import { buildProfilePlan, type ProfilePlan, type RoutePlan } from './profile.ts';
 import { buildRegistry } from './registry.ts';
-import { applySync, type SyncOutcome } from './sync.ts';
+import type { PublishOutcome } from './provider.ts';
 import type { DiscoveredModel } from './types.ts';
 
 /** 运行时用来输出诊断信息的最小日志接口。 */
@@ -50,11 +51,12 @@ export interface RefreshOutcome {
   readonly unserved: readonly DiscoveredModel[];
   /** 清单提供的内容。 */
   readonly catalog: CatalogLoad;
-  /** 设置写入的结果（如果尝试过写入）。 */
-  readonly sync?: SyncOutcome;
+  /** 注册的结果（如果走到那一步）。 */
+  readonly publish?: PublishOutcome;
   /** 刷新失败时的错误。 */
   readonly error?: string;
 }
+
 
 /** 运行时从宿主读取的全部内容。 */
 export interface RuntimeDeps {
@@ -66,6 +68,19 @@ export interface RuntimeDeps {
   readonly logger: RuntimeLogger;
   /** models.dev 缓存，在各次刷新之间共享。 */
   readonly catalog: ModelCatalog;
+  /** provider 注册层，按刷新换掉适配器服务的那一代路由。 */
+  readonly provider: ProviderPublisher;
+}
+
+/** 运行时需要的注册能力：把一代方案注册出去，并报告做了什么。 */
+export interface ProviderPublisher {
+  /**
+   * 发布一代方案。
+   *
+   * @param plan - 本次要服务的路由与本插件拥有的路由键。
+   * @returns 已注册的路由与未能注册时的原因。
+   */
+  publish(plan: ProfilePlan): Promise<PublishOutcome>;
 }
 
 /** 单飞（single-flight）的发现与发布。 */
@@ -221,7 +236,7 @@ export class ApertureRuntime {
       configured: config.models,
     });
 
-    const sync = await this.publish(config, plan);
+    const published = await this.publish(config, plan);
     const outcome: RefreshOutcome = {
       trigger,
       ok: true,
@@ -233,34 +248,33 @@ export class ApertureRuntime {
       routes: plan.routes,
       unserved: plan.unserved,
       catalog,
-      sync,
+      publish: published,
     };
     this.latest = outcome;
 
     this.deps.logger.info(
-      '发现 %d 个模型（来自 %s）；已发布 %d 条路由%s',
+      '发现 %d 个模型（来自 %s）；已注册 %d 条路由%s',
       registry.models.length,
       endpoint,
-      plan.routes.length,
-      sync.applied ? '' : ` （${sync.reason ?? '未写入'}）`,
+      published.routes.length,
+      published.reason === undefined ? '' : `（${published.reason}）`,
     );
     return outcome;
   }
 
-  /** 写入方案，或说明为什么没有写入任何内容。 */
-  private async publish(config: ResolvedConfig, plan: ProfilePlan): Promise<SyncOutcome> {
-    // 关掉同步是「撤下本插件的路由」，不是「什么都不做」：留着一份不再由配置决定的清单，
-    // 界面看不出还有谁在服务，用户只能自己去翻 `llm-pi-ai` 段。空方案正好表达撤下——
-    // `planSync` 会把每个拥有但不再需要的路由键 unset 掉。
+  /**
+   * 把方案交给注册层，或说明为什么没有注册任何内容。
+   *
+   * 关掉 `sync` 是「撤下本插件的路由」而不是「什么都不做」：适配器换成零条路由，于是配置里
+   * 这些模型不再可选，界面上也不会留下一份谁也说不清归属的清单。
+   */
+  private async publish(config: ResolvedConfig, plan: ProfilePlan): Promise<PublishOutcome> {
     const routes = config.sync ? plan.routes : [];
     try {
-      const outcome = await applySync(this.deps.settings, routes, plan.ownedRoutes);
-      return config.sync || outcome.applied
-        ? outcome
-        : { ...outcome, reason: '同步已关闭，本插件没有发布过路由' };
+      return await this.deps.provider.publish({ ...plan, routes });
     } catch (error) {
-      this.deps.logger.warn('发布发现的清单失败：%s', message(error));
-      return { applied: false, ops: 0, routes: [], reason: message(error) };
+      this.deps.logger.warn('注册发现的路由失败：%s', message(error));
+      return { routes: [], reason: message(error) };
     }
   }
 }

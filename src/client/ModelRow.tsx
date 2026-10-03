@@ -35,8 +35,8 @@ export interface ModelRowProps {
   open: boolean;
   /** 正在跑的动作名；非空即禁用这一行的控件。 */
   busy: string;
-  /** 最近一轮写入过的路由名；`undefined` 是「这一轮没同步」，不是「没写」。 */
-  writtenRoutes: readonly string[] | undefined;
+  /** 最近一轮注册出去的路由名；`undefined` 是「这一轮没走到注册」，不是「没注册成」。 */
+  registeredRoutes: readonly string[] | undefined;
   /** 字典。 */
   t: PanelTranslate;
   /** 展开或收起这一行。 */
@@ -52,24 +52,24 @@ export interface ModelRowProps {
 }
 
 /**
- * 这一行的状态点：绿是写进去了、灰是没写进去、黄是根本没有路由能服务它。
+ * 这一行的状态点：绿是注册上去了、灰是没注册上去、黄是根本没有路由能服务它。
  *
  * 点旁边那句 `title` 就是它的说法——官方 `StateDot` 自己是 `aria-hidden`，说给谁听得由这里给。
- * 同步那一轮没跑（`writtenRoutes` 缺失）时不装作「没写进去」：报告里根本没有这一项。
+ * 那一轮没走到注册（`registeredRoutes` 缺失）时不装作「没注册上去」：报告里根本没有这一项。
  *
  * @param {object} model - 报告里的这一行。
- * @param {readonly string[]|undefined} writtenRoutes - 最近一轮写进路由的名字。
+ * @param {readonly string[]|undefined} registeredRoutes - 最近一轮注册出去的路由名。
  * @param {Function} t - 字典。
  * @returns {object} 点的状态与它的说法。
  */
 function publishState(
   model: PanelModel,
-  writtenRoutes: readonly string[] | undefined,
+  registeredRoutes: readonly string[] | undefined,
   t: PanelTranslate,
 ): { state: StateDotState; title: string } {
   if (model.route === undefined) return { state: 'warning', title: t('statusUnserved') };
-  if (writtenRoutes === undefined) return { state: 'idle', title: t('statusUnknown') };
-  return writtenRoutes.includes(model.route)
+  if (registeredRoutes === undefined) return { state: 'idle', title: t('statusUnknown') };
+  return registeredRoutes.includes(model.route)
     ? { state: 'done', title: t('statusPublished') }
     : { state: 'idle', title: t('statusNotPublished') };
 }
@@ -106,9 +106,9 @@ function factItems(model: PanelModel, t: PanelTranslate): string[] {
  * @returns {object} 这一行的内容（`li` 由列表那一层画）。
  */
 export function ModelRow(props: ModelRowProps): ReactNode {
-  const { model, draft, open, busy, writtenRoutes, t, onToggle, onStage, onCancel, onSave, onClear } = props;
+  const { model, draft, open, busy, registeredRoutes, t, onToggle, onStage, onCancel, onSave, onClear } = props;
   const overrides = model.overrideKeys ?? [];
-  const status = publishState(model, writtenRoutes, t);
+  const status = publishState(model, registeredRoutes, t);
   return (
     <>
       <button

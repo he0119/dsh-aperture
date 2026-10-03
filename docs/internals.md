@@ -11,8 +11,8 @@
 
 **它接哪些模型、怎么接**
 
-- [只做发现，不做转换](../.agents/notes/implemented/architecture/2026-09-23-discovery-only-delegates-to-llm-pi-ai.md)：
-  把探测结果翻译成 `llm-pi-ai` 的 provider profiles，不自己实现协议。
+- [自带 provider 适配器](../.agents/notes/implemented/architecture/2026-10-03-own-provider-adapter.md)：
+  经 `ctx.llm.registerAdapter` 注册三条路由，协议交给 `@earendil-works/pi-ai`。
 - [按端点分路由](../.agents/notes/implemented/architecture/2026-09-23-endpoint-keyed-routes.md)：
   同一个模型不是所有协议都收；接不了的列出来但不发布。
 - [占位凭据](../.agents/notes/implemented/architecture/2026-09-23-placeholder-credential-header.md)：
@@ -22,16 +22,17 @@
 - [推理等级默认只给两档](../.agents/notes/implemented/architecture/2026-09-23-conservative-reasoning-efforts.md)：
   多给一档就是多一种能被选中的 400。
 
-**它怎么读配置、怎么写入**
+**它怎么读配置、怎么注册**
 
 - [settings 是硬依赖](../.agents/notes/implemented/architecture/2026-09-23-settings-hard-dependency.md)：
   `typert` 只用于界面，没有它的 profile 里发现照常跑。
 - [整段配置都是 volatile 的](../.agents/notes/implemented/architecture/2026-09-24-whole-config-volatile.md)：
-  改配置不重挂插件，读值一律走 `configValue(ref)`。
+  改配置不重挂插件，读值一律走 `configValue(ref)`；设置接缝仍是硬依赖，它承载配置页与
+  逐模型覆盖。
 - [组合层不写 config](../.agents/notes/implemented/architecture/2026-09-24-composition-layer-leaves-config-unset.md)：
   缺省值只有 schema 一处。
-- [写入只碰自己拥有的键](../.agents/notes/implemented/architecture/2026-09-23-owned-write-plan.md)：
-  幂等、路径操作、探测失败不写、关掉同步就撤下。
+- [不写任何配置](../.agents/notes/implemented/architecture/2026-10-03-no-configuration-writes.md)：
+  发现结果只活在这一次注册里；路由键被占就跳过注册并点名那个键。
 - [刷新必须从 HMR 事务之外起跑](../.agents/notes/implemented/bug-fix/2026-09-24-refresh-starts-outside-the-hmr-transaction.md)：
   经 `src/relay.ts` 那条模块作用域的通道。
 
@@ -89,10 +90,10 @@
 展开/收起是本地 state、按行记；收起**不丢草稿**——收起来不等于放弃，那颗「有未保存
 的改动」会一直挂着，要放弃得按「取消」。
 
-状态点仍是官方 `StateDot`，但它说三件事：绿是这一轮写进了路由、灰是这一轮同步过而
-它没写进去、黄是根本没有路由能服务它；同步那一轮没跑（关着）时不装作「没写进去」，
-而是说「这一轮没有同步，写没写进去看不出来」——报告里根本没有这一项。官方
-`StateDot` 自己是 `aria-hidden`，说给谁听得由外层 `role="img"` 的 `aria-label` 给。
+状态点仍是官方 `StateDot`，但它说三件事：绿是这一轮把它注册成了路由、灰是这一轮
+注册过而它没在里面、黄是根本没有路由能服务它；那一轮没走到注册时（报告里没有
+`publish` 这一项）不装作「没注册上去」，而是说「这一轮没有注册，是否可用看不出来」。
+官方 `StateDot` 自己是 `aria-hidden`，说给谁听得由外层 `role="img"` 的 `aria-label` 给。
 
 ### 页面与编辑器
 
@@ -128,8 +129,9 @@
 
 **提示语只说两件事。** 模型那一段的提示语只在**清单读不到**
 （`catalog.available === false`，这时模型列表会是空的，不说原因等于没说）与**这一轮
-该写的没写进去**（`sync.applied === false`）时出现；正常的一轮（同步关着、或者写
-成功了）一个字都不说（`roundProblem`）。没有实例地址时的空状态是「还没有实例地址：
+没能注册**（`publish.reason`，比如路由键已被别的适配器占用）时出现；正常的一轮（注册
+成功、或者注册开关关着）一个字都不说（`roundProblem`）——开关关着这件事页面上那颗
+开关自己就说了。没有实例地址时的空状态是「还没有实例地址：
 填上并保存之后才会去发现模型」——地址空着发现根本不会跑，「还没发现到模型」在那儿
 等于没说。
 
@@ -146,8 +148,13 @@ token 数；回写成能原样读回来的**最短**形式（`384000` → `384K`
 
 ## 已知边界
 
-- **不转换 API 格式**，这是设计目标而不是缺陷。只支持 `llm-pi-ai` 能服务的 Chat
-  Completions、OpenAI Responses 与 Anthropic Messages；Gemini 原生端点接不了。
+- **不转换 API 格式**，这是设计目标而不是缺陷：三种线缆协议由 `@earendil-works/pi-ai`
+  实现，本插件只把发现结果翻译成它的模型描述符。只支持 Chat Completions、OpenAI
+  Responses 与 Anthropic Messages；Gemini 原生端点接不了。
+- **路由键被别的适配器占着时不注册**：`ctx.llm.registerAdapter` 对同一个键会抛
+  `DUPLICATE_ADAPTER`，本插件先探测再注册，撞上就跳过、把那个键写进报告的原因里，并在
+  `llm/adapters-updated` 时重试。升级上来的部署最常见的原因是旧版本写下的
+  `llm-pi-ai.providers.<键>` —— 那份配置要用户自己删。
 - `supported_endpoints` 是唯一的协议依据。网关如果不报，就按 OpenAI 兼容处理。
 - models.dev 是尽力而为的补全：拉不到就是拉不到，发现本身照常成功。
 - **配置页只存在于 Web 界面**（插件页 + Typert 注册表）；没有它的部署里发现照常，
@@ -160,9 +167,12 @@ token 数；回写成能原样读回来的**最短**形式（`384000` → `384K`
   `$DSH_HOME/cordis.patch.yml` 这类层。同一行在那里也被写过时，配置页的保存写进
   profile 的补丁文档、却不生效——写入本身可能被设置接缝拒收（配置页会说这一笔没被
   收下），也可能落盘了却仍是那一层说了算；两种都得去那一层改。
-- **改了 `route` 的路由名之后旧键会留在 `llm-pi-ai.providers` 里**（插件只认自己
-  当前拥有的三个键）。它不会报错，只是不再刷新；要清理就手动删掉那一行。
-- **动作端点的一句结论仍是中文**：`PanelAction.summary` 由 Host 端写好（「已写入
+- **改了 `route` 之后旧键没有服务者**：路由是进程内注册、不落盘，旧键不会报错也不
+  需要清理（除非有别的适配器顶上那个键，那时按上面那条处理）。
+- **动作端点的一句结论仍是中文**：`PanelAction.summary` 由 Host 端写好（「已注册
   2 条路由…」），因此英文界面里那一行也是中文。要让它跟着语言走，得把 `summary`
-  换成「码 + 实参」再由界面渲染；地址与同步的写入不走端点，它们的话由界面自己按
-  语言组织。
+  换成「码 + 实参」再由界面渲染；地址与注册开关的写入不走端点，它们的话由界面自己
+  按语言组织。
+- **模型页那一行是只读的**：本插件注册的三条路由会在官方「模型」页里出现（它把已
+  注册但未声明的 provider 也列出来，`settingsNs` 为空），但那边没有可用的设置段，
+  因此编辑器只显示一句说明。要改这些路由得改本插件的配置或发现结果。

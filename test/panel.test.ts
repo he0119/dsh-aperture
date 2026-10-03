@@ -21,6 +21,7 @@ import { createPanelOps, type PanelDeps, type PanelModelPatch } from '../src/pan
 import type { RoutePlan } from '../src/profile.ts';
 import { ApertureRuntime, type RefreshOutcome, type RuntimeLogger } from '../src/runtime.ts';
 import type { DiscoveredModel } from '../src/types.ts';
+import { fakeProvider } from './helpers.ts';
 
 /** 什么都不输出的 logger。 */
 const quiet: RuntimeLogger = { error() {}, info() {}, warn() {}, debug() {} };
@@ -44,7 +45,12 @@ function model(id: string): DiscoveredModel {
 function routePlan(provider: string): RoutePlan {
   return {
     provider,
-    profile: { displayName: provider, api: 'openai-completions', baseURL: 'https://ai.example.ts.net/v1', models: [{ id: 'm' }] },
+    profile: {
+      displayName: provider,
+      api: 'openai-completions',
+      baseURL: 'https://ai.example.ts.net/v1',
+      models: [{ id: 'm', name: 'm', input: ['text'] }],
+    },
     models: [model('m')],
   };
 }
@@ -587,6 +593,7 @@ describe('写完等一轮刷新落地', () => {
         logger: quiet,
         // 清单只报可用性：这一条看的不是 models.dev，而是配置里的覆盖。
         catalog: { load: async () => ({ entries: 0 }) } as unknown as ModelCatalog,
+        provider: fakeProvider,
       });
       // 照 `index.ts` 的接法：配置一变就唤起一轮刷新（Host 端是 Loader 的
       // `loader/volatile-update`）。

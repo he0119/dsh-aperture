@@ -10,7 +10,9 @@
  *
  * - `devDependencies` 里那一整批 DSH 包必须停在同一条版本线上（漏升一个也算坏）；
  * - 声明的 peer 范围必须接受那条版本线——正是上面那个静默失败的反面；
- * - 范围也不能放宽成通行证（比 0.1.7 更早的宿主没有本插件依赖的设置接缝，必须在预检处就被挡下）；
+ * - 范围也不能放宽成通行证（比 0.1.7 更早的宿主没有本插件依赖的设置与 LLM 接缝，必须在预检处就被挡下）；
+ *   本插件自己用到的每一个 `@deepseek-ai/dsh*` 包都写进 peer，于是「0.1.7 也在范围内」这句话在预检处
+ *   逐包核对过——那些 API 在 0.1.7-rc.1 上确实存在（核对方式是读那一版发布的类型）；
  * - 0.1.7 那一版宿主是**有意**继续支持的：`latest` 停在那里，而 0.2.0 只在 `next`。丢掉它要连同
  *   这一条用例一起改，那正是「有意的破坏性升级」该有的仪式。
  *
@@ -95,8 +97,16 @@ describe('声明的兼容范围', () => {
     assert.notDeepEqual(denied, {}, '0.1.5 之前的宿主没有本插件依赖的设置接缝，不该被放进来');
     assert.deepEqual(
       Object.keys(denied).sort(),
-      ['@deepseek-ai/dsh-client-ui-primitives', '@deepseek-ai/dsh-settings', '@deepseek-ai/dsh-typert-protocol'],
-      '被拒的应当是三个 DSH peer，而不是别的什么',
+      [
+        '@deepseek-ai/dsh-attachment',
+        '@deepseek-ai/dsh-client-ui-primitives',
+        '@deepseek-ai/dsh-credentials',
+        '@deepseek-ai/dsh-llm',
+        '@deepseek-ai/dsh-settings',
+        '@deepseek-ai/dsh-timeout',
+        '@deepseek-ai/dsh-typert-protocol',
+      ],
+      '被拒的应当是那七个带 0.1.7 下界的 DSH peer，而不是别的什么',
     );
   });
 

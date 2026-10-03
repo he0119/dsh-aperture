@@ -2,6 +2,9 @@
 
 Status: implemented
 
+**已被取代**：[不写任何配置](../simplification/2026-10-03-no-configuration-writes.md)——写入这块行为整个不存在了，本
+插件改为把发现结果注册成自己的 provider 路由。本篇只记录当时的取舍。
+
 ## Problem
 
 插件的输出是**另一份配置**（`llm-pi-ai.providers`），那里同时躺着用户手写的

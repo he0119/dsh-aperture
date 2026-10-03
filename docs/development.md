@@ -9,10 +9,10 @@
 pnpm install               # 若机器级 pnpm store 不可写：pnpm install --store-dir ./.pnpm-store
 pnpm run build             # tsdown 统一生成宿主、声明与浏览器产物
 pnpm run typecheck         # Host/test 与 Web Client 两个 tsc 项目
-pnpm test                  # 单元测试 + 端到端（237 个，离线运行；需要已安装的 devDependencies）
+pnpm test                  # 单元测试 + 端到端（274 个，离线运行；需要已安装的 devDependencies）
 
 DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run test:live   # 只跑端到端，且指向真实实例
-DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run inspect     # 手动走查：打印写入后的补丁文档与 LLM 解析结果（先 pnpm run build）
+DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run inspect     # 手动走查：打印已注册的路由与 LLM 服务的解析结果（先 pnpm run build）
 ```
 
 包管理器是 pnpm，版本由 `package.json` 的 `packageManager` 钉在 `pnpm@11.7.0`，经 corepack 生效
@@ -25,11 +25,16 @@ DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run inspect     # 手动走
   该文件）。装完提示 `Ignored build scripts` 时，看那里的注释再决定是否放行。
 
 `pnpm test` 里的端到端那一份（`test/live.test.ts`）不依赖网络：它在本地起一个假网关
-（`test/fake-gateway.ts`，端口由内核挑），把插件挂到真的 Cordis Loader 上，再断言写进 profile
-补丁文档的东西能被真的 `llm-pi-ai` 解析出来，所以 CI 跑得动它。三份测试各证一件不同的事，见
-[internals.md](internals.md) 的「验证：哪一层证明什么」。
+（`test/fake-gateway.ts`，端口由内核挑），把插件挂到真的 Cordis Loader 上，再断言插件自己注册的
+三条路由**真的按三种线缆协议流式说话**（OpenAI Chat Completions / OpenAI Responses / Anthropic
+Messages 各一条），并且 Anthropic 那个思考签名经重放信封回到下一轮请求里，所以 CI 跑得动它。
+三份测试各证一件不同的事，见[三份测试各证一件不同的事](../.agents/notes/implemented/testing/2026-09-24-three-test-layers.md)。
 
-不在 Tailscale 网络里、又想手动看生成的配置段时，可以自己把那个假网关摆在固定端口上：
+给了 `DSH_APERTURE_LIVE_URL` 时，那些线缆级断言会被跳过（`wireIt`），留下的只有模型清单与元数据
+那几条：它们要求网关按三种协议回答，而真实实例不保证这件事，回答内容也不由本仓库决定。
+
+不在 Tailscale 网络里、又想拿一份固定载荷手动看注册出去的路由时，可以自己把那个假网关摆在固定
+端口上：
 
 ```sh
 node scripts/fake-aperture-gateway.mjs 54117

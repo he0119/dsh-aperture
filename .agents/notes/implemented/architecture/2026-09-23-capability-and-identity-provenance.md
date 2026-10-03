@@ -5,8 +5,8 @@ Status: implemented
 ## Problem
 
 一个模型的上下文容量、最大输出、模态与推理能力有三个可能来源：网关的探测结果、
-`models.dev` 目录、以及插件自己。三者常常只声明了一部分，而发布出去的 provider
-每一条事实都会被 `llm-pi-ai` 当成真的用。
+`models.dev` 目录、以及插件自己。三者常常只声明了一部分，而注册出去的路由每一条事实都会被 pi-ai
+当成真的用。
 
 ## Decision
 
@@ -19,8 +19,9 @@ Status: implemented
 | `input`（多模态） | `images: metadata` 时取 Aperture 能力字段 → models.dev → `["text"]`；`images: ignore` 时恒为 `["text"]` |
 | `reasoning` | Aperture 能力字段 → models.dev → 关闭 |
 
-`maxTokens` 没人声明时**故意不写**：在 `llm-pi-ai` 里它同时是「输出能力」和「每次
-请求的 max_tokens 上限」，凭空编一个 16384 会把每一次请求都截断。
+`maxTokens` 没人声明时**不向宿主声明默认值**（`resolveModel` 的 `defaultMaxTokens` 缺席）：它是
+「输出能力」，也是每次请求的 `max_tokens` 上限，凭空编一个 16384 会把每一次请求都截断。pi-ai 侧
+的描述符仍需要一个数，那用的是 `DEFAULT_MAX_TOKENS`，只是它不冒充发现结果。
 
 网关会改名。实测里 `deepseek-flash`、`k3` 在 models.dev 上找不到对应条目（那边叫
 `deepseek/deepseek-v4-flash`、`moonshotai/kimi-k3`），靠打分是猜不出来的，于是提供

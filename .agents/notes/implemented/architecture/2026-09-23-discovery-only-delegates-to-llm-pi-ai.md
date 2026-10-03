@@ -2,6 +2,9 @@
 
 Status: implemented
 
+**已被取代**：[自带 provider 适配器](2026-10-03-own-provider-adapter.md)——本插件现在自己实现这三条
+路由的适配器，不再把发现结果写成 `llm-pi-ai` 的 provider profiles。本篇只记录当时的取舍。
+
 ## Problem
 
 Aperture 是按端点供模型的网关，而 DSH 侧已经有一套讲 OpenAI Chat Completions、
