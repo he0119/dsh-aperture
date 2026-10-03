@@ -68,7 +68,7 @@ export type { PanelAction, PanelDeps, PanelModelPatch, PanelOps } from './panel.
 export { buildReport } from './report.ts';
 export type { DeclaredOverrides, PanelModel, PanelRefresh, PanelReport, PanelRoute } from './report.ts';
 export { DEFAULT_PLACEHOLDER_CREDENTIAL, buildProfilePlan } from './profile.ts';
-export type { ModelProfile, OwnedRoute, ProfilePlan, ProfileOptions, RoutePlan, RouteProfile } from './profile.ts';
+export type { ModelProfile, ProfilePlan, ProfileOptions, RoutePlan, RouteProfile } from './profile.ts';
 export { ApertureProvider } from './provider.ts';
 export type { ProviderDeps, PublishOutcome } from './provider.ts';
 export { buildRegistry, classifyProtocol, isDeepSeekFamily } from './registry.ts';

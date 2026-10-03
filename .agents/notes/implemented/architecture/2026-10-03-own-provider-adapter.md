@@ -38,8 +38,9 @@ schema 表达不了的东西（兼容开关、`thinkingLevelMap` 的逐档位写
   照旧），而不是把别人的字段硬套。
 - `prepareCall` 把「模型元数据」与「派发」绑在同一代路由上：`stream` 只读一次当前路由，因此一次
   请求不会把这一代的容量配上下一代的端点。
-- 三条路由同时注册进 provider 目录（`registerConfigurableProviders`），官方「模型」页里因此
-  看得到这几行；那边的编辑器对本插件只读，要改就走本插件的配置页。
+- 路由同时注册进 provider 目录（`registerConfigurableProviders`），官方「模型」页里因此看得到
+  它们——只列**真的有模型**的那些：一种协议在这个网关上没有模型时，那一行既选不出东西也声明不了
+  任何事实。那边的编辑器对本插件只读，要改就走本插件的配置页。
 
 ## Alternatives considered
 

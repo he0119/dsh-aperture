@@ -41,10 +41,6 @@ describe('buildProfilePlan', () => {
       result.routes.map((candidate) => candidate.provider),
       ['aperture', 'aperture-anthropic'],
     );
-    assert.deepEqual(
-      result.owned.map((owned) => owned.provider),
-      ['aperture', 'aperture-responses', 'aperture-anthropic'],
-    );
     assert.equal(result.unserved.length, 4);
   });
 
@@ -142,19 +138,15 @@ describe('buildProfilePlan', () => {
       route: 'aperture',
       responsesRoute: 'aperture-responses',
       anthropicRoute: 'aperture-anthropic',
-      displayName: 'Aperture',
-      responsesDisplayName: 'Aperture (Responses)',
-      anthropicDisplayName: 'Aperture (Anthropic)',
+      displayName: 'Aperture (Chat Completions)',
+      responsesDisplayName: 'Aperture (OpenAI Responses)',
+      anthropicDisplayName: 'Aperture (Anthropic Messages)',
       headers: {},
       configured: [],
     });
     assert.deepEqual(
       result.routes.map((candidate) => candidate.provider),
       ['aperture-anthropic'],
-    );
-    assert.deepEqual(
-      result.owned.map((owned) => owned.provider),
-      ['aperture', 'aperture-responses', 'aperture-anthropic'],
     );
   });
 });

@@ -181,7 +181,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 
 **从 0.2 升上来，我的 `settings.yaml` 去哪了？** 0.1.7 起设置不再有独立文件，而是落在 profile 的补丁文档里。首次启动时 `$DSH_HOME/settings.yaml` 会被改名成 `settings.yaml.imported`，各段按设置命名空间搬进补丁文档——`aperture:` 段原样搬过去，仍能过 schema 的键与值都不变，所以地址与逐模型覆盖都还在。此后被读的只有补丁文档，`settings.yaml.imported` 只是留档，改它没有用；搬不过去的段（值已不合法）也只留在那份留档里，并在日志里说一声。
 
-**本部署没有「插件」页 / 没有界面？** 配置页只在 Web 界面里有（它靠 Typert Remote 端点工作）。headless profile 里插件照常发现、照常注册路由，只是没有可点按的页面。模型在官方「模型」页里也会出现一行，但那边的编辑器对本插件的路由是只读的：这些路由由发现结果决定，改它们要在本插件的配置页或配置里改。
+**本部署没有「插件」页 / 没有界面？** 配置页只在 Web 界面里有（它靠 Typert Remote 端点工作）。headless profile 里插件照常发现、照常注册路由，只是没有可点按的页面。模型在官方「模型」页里也会出现相应的行（只有真的有模型的那几种协议才占一行），但那边的编辑器对本插件的路由是只读的：这些路由由发现结果决定，改它们要在本插件的配置页或配置里改。
 
 **需要真密钥而不是占位凭据？** Aperture 靠网络身份（Tailscale）认证，本不需要密钥；插件默认在每条请求上带 `authorization: Bearer dsh-aperture`（Anthropic 路由是 `x-api-key: dsh-aperture`），只是让 pi-ai 愿意把请求发出去，**不是密钥**。真要密钥时把 `apiKeyEnv` 指向凭据 seam 里的记录，占位凭据就不再带。
 

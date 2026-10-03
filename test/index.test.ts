@@ -41,6 +41,13 @@ interface LogRecord {
   readonly args: readonly unknown[];
 }
 
+/** 一条 provider 目录声明里本用例关心的三个字段。 */
+interface DirectoryEntry {
+  readonly provider: string;
+  readonly displayName: string;
+  readonly settingsNs: string;
+}
+
 /** 一次 `ctx.plugin` 的登记，连同它发生在哪一层上下文上。 */
 interface PluginRecord {
   readonly via: 'root' | 'panel';
@@ -70,6 +77,8 @@ interface Harness {
   readonly logs: readonly LogRecord[];
   /** 假 LLM 服务当前注册着的路由键，按注册顺序。 */
   readonly registeredRoutes: () => readonly string[];
+  /** 声明进 provider 目录的行（provider / displayName / settingsNs）。 */
+  readonly directoryEntries: () => readonly DirectoryEntry[];
   /** 让另一个适配器占住某个路由键（模拟遗留配置或别的插件）。 */
   occupy(route: string): void;
   /** 那一方撤下。 */
@@ -160,6 +169,8 @@ function harness(options: { readonly typert?: boolean } = {}): Harness {
   // 别的插件），`ours` 是本插件注册成功的键，于是「被占着所以没注册」是可断言的事实。
   const occupied = new Set<string>();
   const ours = new Set<string>();
+  /** 声明进 provider 目录的行（官方「模型」页显示的就是它）。 */
+  const directory: Array<{ provider: string; displayName: string; settingsNs: string }> = [];
   const llm = {
     listProviders: (): Array<{ id: string; name: string }> =>
       [...new Set([...occupied, ...ours])].map((id) => ({ id, name: id })),
@@ -180,9 +191,23 @@ function harness(options: { readonly typert?: boolean } = {}): Harness {
       };
       return handle;
     },
-    registerConfigurableProviders(entries: readonly unknown[]): (() => void) & { replace(next: readonly unknown[]): void } {
-      const handle = (() => {}) as (() => void) & { replace(next: readonly unknown[]): void };
-      handle.replace = (): void => {};
+    registerConfigurableProviders(
+      entries: readonly DirectoryEntry[],
+    ): (() => void) & { replace(next: readonly DirectoryEntry[]): void } {
+      const keep = (next: readonly DirectoryEntry[]): void => {
+        directory.splice(0, directory.length, ...[
+          ...next.map((entry) => ({
+            provider: entry.provider,
+            displayName: entry.displayName,
+            settingsNs: entry.settingsNs,
+          })),
+        ]);
+      };
+      keep(entries);
+      const handle = (() => {
+        directory.length = 0;
+      }) as (() => void) & { replace(next: readonly DirectoryEntry[]): void };
+      handle.replace = keep;
       return handle;
     },
   };
@@ -221,6 +246,7 @@ function harness(options: { readonly typert?: boolean } = {}): Harness {
     presentations,
     logs,
     registeredRoutes: () => [...ours],
+    directoryEntries: () => directory.map((entry) => ({ ...entry })),
     occupy(route: string): void {
       occupied.add(route);
     },
@@ -458,7 +484,37 @@ describe('apply 的注册接线', () => {
       await settle();
 
       assert.deepEqual(record.registeredRoutes(), ['aperture'], '有模型的协议才注册，没模型的那两条不上');
+      assert.deepEqual(
+        record.directoryEntries(),
+        [{ provider: 'aperture', displayName: 'Aperture (Chat Completions)', settingsNs: 'aperture' }],
+        '官方「模型」页只该多出有模型的那一行，空路由不是一行事实',
+      );
       assert.deepEqual(record.logs.filter((entry) => entry.level === 'warn'), [], '这一轮没有任何可抱怨的');
+    } finally {
+      net.restore();
+    }
+  });
+
+  it('三种协议都有模型时，provider 目录里就是那三行，标签各写各的协议', async () => {
+    const net = stubFetch([
+      { id: 'flash', display_name: 'Flash', supported_endpoints: ['/v1/chat/completions'] },
+      { id: 'codex', display_name: 'Codex', supported_endpoints: ['/v1/responses'] },
+      { id: 'minimax', display_name: 'MiniMax', supported_endpoints: ['/v1/messages'] },
+    ]);
+    try {
+      const record = harness();
+      apply(record.ctx, liveConfig().ref);
+      await settle();
+
+      assert.deepEqual(
+        record.directoryEntries(),
+        [
+          { provider: 'aperture', displayName: 'Aperture (Chat Completions)', settingsNs: 'aperture' },
+          { provider: 'aperture-responses', displayName: 'Aperture (OpenAI Responses)', settingsNs: 'aperture' },
+          { provider: 'aperture-anthropic', displayName: 'Aperture (Anthropic Messages)', settingsNs: 'aperture' },
+        ],
+        '一条协议一行，且行名说得出它承载的是哪种协议',
+      );
     } finally {
       net.restore();
     }

@@ -79,14 +79,14 @@ export class ApertureProvider {
   /**
    * 发布一代方案。
    *
-   * @param plan - 本次要服务的路由与本插件拥有的路由键。
+   * @param plan - 本次要服务的路由与未被服务的模型。
    * @returns 发生了什么。
    */
   async publish(plan: ProfilePlan): Promise<PublishOutcome> {
     this.routes = plan.routes;
     this.desired = plan.routes.map((route) => route.provider);
     this.registerRoutes();
-    this.registerDirectory(plan);
+    this.registerDirectory(plan.routes);
 
     return {
       routes: this.registration === undefined ? [] : this.desired,
@@ -158,14 +158,22 @@ export class ApertureProvider {
   /**
    * 声明本插件的路由可以由哪个配置段激活。
    *
-   * 这三条声明让官方「模型」页把本插件的路由列成行，并读出它们的凭据引用。那个页面只为
+   * 声明让官方「模型」页把本插件的路由列成行，并读出它们的凭据引用。那个页面只为
    * `llm-deepseek` 与 `llm-pi-ai` 准备了编辑布局，因此落到本插件的命名空间时会显示「其余字段在
    * cordis.patch.yml 中」的提示并禁用保存——本插件的配置面是自己的插件页。
+   *
+   * 只声明**真的有模型**的那些路由：一种协议在这个网关上没有模型时，那一行只会是多出来的空行
+   * （该协议下没有任何可选的东西），而它在这里也声明不了任何事实——本插件不写配置。
    */
-  private registerDirectory(plan: ProfilePlan): void {
-    const entries: LlmConfigurableProvider[] = plan.owned.map((route) => ({
+  private registerDirectory(routes: readonly RoutePlan[]): void {
+    if (routes.length === 0) {
+      // 没有要服务的路由：首次不注册（接缝拒绝空数组），已注册的把目录清空。
+      this.directory?.replace([]);
+      return;
+    }
+    const entries: LlmConfigurableProvider[] = routes.map((route) => ({
       provider: route.provider,
-      displayName: route.displayName,
+      displayName: route.profile.displayName,
       settingsNs: APERTURE_NAMESPACE,
       settingsPath: [],
       declared: true,

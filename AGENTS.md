@@ -147,9 +147,9 @@ pnpm test && pnpm run typecheck && pnpm run build
   `aperture-anthropic`），关掉 `sync` 就撤下它们。路由键已被别人服务时不硬闯：跳过注册、把那个键
   写进报告的原因里，并在 `llm/adapters-updated` 时重试。**每一轮刷新都必须从 HMR 事务之外起跑**
   （经 `src/relay.ts` 那条模块作用域的通道），别把刷新挪回事件处理器里。
-- 三条路由键同时注册进 provider 目录（`registerConfigurableProviders`），这样官方「模型」页里能
-  看到这几行；那边的编辑器对本插件是只读的（设置段是 `aperture`，不是模型页的通用表单），要改就走
-  本插件的配置页或配置。
+- **只有真的有模型的路由**才注册进 provider 目录（`registerConfigurableProviders`），于是官方
+  「模型」页里多出来的行就是实际可选的那几种协议；那边的编辑器对本插件是只读的（设置段是
+  `aperture`，不是模型页的通用表单），要改就走本插件的配置页或配置。
 
 ## Git
 

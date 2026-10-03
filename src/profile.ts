@@ -114,22 +114,12 @@ export interface RoutePlan {
   readonly models: readonly DiscoveredModel[];
 }
 
-/** 本插件拥有的一条路由键，无论它当前是否有模型。 */
-export interface OwnedRoute {
-  /** provider 路由键。 */
-  readonly provider: string;
-  /** 选择器里显示的路由名。 */
-  readonly displayName: string;
-}
-
 /** 完整的发布方案。 */
 export interface ProfilePlan {
   /** 至少含一个模型的路由，顺序稳定。 */
   readonly routes: readonly RoutePlan[];
   /** 没有任何路由可以服务的已发现模型。 */
   readonly unserved: readonly DiscoveredModel[];
-  /** 本插件拥有的每条路由键，无论它当前是否有模型。 */
-  readonly owned: readonly OwnedRoute[];
 }
 
 /**
@@ -170,11 +160,6 @@ export function buildProfilePlan(models: readonly DiscoveredModel[], options: Pr
   return {
     routes,
     unserved: models.filter((model) => model.protocol === undefined),
-    owned: [
-      { provider: options.route, displayName: options.displayName },
-      { provider: options.responsesRoute, displayName: options.responsesDisplayName },
-      { provider: options.anthropicRoute, displayName: options.anthropicDisplayName },
-    ],
   };
 }
 

@@ -205,8 +205,8 @@ export class ApertureRuntime {
         error: message(error),
       };
       this.latest = outcome;
-      // 失败的刷新不发布任何内容：设置文档中已有的清单继续提供服务，一次瞬时网络错误
-      // 不得把它撤销。
+      // 失败的刷新不发布任何内容：已经注册出去的路由继续服务，一次瞬时网络错误不得把它们
+      // 撤下来（`publish` 会按空方案撤下注册，因此这里必须提前返回）。
       this.deps.logger.warn('发现失败；保留已发布的清单：%s', outcome.error ?? '');
       return outcome;
     }
