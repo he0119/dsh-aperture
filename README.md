@@ -107,7 +107,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture 实例地址。末尾 `/v1` 会被容忍并去掉；空值表示休眠（不探测、不注册） |
-| `route` | `aperture` | Chat Completions 模型的路由名；Responses、Anthropic 路由分别追加 `-responses`、`-anthropic`，三个选择器名称也由它推出来 |
+| `route` | `aperture` | Chat Completions 模型的路由名；Responses、Anthropic 路由分别追加 `-responses`、`-anthropic`。三个选择器名称也由它推出来，并各自写出协议名：`Aperture (Chat Completions)`、`Aperture (OpenAI Responses)`、`Aperture (Anthropic Messages)` |
 | `apiKeyEnv` | `''` | 凭据 seam 里的引用名；非空时不再带占位凭据 |
 | `headers` | `{}` | 每条请求额外带的头；同名时**归因头**与**占位凭据**仍会按协议补齐 |
 | `enabledModelIds` | `[]` | 非空时只保留这些 id（`models` 里显式列出的不受限） |

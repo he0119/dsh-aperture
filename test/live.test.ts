@@ -209,6 +209,18 @@ describe('live Aperture routes', () => {
     );
   });
 
+  it('provider 目录里那三行各自写出协议名', () => {
+    // 官方「模型」页与选择器读的就是这一列，因此三条标签必须自己说清承载的是哪种协议：只叫
+    // 「Aperture」的那一条看不出它收的是 Chat Completions。
+    const labels = new Map(
+      ctx.llm.listConfigurableProviders().map((entry) => [entry.provider, entry.displayName]),
+    );
+    assert.deepEqual(
+      ROUTES.map((route) => labels.get(route)),
+      ['Aperture (Chat Completions)', 'Aperture (OpenAI Responses)', 'Aperture (Anthropic Messages)'],
+    );
+  });
+
   it('依据网关字段推算已发现模型的容量', async () => {
     const info = await ctx.llm.resolveModelInfo(APERTURE, 'deepseek-flash');
     assert.equal(info.context?.contextWindow, 1_048_576);

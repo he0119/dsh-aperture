@@ -110,7 +110,7 @@ Every key lives under that row's `config:` in the profile patch document (user l
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture instance root. A trailing `/v1` is tolerated and stripped; empty leaves the plugin dormant (no discovery, no registration) |
-| `route` | `aperture` | Route key for Chat Completions models; Responses and Anthropic append `-responses` and `-anthropic`, with all three selector labels derived from it |
+| `route` | `aperture` | Route key for Chat Completions models; Responses and Anthropic append `-responses` and `-anthropic`. All three selector labels are derived from it and each names its protocol: `Aperture (Chat Completions)`, `Aperture (OpenAI Responses)`, `Aperture (Anthropic Messages)` |
 | `apiKeyEnv` | `''` | Credential-seam reference; non-empty stops sending the placeholder credential |
 | `headers` | `{}` | Extra request headers; on a name collision the **attribution header** and the **placeholder credential** are still filled in per protocol |
 | `enabledModelIds` | `[]` | Non-empty restricts discovery to these ids (explicit `models` entries are exempt) |

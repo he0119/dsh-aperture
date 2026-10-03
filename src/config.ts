@@ -200,16 +200,18 @@ function derivedNames(route: string): {
   responsesDisplayName: string;
   anthropicDisplayName: string;
 } {
-  const displayName = route
+  const base = route
     .split('-')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+  // 三条路由各承载一种线缆协议，标签里因此都写出协议名：只叫「Aperture」的那一条说不清它收的是
+  // Chat Completions 还是别的东西，而选择器与官方「模型」页上只有这一个词可看。
   return {
     responsesRoute: `${route}-responses`,
     anthropicRoute: `${route}-anthropic`,
-    displayName,
-    responsesDisplayName: `${displayName} (Responses)`,
-    anthropicDisplayName: `${displayName} (Anthropic)`,
+    displayName: `${base} (Chat Completions)`,
+    responsesDisplayName: `${base} (OpenAI Responses)`,
+    anthropicDisplayName: `${base} (Anthropic Messages)`,
   };
 }
 
