@@ -9,7 +9,7 @@
 pnpm install               # 若机器级 pnpm store 不可写：pnpm install --store-dir ./.pnpm-store
 pnpm run build             # tsdown 统一生成宿主、声明与浏览器产物
 pnpm run typecheck         # Host/test 与 Web Client 两个 tsc 项目
-pnpm test                  # 单元测试 + 端到端（274 个，离线运行；需要已安装的 devDependencies）
+pnpm test                  # 单元测试 + 端到端（282 个，离线运行；需要已安装的 devDependencies）
 
 DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run test:live   # 只跑端到端，且指向真实实例
 DSH_APERTURE_LIVE_URL=https://ai.example.ts.net pnpm run inspect     # 手动走查：打印已注册的路由与 LLM 服务的解析结果（先 pnpm run build）
@@ -45,8 +45,10 @@ DSH_APERTURE_LIVE_URL=http://127.0.0.1:54117 pnpm run inspect
 
 Host 端与 Web Client 端都由同一份 `tsdown.config.ts` 构建：Host 端 `src/*.ts` → 单一 ESM `lib/index.js` +
 按模块输出的 `lib/types/**/*.d.ts`，Web Client 端 `src/client/`（`index.ts` 装配 +
-`AperturePanel.tsx` 页面 + `ModelRow.tsx` / `ModelEditor.tsx` 行与编辑器 + `draft.ts` 草稿换算 +
-`locales.ts` / `remote.ts` / `format.ts` / `styles.ts` + `styles.css`）→ `lib/client.js`。因此改完都要构建——只改了一端时跑对应的那一条更省事：
+`AperturePanel.tsx` 设置页 + `ApertureModels.tsx` 模型清单（挂在官方「模型」页的两个扩展位上，两个
+座位共用） + `shared.ts` 两者共用的类型与两句话 + `ModelRow.tsx` / `ModelEditor.tsx` 行与编辑器 +
+`draft.ts` 草稿换算 + `locales.ts` / `remote.ts` / `format.ts` / `styles.ts` + `styles.css`）→
+`lib/client.js`。因此改完都要构建——只改了一端时跑对应的那一条更省事：
 
 ```sh
 pnpm run build           # 清理 lib/，重打宿主、声明与浏览器三份产物

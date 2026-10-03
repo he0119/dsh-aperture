@@ -1,10 +1,14 @@
 /**
- * `dsh-aperture` Web Client 端（插件本体）：挂载 Remote 贡献、注册字典与样式，并把配置页
- * 注册到包级配置槽位 `plugins.bundle.config` 上（键是包名 `dsh-aperture`）。
+ * `dsh-aperture` Web Client 端（插件本体）：挂载 Remote 贡献、注册字典与样式，并把界面注册到
+ * 三个槽位上——包级配置槽位 `plugins.bundle.config`（键是包名 `dsh-aperture`）上是设置页，官方
+ * 「模型」页的两个扩展位上各挂一份模型清单：[`settings.models.provider-card`]（键是设置命名空间
+ * `aperture`，页主按它把贡献派给本插件注册的每一行路由卡）与 `settings.models.footer`（列表条目）。
+ * 前者管那一条路由的模型，后者接卡片接不住的那些（没有路由可服务的、以及一条路由都没注册时的全部）。
  *
- * 页面本身在 [AperturePanel.tsx](./AperturePanel.tsx)，字典在 [locales.ts](./locales.ts)，
- * 描述符在 [remote.ts](./remote.ts)，样式在 [styles.ts](./styles.ts)——这里只做组装，是唯一的
- * 跨域装配点。
+ * 两个组件在 [AperturePanel.tsx](./AperturePanel.tsx)（地址与开关）与
+ * [ApertureModels.tsx](./ApertureModels.tsx)（模型，两个座位共用），字典在
+ * [locales.ts](./locales.ts)，描述符在 [remote.ts](./remote.ts)，样式在
+ * [styles.ts](./styles.ts)——这里只做组装，是唯一的跨域装配点。
  *
  * 注入面是 `slots` / `locale` / `remote` / `configForms`：报告与「立刻刷新」经自己的
  * `aperturePanel` Remote 往返；设置的读写面向 `configForms` 要——**包级**配置页页主只递
@@ -20,17 +24,21 @@
 
 // 只取服务声明（cordis 的 Context 增强），不产生运行时 require：这些包是服务提供方，
 // 它们的 Web Client 模块由 Host 模块图按行装，不由本模块 require。服务声明长在各包的 `/client` 入口
-// （`ctx.slots` 是渲染器声明的、`SlotMap` 里那个 `plugins.bundle.config` 是插件管理页声明的），
-// 根入口只有 Host 模块，指错了就一个服务都拿不到。
+// （`ctx.slots` 是渲染器声明的、`SlotMap` 里那个 `plugins.bundle.config` 是插件管理页声明的、
+// `settings.models.provider-card` / `settings.models.footer` 是官方「模型」页声明的），根入口只有
+// Host 模块，指错了就一个服务都拿不到。
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client';
+import type {} from '@deepseek-ai/dsh-client-ui-settings-models/client';
 import type {} from '@deepseek-ai/dsh-api-remotes/client';
 import { SettingsFormModel, settingsTextField } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { SettingsFieldSpec, SettingsFormScope } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { Context } from '@deepseek-ai/cordis';
 import type { RemoteResult, TypertDisposer } from '@deepseek-ai/dsh-typert-protocol';
-import { AperturePanel, type PanelFace } from './AperturePanel.tsx';
+import { ApertureModels } from './ApertureModels.tsx';
+import { AperturePanel } from './AperturePanel.tsx';
+import type { PanelFace } from './shared.ts';
 import { en, NS, zh } from './locales.ts';
 import { PACKAGE, REMOTE } from './remote.ts';
 import { installStyles } from './styles.ts';
@@ -124,14 +132,17 @@ function mountRemote(ctx: Context): void {
 }
 
 /**
- * 浏览器插件主体：字典、样式、Remote 贡献，以及「插件」页里本插件那个包页的配置页。
+ * 浏览器插件主体：字典、样式、Remote 贡献，以及三个槽位上的注册——「插件」页里本插件那个包页上的
+ * 设置页，与官方「模型」页上模型清单的两个座位（卡片座位、页脚座位）。
  *
- * `ctx.slots.inject` 是必需的，不是可选的：`plugins.bundle.config` 由插件管理页自己声明，那个
- * 声明完全可能在本插件 `apply` 之后才发生，直接 register 会撞上「槽位尚未声明」。
+ * `ctx.slots.inject` 是必需的，不是可选的：这三个槽位都由别的页声明，那些声明完全可能在本插件
+ * `apply` 之后才发生，直接 register 会撞上「槽位尚未声明」。
  *
- * 注册的键是**包名**：键控槽位按它找贡献，点开插件列表里的本插件就是这一页。设置那一份表单也
- * 在这里取——页主只递 `view`，`configForms.get(命名空间)` 才是这一页的配置读写面；服务按命名
- * 空间缓存控制器，因此它与插件页自己取到的是同一份。
+ * 注册的键分两种：配置槽位按**包名**找贡献，点开插件列表里的本插件就是这一页；「模型」页那个卡片
+ * 座位按**设置命名空间**（`aperture`）派发，于是本插件的每一行路由都会得到同一份贡献，组件再从递
+ * 进来的目录行认出自己管哪一条路由；页脚座位是列表槽位，包名是这一块在那一页上的条目 id。设置那
+ * 一份表单也在这里取——页主只递 `view`，`configForms.get(命名空间)` 才是配置读写面；服务按命名空间
+ * 缓存控制器，因此三个组件拿到的是同一份。
  *
  * @param {object} ctx - 客户端根上下文。
  */
@@ -175,6 +186,30 @@ function apply(ctx: Context): void {
         failed: () => form.shell().failed,
       }),
     }, AperturePanel));
+
+    // 模型清单的主入口在官方「模型」页**本插件那几行路由卡里**：键是设置命名空间，页主按它把这份
+    // 贡献派给本插件注册的每一行（`settingsNs: 'aperture'`），组件再从那一行认出自己管哪一条路由。
+    scope.slots.inject('settings.models.provider-card', () => scope.slots.register({
+      name: 'settings.models.provider-card',
+      key: SETTINGS_NS,
+      locale: NS,
+      inject: () => ({
+        hooks: { apertureCard: card },
+        panel,
+      }),
+    }, ApertureModels));
+
+    // 卡片接不住的那些（没有路由可服务的模型、以及一条路由都没注册时的全部）挂在同一页的页脚座位
+    // 上：那里没有目录行可认，于是组件按自己拿到的那一份报告判断该画什么，没东西可说时整块不画。
+    scope.slots.inject('settings.models.footer', () => scope.slots.register({
+      name: 'settings.models.footer',
+      id: PACKAGE,
+      locale: NS,
+      inject: () => ({
+        hooks: { apertureCard: card },
+        panel,
+      }),
+    }, ApertureModels));
   });
 }
 

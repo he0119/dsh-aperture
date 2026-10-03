@@ -100,13 +100,14 @@ describe('声明的兼容范围', () => {
       [
         '@deepseek-ai/dsh-attachment',
         '@deepseek-ai/dsh-client-ui-primitives',
+        '@deepseek-ai/dsh-client-ui-settings-models',
         '@deepseek-ai/dsh-credentials',
         '@deepseek-ai/dsh-llm',
         '@deepseek-ai/dsh-settings',
         '@deepseek-ai/dsh-timeout',
         '@deepseek-ai/dsh-typert-protocol',
       ],
-      '被拒的应当是那七个带 0.1.7 下界的 DSH peer，而不是别的什么',
+      '被拒的应当是那几个带 0.1.7 下界的 DSH peer，而不是别的什么',
     );
   });
 

@@ -59,9 +59,10 @@ npx @deepseek-ai/dsh --profile web --dump-config   # should show a "# == dsh-ape
 
 ### 4. Confirm
 
-The models appear in the selector under the route `Aperture`. This package's configuration page at **Plugins → dsh-aperture** is that page — the instance address and registration toggle on top, one row per discovered model below.
+The models appear in the selector under the route `Aperture`. Settings live in two places: this package's configuration page at **Plugins → dsh-aperture** carries the instance address and the registration toggle, while the model list is on the official **Settings → Models** page, in this plugin's route cards.
 
 ```
+(Plugins → dsh-aperture)
 Instance address  overridden  Reset to default
 [https://ai.example.ts.net                            ]
 Where Aperture listens; leave it empty to go dormant and stop discovering models.
@@ -71,41 +72,60 @@ After each discovery round, register these models as this plugin’s own provide
 
 Saved: rediscovered and published.
 
-Models 18                                     ⟳ Refresh now
-One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery, with anything no route can serve last.
-
-● deepseek-v4-flash
-  route aperture · protocol openai-completions · context 1,048,576 · output 384,000 · modalities text+image · reasoning on · 1 overridden
-● gemini-2.5-flash
-  route aperture · protocol openai-completions · context 128,000 · modalities text · reasoning off
-● qwen3-vl-32b  unserved
-  context 262,144 · modalities text+image · reasoning on
-
-  (expand a row and you get that row's override editor: name and protocol in one group, capacity in another,
-   modalities beside reasoning, and Save / Clear overrides / Cancel underneath)
+The model list and its per-model overrides live on the Settings → Models page, in this plugin’s route cards: open that row and the models are listed below it.
 ```
 
-**The instance address and the registration toggle** are two fields of one official settings form: where a field says "overridden", a "Reset to default" right beside it drops that key from your settings file (the same two words in the same position as the official plugin-config page), and Save writes only the fields you actually changed. The per-model override editor is covered under [Usage](#usage). Headings and spacing separate the groups, while a model row is a card (a hairline outline with a large radius, coloured only with theme tokens this page really defines), and the only thing you can expand is a model row.
+```
+(Settings → Models)
+DeepSeek                                            Edit
+Aperture (Chat Completions)  Custom                  Edit
+  Models on this route 18                       ⟳ Refresh now
+  One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery.
 
-(English labels are shown above; the page itself is bilingual.)
+  ● deepseek-v4-flash
+    route aperture · protocol openai-completions · context 1,048,576 · output 384,000 · modalities text+image · reasoning on · 1 overridden
+  ● gemini-2.5-flash
+    route aperture · protocol openai-completions · context 128,000 · modalities text · reasoning off
+
+    (expand a row and you get that row's override editor: name and protocol in one group, capacity in another,
+     modalities beside reasoning, and Save / Clear overrides / Cancel underneath)
+
++ Add model provider
+Models no route can serve 1                     ⟳ Refresh now
+No route serves these models yet: fill in the protocol and the next round registers them.
+● qwen3-vl-32b  unserved
+  context 262,144 · modalities text+image · reasoning on
+```
+
+**The instance address and the registration toggle** are two fields of one official settings form: where a field says "overridden", a "Reset to default" right beside it drops that key from your settings file (the same two words in the same position as the official plugin-config page), and Save writes only the fields you actually changed. Headings and spacing separate the groups, while a model row is a card (a hairline outline with a large radius, coloured only with theme tokens this page really defines), and the only thing you can expand is a model row.
+
+(English labels are shown above; both pages are bilingual.)
+
+**The model list hangs off two extension seats of the official Models page** (the page owner's own name for them is Extension slots): every route this plugin registers is one row on that page, and each of those rows gets a block of its own drawing **that one route's** models; the models no route can serve (the ones written by hand in the configuration, the ones the catalog never listed), together with every model when no route got registered at all (`sync` off, or this round registered nothing), sit in the block after "Add model provider" at the end of the list — no card can hold them, so without that footer block they would have no way in at all. When there is nothing to say, the footer block is not drawn at all.
 
 ## Usage
 
-The interface is at **Plugins → dsh-aperture**: open this plugin in the plugin list; the configuration page hangs off the package, so there is no separate Configure button. The page header's name, icon and description come from the package's `locale/*.json` and `package.json`'s `icon`; the page itself is drawn by the Plugins page. The address, the toggle and the per-model parameters stay drafts until you press Save; models are **one row at a time**, and collapsing a row does not throw its draft away — the "unsaved edits" tag stays visible.
+The interface lives in two places, each minding its own business:
+
+- **Plugins → dsh-aperture**: open this plugin in the plugin list; the settings page hangs off the package, so there is no separate Configure button. The page header's name, icon and description come from the package's `locale/*.json` and `package.json`'s `icon`; the page itself is drawn by the Plugins page. This page holds two things only: the instance address and the registration toggle.
+- **Settings → Models**: this plugin's model list hangs off that official page — one block inside each route's row (that row's models), and one block after "Add model provider" at the end of the list (the models no route can serve). The page owner declares both seats' names; this plugin only registers content into them.
+
+The address, the toggle and the per-model parameters stay drafts until you press Save; models are **one row at a time**, and collapsing a row does not throw its draft away — the "unsaved edits" tag stays visible.
 
 | Where | Effect |
 | --- | --- |
-| Configuration page · Instance address | edits `baseUrl` (written through the settings seam; when it says "overridden", the "Reset to default" beside it falls back to the default) |
-| Configuration page · Registration toggle | edits `sync`: off discovers without registering, and that round withdraws the three routes this plugin had registered — routes of the same name registered elsewhere are left alone; carries the same "overridden / Reset to default" pair |
-| Configuration page · Save | below the form: writes the address and toggle drafts into the settings document; it is revision-fenced, so a form that has drifted from the settings document is refused rather than overwriting someone else's edit; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
-| Configuration page · Models | one row per model, one card per row: a state dot at its head (green: this round registered it as a route; grey: registration ran this round but did not include it; amber: no route can serve it — hovering it, or a screen reader, hears exactly that), then the name with its "unserved / N overridden / unsaved edits" tags on the first line and labelled facts (route, protocol, capacities, modalities, reasoning, alias) on the second, with long names ellipsised and facts wrapping; expanded, it is that row's override editor — display name, alias and protocol as one group of text fields, context window and max output as the "capacity" group, and two modality checkboxes beside a three-way reasoning switch (follow discovery / on / off); a field keeps only one line naming where its value comes from ("Source: Aperture"), while how-to copy ("Leave it empty to use the discovered name") lives behind the "i" next to the label and only takes up room once opened; the "Refresh now" action at its top right discovers and republishes immediately, and the list and every row's status follow that round |
-| Configuration page · Save / Clear overrides / Cancel | write that row only, clear only the fields the backend report says really were overridden, or drop that row's draft; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
+| Plugins page · Instance address | edits `baseUrl` (written through the settings seam; when it says "overridden", the "Reset to default" beside it falls back to the default) |
+| Plugins page · Registration toggle | edits `sync`: off discovers without registering, and that round withdraws the three routes this plugin had registered — routes of the same name registered elsewhere are left alone; carries the same "overridden / Reset to default" pair |
+| Plugins page · Save | below the form: writes the address and toggle drafts into the settings document; it is revision-fenced, so a form that has drifted from the settings document is refused rather than overwriting someone else's edit; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
+| Models page · Models in a route card | one row per model, one card per row: a state dot at its head (green: this round registered it as a route; grey: registration ran this round but did not include it; amber: no route can serve it — hovering it, or a screen reader, hears exactly that), then the name with its "unserved / N overridden / unsaved edits" tags on the first line and labelled facts (route, protocol, capacities, modalities, reasoning, alias) on the second, with long names ellipsised and facts wrapping; expanded, it is that row's override editor — display name, alias and protocol as one group of text fields, context window and max output as the "capacity" group, and two modality checkboxes beside a three-way reasoning switch (follow discovery / on / off); a field keeps only one line naming where its value comes from ("Source: Aperture"), while how-to copy ("Leave it empty to use the discovered name") lives behind the "i" next to the label and only takes up room once opened; the "Refresh now" action at its top right discovers and republishes immediately, and the list and every row's status follow that round |
+| Models page · Save / Clear overrides / Cancel | write that row only, clear only the fields the backend report says really were overridden, or drop that row's draft; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
+| Models page · The footer block | the models no route can serve (and every model when no route got registered at all): the same rows and the same editor, with one extra line above them on how to attach them to a route |
 
 In-place edits are configuration: capacities and modalities land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. Capacities accept the `1M` / `100K` spelling (decimal suffixes, the same vocabulary as the official Models page: `1M` is 1000000, not 1048576); what gets stored is still a plain token count, and the field spells it back in the shortest form that survives a round trip (`384000` → `384K`, while `1048576` is not a whole thousand and stays written out). The protocol field is the only way out for an unserved model: filling it in publishes a model that only answers on its native endpoint under the matching route.
 
 ## Configuration
 
-Every key lives under that row's `config:` in the profile patch document (user layer); anything you leave out falls back to the defaults below. `baseUrl`, `sync` and the per-model parameters inside `models` and `modelAliases` can also be edited in place on the configuration page; every other key needs the file.
+Every key lives under that row's `config:` in the profile patch document (user layer); anything you leave out falls back to the defaults below. `baseUrl` and `sync` can be edited in place on the Plugins page, and the per-model parameters inside `models` and `modelAliases` on the Settings → Models page; every other key needs the file.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -138,7 +158,7 @@ Missing capacity and reasoning levels are filled in from Aperture's own fields �
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-**Some models never show up in the selector?** Look at the rows tagged `未服务` (unserved) in the Models section of the configuration page. Models that only offer Gemini's native `generateContent` endpoint cannot be attached — this plugin can publish Chat Completions, OpenAI Responses, and Anthropic Messages, but does not translate Gemini's native protocol. Using the wrong endpoint fails loudly, and Aperture names the right one:
+**Some models never show up in the selector?** Look at the rows tagged `未服务` (unserved) on the official **Settings → Models** page (this plugin's route card lists that route's models, and the block at the end of the list holds the ones no route can serve). Models that only offer Gemini's native `generateContent` endpoint cannot be attached — this plugin can publish Chat Completions, OpenAI Responses, and Anthropic Messages, but does not translate Gemini's native protocol. Using the wrong endpoint fails loudly, and Aperture names the right one:
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat
@@ -162,7 +182,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
           max: max
 ```
 
-**Want a model the gateway did not list?** Add it explicitly with `models` — for instance those four Gemini models, if you know they work on an OpenAI-compatible endpoint after all:
+**Want a model the gateway did not list?** Add it explicitly with `models` — for instance the `未服务` (unserved) Gemini models on the Settings → Models page, if you know they work on an OpenAI-compatible endpoint after all:
 
 ```yaml
 # ~/.dsh/profiles/web/cordis.patch.yml
@@ -184,13 +204,13 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
       k3: moonshotai/kimi-k3
 ```
 
-**The configuration page says `没注册（路由 aperture 已被另一个适配器注册…）`?** One of the route keys it asks for is already served by someone else — most often by an **older version of this plugin**: 0.2 and earlier only discovered, and it wrote the routes it found into `llm-pi-ai.providers`, a configuration that now conflicts with this plugin directly. This plugin will not rewrite someone else's configuration for you, so fix it by hand following the key name that line gives you: delete the matching `providers.<key>` from the `llm-pi-ai` section, or, if that route name belongs to another plugin, change this plugin's `route` (all three route keys move with it). The next change to the adapter set — a reload after that edit, or pressing "Refresh now" — retries registration; no restart is needed. (The host writes that line in Chinese, as do its action summaries.)
+**The interface says `没注册（路由 aperture 已被另一个适配器注册…）`?** One of the route keys it asks for is already served by someone else — most often by an **older version of this plugin**: 0.2 and earlier only discovered, and it wrote the routes it found into `llm-pi-ai.providers`, a configuration that now conflicts with this plugin directly. This plugin will not rewrite someone else's configuration for you, so fix it by hand following the key name that line gives you: delete the matching `providers.<key>` from the `llm-pi-ai` section, or, if that route name belongs to another plugin, change this plugin's `route` (all three route keys move with it). The next change to the adapter set — a reload after that edit, or pressing the "Refresh now" action on the interface — retries registration; no restart is needed. (The host writes that line in Chinese, as do its action summaries.)
 
 **Saved but not in effect?** DSH's patch layers stack: above the profile patch document sit higher-priority layers such as `$DSH_HOME/cordis.patch.yml`. If the `aperture` row is written there too, a save from the configuration page lands in the profile patch document but is shadowed by that layer (the settings service may also refuse the write outright, in which case the page says so). Delete the row from the higher-priority layer, or edit it there instead.
 
 **Upgrading from 0.2 — where did my `settings.yaml` go?** As of 0.1.7 settings no longer live in a file of their own; they live in the profile patch document. On the first start `$DSH_HOME/settings.yaml` is renamed to `settings.yaml.imported` and each section is moved into the patch document under its settings namespace — the `aperture:` section moves as-is, and every key and value that still passes the schema is unchanged, so the address and the per-model overrides are all still there. From then on only the patch document is read, and `settings.yaml.imported` is just an archive; editing it does nothing. A section whose values no longer validate stays in that archive too, with a line in the log saying so.
 
-**No Plugins page / no GUI in this deployment?** The configuration page only exists in the Web GUI (it works over Typert Remote endpoints). A headless profile still discovers and still registers routes, it just has no clickable page. The models also show up as rows on the official Models page (only the protocols that really carry models take a row), but its editor is read-only for this plugin's routes: discovery decides them, so changing one means this plugin's configuration page or its configuration.
+**No Plugins page / no GUI in this deployment?** Both interfaces only exist in the Web GUI (the Plugins-page half works over Typert Remote endpoints). A headless profile still discovers and still registers routes, it just has no clickable page. The models also show up as rows on the official Models page (only the protocols that really carry models take a row): that row's own editor is read-only for this plugin (its settings section is `aperture`, not the Models page's generic form), but this plugin hangs one editor of its own inside that row and another at the end of the list, so editing a model is still that page's business; with no GUI, edit the configuration.
 
 **Need a real key instead of the placeholder credential?** Aperture authenticates by network identity (Tailscale) and needs none; the plugin sends `authorization: Bearer dsh-aperture` on every request (the Anthropic route sends `x-api-key: dsh-aperture`), only to make pi-ai willing to send the request. It is **not a key**. When a real credential is needed, point `apiKeyEnv` at a credential-seam record and the placeholder credential is no longer sent.
 
