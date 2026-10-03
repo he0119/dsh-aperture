@@ -5,8 +5,8 @@ Status: implemented
 ## Problem
 
 Aperture 是**按端点**网关的：同一个模型不是所有协议都收。探测结果里的
-`supported_endpoints` 是唯一的协议依据，而 `llm-pi-ai` 的每条 provider 路由只讲
-一种协议。实测（`https://ai.long-antares.ts.net/`）的分布：
+`supported_endpoints` 是唯一的协议依据，而每条注册出去的路由只讲一种协议。实测
+（`https://ai.long-antares.ts.net/`）的分布：
 
 | 模型 | `supported_endpoints` | 结果 |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Aperture 是**按端点**网关的：同一个模型不是所有协议都收。�
 404 model "MiniMax-M3" is available via anthropic_messages, not openai_chat
 ```
 
-`llm-pi-ai` 不讲 Gemini 原生协议，所以那 4 个 Gemini **列出来但不发布**。
+三种线缆协议之外的端点接不进来，所以那 4 个 Gemini **列出来但不发布**。
 
 ## Alternatives considered
 
@@ -37,6 +37,6 @@ Aperture 是**按端点**网关的：同一个模型不是所有协议都收。�
 ## Consequences
 
 - `supported_endpoints` 缺席时按 OpenAI 兼容处理。
-- 路由名可配置；改过名字之后旧键会留在 `llm-pi-ai.providers` 里
-  （见[写入只碰自己拥有的键](2026-09-23-owned-write-plan.md)）。
-- 要不要支持一种新协议，先看 `llm-pi-ai` 讲不讲，而不是先看网关收不收。
+- 路由名可配置；路由是进程内注册，改过名字之后旧键不会留下任何东西（见[不写任何配置]
+  (../simplification/2026-10-03-no-configuration-writes.md)）。
+- 要不要支持一种新协议，先看 pi-ai 讲不讲，而不是先看网关收不收。

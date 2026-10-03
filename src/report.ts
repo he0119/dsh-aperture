@@ -52,13 +52,13 @@ export interface PanelModel {
   readonly alias?: string;
 }
 
-/** 报告里的一条已发布路由。 */
+/** 报告里的一条已注册路由。 */
 export interface PanelRoute {
   /** provider 路由键。 */
   readonly provider: string;
-  /** 服务它的协议；本插件自己拼的方案里一定有，类型上仍是可选（`PiAiProviderProfile`）。 */
+  /** 服务它的线缆协议。 */
   readonly api?: string;
-  /** 路由的 baseURL，同上。 */
+  /** 该协议下所有模型的基点地址。 */
   readonly baseURL?: string;
   /** 该路由承载的模型数。 */
   readonly models: number;
@@ -90,11 +90,11 @@ export interface PanelRefresh {
     readonly url: string;
     readonly listed: number;
   };
-  /** 设置写入的结果。 */
-  readonly sync?: {
-    readonly applied: boolean;
-    readonly ops: number;
+  /** 路由注册的结果。 */
+  readonly publish?: {
+    /** 这一轮真正注册出去的路由键。 */
     readonly routes: readonly string[];
+    /** 未能注册时的原因与要手工做的事。 */
     readonly reason?: string;
   };
 }
@@ -105,7 +105,7 @@ export interface PanelReport {
   readonly place: string;
   /** 最近一次刷新；还一次都没跑过时为缺失。 */
   readonly refresh?: PanelRefresh;
-  /** 已发布的路由。 */
+  /** 已注册的路由。 */
   readonly routes: readonly PanelRoute[];
   /** 逐模型清单：先是各条路由承载的模型，最后是没有任何路由的模型。 */
   readonly models: readonly PanelModel[];
@@ -144,8 +144,8 @@ export function buildReport(
   }
   const routes: PanelRoute[] = (outcome?.routes ?? []).map((route) => ({
     provider: route.provider,
-    ...(route.profile.api === undefined ? {} : { api: route.profile.api }),
-    ...(route.profile.baseURL === undefined ? {} : { baseURL: route.profile.baseURL }),
+    api: route.profile.api,
+    baseURL: route.profile.baseURL,
     models: route.models.length,
   }));
 
@@ -195,7 +195,7 @@ export function buildReport(
  */
 function refresh(outcome: RefreshOutcome): PanelRefresh {
   const catalog = outcome.catalog;
-  const sync = outcome.sync;
+  const publish = outcome.publish;
   return {
     trigger: outcome.trigger,
     at: outcome.at.toISOString(),
@@ -211,14 +211,12 @@ function refresh(outcome: RefreshOutcome): PanelRefresh {
     ...(outcome.endpoint === undefined
       ? {}
       : { endpoint: { url: outcome.endpoint, listed: outcome.listed } }),
-    ...(sync === undefined
+    ...(publish === undefined
       ? {}
       : {
-        sync: {
-          applied: sync.applied,
-          ops: sync.ops,
-          routes: sync.routes,
-          ...(sync.reason === undefined ? {} : { reason: sync.reason }),
+        publish: {
+          routes: publish.routes,
+          ...(publish.reason === undefined ? {} : { reason: publish.reason }),
         },
       }),
   };

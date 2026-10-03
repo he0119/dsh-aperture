@@ -11,8 +11,8 @@
 
 **它接哪些模型、怎么接**
 
-- [只做发现，不做转换](../.agents/notes/implemented/architecture/2026-09-23-discovery-only-delegates-to-llm-pi-ai.md)：
-  把探测结果翻译成 `llm-pi-ai` 的 provider profiles，不自己实现协议。
+- [自带 provider 适配器](../.agents/notes/implemented/architecture/2026-10-03-own-provider-adapter.md)：
+  经 `ctx.llm.registerAdapter` 注册三条路由，协议交给 `@earendil-works/pi-ai`。
 - [按端点分路由](../.agents/notes/implemented/architecture/2026-09-23-endpoint-keyed-routes.md)：
   同一个模型不是所有协议都收；接不了的列出来但不发布。
 - [占位凭据](../.agents/notes/implemented/architecture/2026-09-23-placeholder-credential-header.md)：
@@ -22,16 +22,17 @@
 - [推理等级默认只给两档](../.agents/notes/implemented/architecture/2026-09-23-conservative-reasoning-efforts.md)：
   多给一档就是多一种能被选中的 400。
 
-**它怎么读配置、怎么写入**
+**它怎么读配置、怎么注册**
 
 - [settings 是硬依赖](../.agents/notes/implemented/architecture/2026-09-23-settings-hard-dependency.md)：
   `typert` 只用于界面，没有它的 profile 里发现照常跑。
 - [整段配置都是 volatile 的](../.agents/notes/implemented/architecture/2026-09-24-whole-config-volatile.md)：
-  改配置不重挂插件，读值一律走 `configValue(ref)`。
+  改配置不重挂插件，读值一律走 `configValue(ref)`；设置接缝仍是硬依赖，它承载配置页与
+  逐模型覆盖。
 - [组合层不写 config](../.agents/notes/implemented/architecture/2026-09-24-composition-layer-leaves-config-unset.md)：
   缺省值只有 schema 一处。
-- [写入只碰自己拥有的键](../.agents/notes/implemented/architecture/2026-09-23-owned-write-plan.md)：
-  幂等、路径操作、探测失败不写、关掉同步就撤下。
+- [不写任何配置](../.agents/notes/implemented/architecture/2026-10-03-no-configuration-writes.md)：
+  发现结果只活在这一次注册里；路由键被占就跳过注册并点名那个键。
 - [刷新必须从 HMR 事务之外起跑](../.agents/notes/implemented/bug-fix/2026-09-24-refresh-starts-outside-the-hmr-transaction.md)：
   经 `src/relay.ts` 那条模块作用域的通道。
 
@@ -39,6 +40,8 @@
 
 - [配置页挂在包级槽位](../.agents/notes/implemented/architecture/2026-09-24-package-scoped-config-slot.md)：
   `plugins.bundle.config`，页头由插件页画。
+- [模型编辑器挂在官方「模型」页的两个扩展位上](../.agents/notes/implemented/architecture/2026-10-03-models-page-extension-seats.md)：
+  设置留在插件页，模型跟着模型走。
 - [发现走 Remote，设置走表单](../.agents/notes/implemented/architecture/2026-09-23-discovery-over-remote-settings-over-forms.md)：
   报告是数据不是句子；写完等一轮刷新落地才回答。
 - [逐模型编辑是稀疏的字段补丁](../.agents/notes/implemented/architecture/2026-09-23-sparse-per-model-field-patches.md)：
@@ -89,20 +92,34 @@
 展开/收起是本地 state、按行记；收起**不丢草稿**——收起来不等于放弃，那颗「有未保存
 的改动」会一直挂着，要放弃得按「取消」。
 
-状态点仍是官方 `StateDot`，但它说三件事：绿是这一轮写进了路由、灰是这一轮同步过而
-它没写进去、黄是根本没有路由能服务它；同步那一轮没跑（关着）时不装作「没写进去」，
-而是说「这一轮没有同步，写没写进去看不出来」——报告里根本没有这一项。官方
-`StateDot` 自己是 `aria-hidden`，说给谁听得由外层 `role="img"` 的 `aria-label` 给。
+状态点仍是官方 `StateDot`，但它说三件事：绿是这一轮把它注册成了路由、灰是这一轮
+注册过而它没在里面、黄是根本没有路由能服务它；那一轮没走到注册时（报告里没有
+`publish` 这一项）不装作「没注册上去」，而是说「这一轮没有注册，是否可用看不出来」。
+官方 `StateDot` 自己是 `aria-hidden`，说给谁听得由外层 `role="img"` 的 `aria-label` 给。
 
 ### 页面与编辑器
 
 **页面持有状态，行与编辑器只按 props 画。** 草稿与展开是两张按模型 id 记的表，长在
-`AperturePanel` 上，动作也在那里按这一行绑好（`onToggle` / `onStage` / `onSave` /
+`ApertureModels` 上，动作也在那里按这一行绑好（`onToggle` / `onStage` / `onSave` /
 `onCancel` / `onClear`）再递下去；`ModelRow` 与 `ModelEditor` 自己不持有 state。这几
 件状态本来就不属于某一行——收起一行不丢草稿、写完一行页面顺手把它收起来、两行各改
 各的，说的都是「同一份状态喂给多行」。草稿到补丁的换算（改了哪几项、该发什么出去、
 容量读不读得出来）在 `draft.ts` 里，因此行首那颗「有未保存的改动」与编辑器底部那句
 「有 N 项改动还没写下去」问的是同一个函数，两处说法不会打架。
+
+**模型清单与设置页是两个组件。** `ApertureModels` 挂在官方「模型」页的两个扩展位上，同一份
+注册代码、同一个组件、两个座位：卡片座位（`settings.models.provider-card`）按递进来的目录行
+只画那一条路由的模型；页脚座位（`settings.models.footer`）画报告里 `route` 为空的那
+些，一条路由都没注册时改成画全部（否则那些模型在界面上没有入口），两者都为空且这一轮没有问题
+时整块不画。这一块**默认收着**，折叠头与模型行一样自己画（同一个理由，见上面的「模型行的卡头」）：
+上面一条 `border-l2` 细线，左边标题与模型数目、右边常驻箭头，高 32px，hover 提亮并给一层背景。页主的派发不带「这一行展开了吗」
+这个事实，而卡片座位对**每一行**都渲染，摊开一次就是十几行的清单，收着才不喧宾夺主。卡片座位上
+同一张卡里每一行都是同一条路由（卡片头就是它），行内不再重复「路由 / 协议」；页脚那块没有卡片头
+可依，照旧逐行写出来。设置页（`AperturePanel`）只剩实例地址、注册开关、「立刻刷新」，以及一句「这一轮哪里不对」；
+（重新发现是「去哪儿发现」这件事的一部分，因此那一颗按钮只在设置页上：模型清单那一块按一下只能刷新
+自己那一小块，说不清这一轮到底发生了什么。）
+它与模型清单共用 `shared.ts` 里的注入面类型、设置快照类型与那两句话的计算，因此同一份报告
+在两处说的是同一件事。
 
 **编辑器里的字段也是官方那两个字段组件。** 文本字段用 `SettingsValueField`，按
 「名称与协议」（名字、别名、协议）与「容量」（上下文容量、最大输出）分两组，每组内部
@@ -128,8 +145,9 @@
 
 **提示语只说两件事。** 模型那一段的提示语只在**清单读不到**
 （`catalog.available === false`，这时模型列表会是空的，不说原因等于没说）与**这一轮
-该写的没写进去**（`sync.applied === false`）时出现；正常的一轮（同步关着、或者写
-成功了）一个字都不说（`roundProblem`）。没有实例地址时的空状态是「还没有实例地址：
+没能注册**（`publish.reason`，比如路由键已被别的适配器占用）时出现；正常的一轮（注册
+成功、或者注册开关关着）一个字都不说（`roundProblem`）——开关关着这件事页面上那颗
+开关自己就说了。没有实例地址时的空状态是「还没有实例地址：
 填上并保存之后才会去发现模型」——地址空着发现根本不会跑，「还没发现到模型」在那儿
 等于没说。
 
@@ -146,23 +164,37 @@ token 数；回写成能原样读回来的**最短**形式（`384000` → `384K`
 
 ## 已知边界
 
-- **不转换 API 格式**，这是设计目标而不是缺陷。只支持 `llm-pi-ai` 能服务的 Chat
-  Completions、OpenAI Responses 与 Anthropic Messages；Gemini 原生端点接不了。
+- **不转换 API 格式**，这是设计目标而不是缺陷：三种线缆协议由 `@earendil-works/pi-ai`
+  实现，本插件只把发现结果翻译成它的模型描述符。只支持 Chat Completions、OpenAI
+  Responses 与 Anthropic Messages；Gemini 原生端点接不了。
+- **路由键被别的适配器占着时不注册**：`ctx.llm.registerAdapter` 对同一个键会抛
+  `DUPLICATE_ADAPTER`，本插件先探测再注册，撞上就跳过、把那个键写进报告的原因里，并在
+  `llm/adapters-updated` 时重试。升级上来的部署最常见的原因是旧版本写下的
+  `llm-pi-ai.providers.<键>` —— 那份配置要用户自己删。
 - `supported_endpoints` 是唯一的协议依据。网关如果不报，就按 OpenAI 兼容处理。
 - models.dev 是尽力而为的补全：拉不到就是拉不到，发现本身照常成功。
-- **配置页只存在于 Web 界面**（插件页 + Typert 注册表）；没有它的部署里发现照常，
-  只是没有可点按的界面。从非本机来源打开的页面拿不到宿主设置，配置页会把失败原因摆
+- **界面只存在于 Web 界面**（插件页 + 官方「模型」页 + Typert 注册表）；没有它们的部署里发现
+  照常，只是没有可点按的界面。从非本机来源打开的页面拿不到宿主设置，插件页会把失败原因摆
   在页面上（而不是假装可编辑）；设置文档本身不接受写入时（表单快照的
   `state.writable === false`），表单会置灰并说明原因；连快照都拿不到时
-  （`state.status === 'unavailable'`）设置那一段只剩官方表单的一句说明，报告照常
-  显示。
+  （`state.status === 'unavailable'`）设置那一段只剩官方表单的一句说明，这一轮哪里不对那句
+  话与「设置 → 模型」页里的模型清单照常显示（模型清单读的是同一个报告端点，与设置文档无关）。
 - **更高优先级的补丁层能盖住写入**：profile 的补丁文档之上还有
   `$DSH_HOME/cordis.patch.yml` 这类层。同一行在那里也被写过时，配置页的保存写进
   profile 的补丁文档、却不生效——写入本身可能被设置接缝拒收（配置页会说这一笔没被
   收下），也可能落盘了却仍是那一层说了算；两种都得去那一层改。
-- **改了 `route` 的路由名之后旧键会留在 `llm-pi-ai.providers` 里**（插件只认自己
-  当前拥有的三个键）。它不会报错，只是不再刷新；要清理就手动删掉那一行。
-- **动作端点的一句结论仍是中文**：`PanelAction.summary` 由 Host 端写好（「已写入
+- **改了 `route` 之后旧键没有服务者**：路由是进程内注册、不落盘，旧键不会报错也不
+  需要清理（除非有别的适配器顶上那个键，那时按上面那条处理）。
+- **动作端点的一句结论仍是中文**：`PanelAction.summary` 由 Host 端写好（「已注册
   2 条路由…」），因此英文界面里那一行也是中文。要让它跟着语言走，得把 `summary`
-  换成「码 + 实参」再由界面渲染；地址与同步的写入不走端点，它们的话由界面自己按
-  语言组织。
+  换成「码 + 实参」再由界面渲染；地址与注册开关的写入不走端点，它们的话由界面自己
+  按语言组织。
+- **界面的两个半边**：设置（实例地址、注册开关）挂在插件页的包级配置槽位上；模型清单挂在官方
+  「模型」页自己的两个扩展位上——`settings.models.provider-card`（键控，键是设置命名空间
+  `aperture`，于是本插件注册的每一行路由都会得到一块，组件从递进来的目录行认出自己管哪一条
+  路由）与 `settings.models.footer`（列表，接卡片接不住的那些：没有路由可服务的模型，以及一条
+  路由都没注册时的全部模型；没内容可说时整块不画）。两个座位的名字与 owner props 由那个页声明，
+  本插件只注册内容，因此**那一行自己的编辑器对本插件仍是只读的**（设置段是 `aperture`，不是模型
+  页的通用表单），能编辑的是本插件挂进去的那两块。**只有真的有模型的路由才占一行**：一种协议在
+  这个网关上没有模型时，那一行既选不出东西、也声明不了任何事实（本插件也不把那条路由注册进
+  provider 目录）。

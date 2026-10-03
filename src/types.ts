@@ -2,8 +2,8 @@
  * Aperture 发现流水线的共享词汇表。
  *
  * 该流水线是一条纯函数链——端点响应进，provider profile 出——因此每个阶段都在这里
- * 命名自己的类型，而不去碰 Cordis 或设置的接缝：只有 `src/index.ts` 和 `src/sync.ts`
- * 会接触服务。
+ * 命名自己的类型，而不去碰 Cordis 或设置的接缝：只有 `src/index.ts` 与注册层会接触服务。
+ * 它也因此是唯一一个谁都能安全引用的模块（没有循环依赖）。
  *
  * @module dsh-aperture/types
  */
@@ -12,8 +12,20 @@
 export type Modality = 'text' | 'image';
 
 /**
- * 本插件发布的协议格式。三者都由已安装的 `dsh-llm-pi-ai` 适配器服务，这就是发现
- * 过程从不转换载荷的原因：它只决定每个模型在网关的哪些端点上应答。
+ * pi-ai 认得的推理档位，也是模型 `reasoningEfforts` 允许写下的键。
+ *
+ * 这份名单是 pi-ai 的 `ModelThinkingLevel` 的镜像：多写一个键只会落进它不认识的字典项，
+ * 少写一个键则让部署无法声明它其实支持的档位。它住在词汇表这一层，因为配置 schema 与 profile
+ * 都要用它，而两者分处依赖链的两端。
+ */
+export const REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+/** 一个 pi-ai 推理档位。 */
+export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
+
+/**
+ * 本插件发布的协议格式。三者都由 pi-ai 的三份线缆实现服务，这就是发现过程从不转换载荷的
+ * 原因：它只决定每个模型在网关的哪些端点上应答。
  */
 export type ApertureProtocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages';
 

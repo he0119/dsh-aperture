@@ -17,6 +17,7 @@ import type { SettingsForms } from '@deepseek-ai/dsh-settings';
 import type { ModelCatalog } from '../src/catalog.ts';
 import { memoizedConfig, type Config } from '../src/config.ts';
 import { ApertureRuntime, type RuntimeLogger } from '../src/runtime.ts';
+import { fakeProvider } from './helpers.ts';
 
 /** 什么都不输出的 logger。 */
 const quiet: RuntimeLogger = { error() {}, info() {}, warn() {}, debug() {} };
@@ -62,6 +63,7 @@ function makeRuntime(source: () => Config, catalog: ModelCatalog): ApertureRunti
     settings: {} as SettingsForms,
     logger: quiet,
     catalog,
+    provider: fakeProvider,
   });
 }
 

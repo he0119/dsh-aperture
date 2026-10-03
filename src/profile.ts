@@ -1,37 +1,84 @@
 /**
- * 发布阶段：把发现的模型变成 `llm-pi-ai` provider profile。
+ * 发布阶段：把发现的模型变成本插件自己服务的一条 provider 路由。
  *
- * 这里不做任何负载转换：发布的三种协议都由已安装的 `dsh-llm-pi-ai` 适配器实现，剩下的
- * 工作只是逐模型陈述适配器无法从一个无法识别的网关 URL 推断出的事实——模型有多大、接受
- * 什么，以及它的推理控制如何在协议格式上传输。
+ * 这里不做任何负载转换：三种协议都由 pi-ai 实现，剩下的工作只是逐模型陈述它无法从一个
+ * 无法识别的网关 URL 推断出的事实——模型有多大、接受什么，以及它的推理控制在协议上如何
+ * 传输。
  *
- * 该适配器的两个怪癖塑造了本模块：未随附在它清单里的路由必须声明 `api`、`baseURL` 与
- * **非空**的 `models`，因此空无一物的协议不产生路由；它的 OpenAI 兼容路径在既无凭据、又
- * 无非空 `authorization` 头时拒绝派发，所以没有配 `apiKeyEnv` 的路由会带上一个占位头。
+ * 两件网关事实塑造了本模块：pi-ai 的 OpenAI 兼容路径在既无凭据、又无非空 `authorization`
+ * 头时拒绝派发，所以没有配 `apiKeyEnv` 的路由会带上一个占位头；pi-ai 的 `Model.maxTokens`
+ * 是必填的，而没有谁声明过输出上限的模型不该被钉上一个凭空的数字，因此缺省值只作为
+ * pi-ai 侧的请求上限，同时**不**作为本插件向宿主声明的默认值（见 `defaultMaxTokens`）。
  *
  * @module dsh-aperture/profile
  */
 
-import type { PiAiCompatProfile, PiAiModelProfile, PiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai';
 import { isDeepSeekFamily } from './registry.ts';
-import type { ApertureProtocol, ConfiguredModel, DiscoveredModel } from './types.ts';
+import {
+  REASONING_LEVELS,
+  type ApertureProtocol,
+  type ConfiguredModel,
+  type DiscoveredModel,
+  type Modality,
+  type ReasoningLevel,
+} from './types.ts';
 import { buildRouteBaseUrl } from './url.ts';
 
 /** 无凭据路由发送的占位凭据的默认值。 */
 export const DEFAULT_PLACEHOLDER_CREDENTIAL = 'dsh-aperture';
 
-/** 为 DeepSeek 方言模型提供的推理档位。 */
-const DEEPSEEK_EFFORTS = { off: 'disabled', high: 'high', max: 'max' } as const;
+export { REASONING_LEVELS };
+export type { ReasoningLevel };
+
+/** 一条模型声明的推理档位：键 = 档位，值 = 协议里的写法；只有 `off` 可以留空。 */
+export type ReasoningEfforts = Partial<Record<ReasoningLevel, string | null>>;
 
 /**
- * 为其他所有推理模型提供的推理档位。
+ * 本插件会写下的 pi-ai 兼容开关。
  *
- * `off` 无值——适配器把它映射为「什么都不发」，对 OpenAI 兼容端点而言这就是把思考交给
- * 模型自行决定。它之上的那一档是 Aperture 在它所代理的全部模型上都能接受的最宽写法；
- * `minimal`、`xhigh`、`max` 都至少被某个上游以 400 拒绝过，因此发现的模型绝不提供，
- * 更了解的部署可以在 `models` 里逐模型声明。
+ * 只列真的会用到的两个：pi-ai 从 base URL 与 provider id 推断协议形态，而 Aperture 的
+ * URL 对它说明不了什么，因此 DeepSeek 方言必须直接声明。
  */
-const GENERIC_EFFORTS = { off: null, high: 'high' } as const;
+export interface ModelCompat {
+  /** 该端点接受 `reasoning_effort`。 */
+  readonly supportsReasoningEffort?: boolean;
+  /** 思考开关的线缆写法。 */
+  readonly thinkingFormat?: 'deepseek';
+}
+
+/** 一条 pi-ai 路由上的一个模型。 */
+export interface ModelProfile {
+  /** 网关接受的模型 id。 */
+  readonly id: string;
+  /** 选择器里显示的名字。 */
+  readonly name: string;
+  /** 上下文容量（token 数）。 */
+  readonly contextWindow?: number;
+  /** 输出上限（token 数）。 */
+  readonly maxTokens?: number;
+  /** 请求模态。 */
+  readonly input: readonly Modality[];
+  /** 推理档位；未声明表示不提供任何档位。 */
+  readonly reasoningEfforts?: Readonly<ReasoningEfforts>;
+  /** 协议兼容开关。 */
+  readonly compat?: ModelCompat;
+}
+
+/** 一条发布出去的路由：pi-ai 侧的 provider 事实。 */
+export interface RouteProfile {
+  /** 选择器里显示的路由名。 */
+  readonly displayName: string;
+  /** 线缆协议。 */
+  readonly api: ApertureProtocol;
+  /** 该协议下所有模型的基点地址。 */
+  readonly baseURL: string;
+  /** 每条请求带上的头；没有时为缺失。 */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** 该路由解析凭据用的引用；没有时以占位凭据发出。 */
+  readonly apiKeyEnv?: string;
+  /** 该路由承载的模型。 */
+  readonly models: readonly ModelProfile[];
+}
 
 /** 一次发布过程所需的全部内容。 */
 export interface ProfileOptions {
@@ -57,13 +104,13 @@ export interface ProfileOptions {
   readonly configured: readonly ConfiguredModel[];
 }
 
-/** 一条可写入 `llm-pi-ai` 配置段的路由。 */
+/** 一条要注册出去的路由。 */
 export interface RoutePlan {
   /** provider 路由键。 */
   readonly provider: string;
-  /** profile 本身，与将被存储的内容完全一致。 */
-  readonly profile: PiAiProviderProfile;
-  /** 该路由发布的模型，用于报告。 */
+  /** pi-ai 侧的 provider 事实。 */
+  readonly profile: RouteProfile;
+  /** 该路由发布的模型，用于报告与模型信息查询。 */
   readonly models: readonly DiscoveredModel[];
 }
 
@@ -73,12 +120,10 @@ export interface ProfilePlan {
   readonly routes: readonly RoutePlan[];
   /** 没有任何路由可以服务的已发现模型。 */
   readonly unserved: readonly DiscoveredModel[];
-  /** 本插件拥有的每个路由键，无论它当前是否有模型。 */
-  readonly ownedRoutes: readonly string[];
 }
 
 /**
- * 把归一化后的注册表变成 provider profile。
+ * 把归一化后的注册表变成 provider 路由。
  *
  * @param models - 所有已发现的模型。
  * @param options - 路由与凭据配置。
@@ -115,7 +160,6 @@ export function buildProfilePlan(models: readonly DiscoveredModel[], options: Pr
   return {
     routes,
     unserved: models.filter((model) => model.protocol === undefined),
-    ownedRoutes: [options.route, options.responsesRoute, options.anthropicRoute],
   };
 }
 
@@ -124,7 +168,7 @@ function buildProfile(
   protocol: ApertureProtocol,
   models: readonly DiscoveredModel[],
   options: ProfileOptions,
-): PiAiProviderProfile {
+): RouteProfile {
   const headers = routeHeaders(protocol, options);
   return {
     displayName: protocol === 'openai-completions'
@@ -134,8 +178,8 @@ function buildProfile(
         : options.anthropicDisplayName,
     api: protocol,
     baseURL: buildRouteBaseUrl(options.instanceRoot, protocol),
-    ...(options.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.apiKeyEnv }),
     ...(headers === undefined ? {} : { headers }),
+    ...(options.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.apiKeyEnv }),
     models: models.map((model) => buildModelEntry(model, protocol, options)),
   };
 }
@@ -179,7 +223,7 @@ function buildModelEntry(
   model: DiscoveredModel,
   protocol: ApertureProtocol,
   options: ProfileOptions,
-): PiAiModelProfile {
+): ModelProfile {
   const configured = options.configured.find((candidate) => candidate.id.trim() === model.id);
   const reasoning = resolveReasoning(model, protocol, configured);
 
@@ -198,10 +242,10 @@ function resolveReasoning(
   model: DiscoveredModel,
   protocol: ApertureProtocol,
   configured: ConfiguredModel | undefined,
-): Pick<PiAiModelProfile, 'reasoningEfforts' | 'compat'> {
-  // 空字典等于什么都没声明。适配器会以「reasoningEfforts 是空的」为由拒绝**整段**写入——
+): Pick<ModelProfile, 'reasoningEfforts' | 'compat'> {
+  // 空字典等于什么都没声明。pi-ai 会以「reasoningEfforts 是空的」为由拒绝整段配置——
   // 于是所有路由一条都发布不出去，而用户写下 `{}` 想说的显然不是「这条模型没有任何推理
-  // 档位」（那该写 `false`）。适配器自己的建议是省略这个字段以沿用已安装清单的能力，
+  // 档位」（那该写 `false`）。pi-ai 自己的建议是省略这个字段以沿用 provider 的能力，
   // 这里照它办。
   const declared = configured?.reasoningEfforts;
   if (declared !== undefined && Object.keys(declared).length > 0) {
@@ -218,31 +262,34 @@ function resolveReasoning(
   }
 
   if (isDeepSeekFamily(model)) {
-    // 对 DeepSeek 方言而言 `off` 必须非 null：只有当该档位映射到某个值时，适配器才会
+    // 对 DeepSeek 方言而言 `off` 必须非 null：只有当该档位映射到某个值时，pi-ai 才会
     // 发送 `thinking: { type: "disabled" }`。
     return { reasoningEfforts: { ...DEEPSEEK_EFFORTS }, ...compatFor(model, protocol) };
   }
   return { reasoningEfforts: { ...GENERIC_EFFORTS }, ...compatFor(model, protocol) };
 }
 
-/**
- * 推理模型所需的 compat 块。
- *
- * pi-ai 从 provider id 与 base URL 推断协议格式兼容性，而 Aperture 的 URL 对它说明不了
- * 什么，因此 DeepSeek 方言必须直接声明。`supportsReasoningEffort` 也要声明：URL 无法被
- * pi-ai 归位的网关目前默认为 true，但真正让 `reasoning_effort` 传输出去的是这个开关。
- *
- * @param model - 被描述的模型。
- * @param protocol - 该路由的协议。
- * @returns compat 块，或空对象。
- */
-function compatFor(model: DiscoveredModel, protocol: ApertureProtocol): { compat?: PiAiCompatProfile } {
+/** 始终声明 `supportsReasoningEffort`：真正让 `reasoning_effort` 传输出去的是这个开关。 */
+function compatFor(model: DiscoveredModel, protocol: ApertureProtocol): { compat?: ModelCompat } {
   if (protocol !== 'openai-completions') {
     return {};
   }
-  const compat: PiAiCompatProfile = { supportsReasoningEffort: true };
-  if (isDeepSeekFamily(model)) {
-    compat.thinkingFormat = 'deepseek';
-  }
-  return { compat };
+  return {
+    compat: isDeepSeekFamily(model)
+      ? { supportsReasoningEffort: true, thinkingFormat: 'deepseek' }
+      : { supportsReasoningEffort: true },
+  };
 }
+
+/** 为 DeepSeek 方言模型提供的推理档位。 */
+const DEEPSEEK_EFFORTS: ReasoningEfforts = { off: 'disabled', high: 'high', max: 'max' };
+
+/**
+ * 为其他所有推理模型提供的推理档位。
+ *
+ * `off` 无值——pi-ai 把它映射为「什么都不发」，对 OpenAI 兼容端点而言这就是把思考交给
+ * 模型自行决定。它之上的那一档是 Aperture 在它所代理的全部模型上都能接受的最宽写法；
+ * `minimal`、`xhigh`、`max` 都至少被某个上游以 400 拒绝过，因此发现的模型绝不提供，
+ * 更了解的部署可以在 `models` 里逐模型声明。
+ */
+const GENERIC_EFFORTS: ReasoningEfforts = { off: null, high: 'high' };

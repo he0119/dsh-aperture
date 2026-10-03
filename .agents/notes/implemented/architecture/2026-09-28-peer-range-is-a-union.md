@@ -17,6 +17,11 @@ Status: implemented
 下界是 0.1.7：更早的宿主在预检处就被挡下，那一版起 `installSection` /
 `SettingsProvider` 这套接缝已经不存在，本插件的界面代码在旧宿主上无法工作。
 
+**每个本插件用到的 `@deepseek-ai/dsh*` 包都写进 peer**，因此在预检处是逐包核对「这句话在
+0.1.7 上也成立」的：`dsh-llm`、`dsh-attachment`、`dsh-credentials`、`dsh-timeout` 四个 LLM 侧
+的接缝都核对过 0.1.7-rc.1 发布的类型，本插件用到的导出一个不少（0.2.0 新增的
+`toolUpdate` / `ToolHistory` / `ACCOUNT_QUOTA_EXCEEDED_CODE` 那几项没有用到）。
+
 ## Alternatives considered
 
 **只留 `^0.2.0-rc.1`。** 还在 `latest` 上的人一升级插件就被挡下，而他们在 0.2.0

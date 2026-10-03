@@ -141,16 +141,16 @@ describe('resolveConfig', () => {
     const derived = resolveConfig(configured({ route: 'my-gateway' }));
     assert.equal(derived.responsesRoute, 'my-gateway-responses');
     assert.equal(derived.anthropicRoute, 'my-gateway-anthropic');
-    assert.equal(derived.displayName, 'My Gateway');
-    assert.equal(derived.responsesDisplayName, 'My Gateway (Responses)');
-    assert.equal(derived.anthropicDisplayName, 'My Gateway (Anthropic)');
+    assert.equal(derived.displayName, 'My Gateway (Chat Completions)');
+    assert.equal(derived.responsesDisplayName, 'My Gateway (OpenAI Responses)');
+    assert.equal(derived.anthropicDisplayName, 'My Gateway (Anthropic Messages)');
 
     const bare = resolveConfig(defaults());
     assert.equal(bare.responsesRoute, 'aperture-responses');
     assert.equal(bare.anthropicRoute, 'aperture-anthropic');
-    assert.equal(bare.displayName, 'Aperture');
-    assert.equal(bare.responsesDisplayName, 'Aperture (Responses)');
-    assert.equal(bare.anthropicDisplayName, 'Aperture (Anthropic)');
+    assert.equal(bare.displayName, 'Aperture (Chat Completions)');
+    assert.equal(bare.responsesDisplayName, 'Aperture (OpenAI Responses)');
+    assert.equal(bare.anthropicDisplayName, 'Aperture (Anthropic Messages)');
   });
 
   it('在 baseUrl 缺失时让插件保持休眠，而不是失败', () => {

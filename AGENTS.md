@@ -72,9 +72,9 @@ pnpm test && pnpm run typecheck && pnpm run build
 
 - 三份测试各证一件不同的事，谁也顶替不了谁（分层见
   [三份测试各证一件不同的事](.agents/notes/implemented/testing/2026-09-24-three-test-layers.md)）：
-  `test/live.test.ts` 是唯一能证明「写进去的配置**合法**而不是看起来合理」的一份；各 `src/*.ts`
-  的单元测试钉端到端测不到的细节（请求头、URL 归一化、`planSync` 的逐条 op、写入被拒的分支）；
-  `test/client.test.ts` 测的是**打包产物** `lib/client.js`。
+  `test/live.test.ts` 是唯一能证明「注册出去的路由真的按三种线缆协议流式说话」的一份；各 `src/*.ts`
+  的单元测试钉端到端测不到的细节（请求头、URL 归一化、事件流的失败路径、历史重放的降级分支、
+  注册撞键的分支）；`test/client.test.ts` 测的是**打包产物** `lib/client.js`。
 - `test/manifest.test.ts` 不属于上面那三层，它核的是**声明**：拿宿主自己的
   `evaluatePluginCompatibility` 走一遍 `package.json` 的 peer 范围与 `engines.dsh`，要求它们接受
   devDependencies 装的那条版本线、又不接受更早的宿主。**升级 devDependencies 而忘了跟 peer 范围**，
@@ -88,9 +88,10 @@ pnpm test && pnpm run typecheck && pnpm run build
 - 界面与样式的改动要**在真实 dev GUI 里量**（`getComputedStyle` 的实测值），不要推算色值；深浅两套
   主题各量一遍再下结论。开发实例怎么起见 [docs/development.md](docs/development.md)——另建一个
   `web-dev` profile，与日常那个实例互不影响。
-- 真实 profile 上的**写操作**先问再做：让插件往某个 profile 的 `llm-pi-ai.providers` 里写、或改那份
-  设置文档，都算。验收优先用只读走查——`DSH_APERTURE_LIVE_URL=… pnpm run inspect`（打印写入后的
-  补丁文档与 LLM 解析结果），或者拿 `scripts/fake-aperture-gateway.mjs` 摆在固定端口上对着它跑。
+- 真实 profile 上的**写操作**先问再做：让插件往某个 profile 的 `aperture` 段里写逐模型覆盖、或改
+  那份设置文档，都算。验收优先用只读走查——`DSH_APERTURE_LIVE_URL=… pnpm run inspect`（打印注册
+  出去的路由与 LLM 服务的解析结果），或者拿 `scripts/fake-aperture-gateway.mjs` 摆在固定端口上对着
+  它跑。本插件自己**不写任何配置**：注册撞上别人占着的路由键时只报告，让用户手动删。
 - 验收需要临时夹具（临时 profile、假网关、假数据）时用完立刻删干净，并在报告里写明造过什么、
   清掉了没有。
 
@@ -107,8 +108,13 @@ pnpm test && pnpm run typecheck && pnpm run build
 - `dsh.client.inject` 那份清单与 `src/client/index.ts` 顶部那几条只为取服务声明的
   `import type {} from '…/client'` 一一对应。宿主只校验它是字符串数组，多写一个模块图里没有的 id
   不报错也不连边，所以它是**声明**——`apply` 真正等的是服务，不是清单。
-- 配置页注册必须走 `ctx.slots.inject('plugins.bundle.config', …)`：这个槽位由**插件页**自己声明，
-  那个声明完全可能晚于本插件的 `apply`，直接 `register` 会撞上「槽位尚未声明」。
+- 界面注册一律走 `ctx.slots.inject(槽位, …)`：设置页挂在插件页的 `plugins.bundle.config` 上
+  （键是包名），模型清单挂在官方「模型」页的两个扩展位上——`settings.models.provider-card`
+  （键是设置命名空间 `aperture`，页主按它把贡献派给本插件注册的每一行路由卡；组件从递进来的
+  目录行认出自己管哪一条路由）与 `settings.models.footer`（列表条目，接卡片接不住的那些）。这三
+  个槽位都由**别的页**声明，那些声明完全可能晚于本插件的 `apply`，直接 `register` 会撞上「槽位
+  尚未声明」。那两个座位与它们的 owner props 由「模型」页声明（它自己叫 Extension slots），本
+  插件只往里注册内容——**那一行自己的编辑器对本插件是只读的**，能编辑的是挂进去的那两块。
 - 颜色只许引用「这一页真的定义过」的 token：Theme 检查面列出的 `--dsw-alias-*`，加上官方原语自己
   引用的那几个（`bg-layer-3` / `border-l4` / `interactive-bg-hover` 等）与圆角 `--dsw-radius-*`。
   名单外的名字要登记进 `test/client.test.ts` 的那份 `allowed` 名单并写明理由。反例是
@@ -131,19 +137,25 @@ pnpm test && pnpm run typecheck && pnpm run build
 
 ## 代码结构
 
-- `src/index.ts` 是唯一的插件外壳；发现、清单、发布、报告与写入分别落在其它模块，逐文件职责见
+- `src/index.ts` 是唯一的插件外壳；发现、清单、注册、报告与适配器分别落在其它模块，逐文件职责见
   [docs/development.md](docs/development.md)，别在这里复述一遍。
-- Host 端源码里唯一的**运行期** DSH 依赖是 `@deepseek-ai/schemastery`（`src/config.ts` 的 `z`）；
-  其余 `@deepseek-ai/*` 都是 `import type`，运行时由宿主提供。`lib/` 是构建产物、不入库。
+- Host 端源码的**运行期**依赖分三类：`@deepseek-ai/schemastery`（`src/config.ts` 的 `z`）、
+  `@deepseek-ai/dsh-llm` / `dsh-attachment` / `dsh-timeout` 里的少量值（适配器基类与错误码、图片
+  尺寸换算、空闲看门狗，它们都由宿主的安装环境解析）、以及 `@earendil-works/pi-ai`；其余
+  `@deepseek-ai/*` 都是 `import type`。`lib/` 是构建产物、不入库。
 - `src/client/**` 不在 Host 端 tsconfig 的 include 里（它要 DOM 与 JSX，走 `tsconfig.client.json`）；
   Host + `test/` + `tsdown.config.ts` 走 `tsconfig.test.json`，`pnpm run typecheck` 会把两份都跑完。
 - 本包自带的 `cordis.patch.yml`（组合层）**故意不写 `config`**：缺省值只有 schema 一处，而补丁层是
   整行替换，写进去会让「已覆盖」的判据凭空为真，并把将来的缺省值钉死。
-- 写入只碰 `llm-pi-ai.providers` 下本插件拥有的三个键（`route` / `route-responses` /
-  `route-anthropic`，默认即 `aperture` / `aperture-responses` / `aperture-anthropic`）：内容相同不写、
-  探测失败不写、路由没模型了就删掉、关掉同步就撤下。**每一轮刷新都必须从 HMR 事务之外起跑**（经
-  `src/relay.ts` 那条模块作用域的通道），别把刷新挪回事件处理器里。
-- 本插件不注册任何 provider 目录（`registerConfigurableProviders`）——`llm-pi-ai` 已经认领了那件事。
+- 本插件**不写任何配置**：发现结果经 `ctx.llm.registerAdapter` 注册成自己的三条路由（`route` /
+  `route-responses` / `route-anthropic`，默认即 `aperture` / `aperture-responses` /
+  `aperture-anthropic`），关掉 `sync` 就撤下它们。路由键已被别人服务时不硬闯：跳过注册、把那个键
+  写进报告的原因里，并在 `llm/adapters-updated` 时重试。**每一轮刷新都必须从 HMR 事务之外起跑**
+  （经 `src/relay.ts` 那条模块作用域的通道），别把刷新挪回事件处理器里。
+- **只有真的有模型的路由**才注册进 provider 目录（`registerConfigurableProviders`），于是官方
+  「模型」页里多出来的行就是实际可选的那几种协议；那一行自己的编辑器对本插件是只读的（设置段
+  是 `aperture`，不是模型页的通用表单），要改就在同一行的扩展位上改（本插件挂的那一块），或者
+  改配置。
 
 ## Git
 
