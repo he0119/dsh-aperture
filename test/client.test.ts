@@ -2074,19 +2074,24 @@ describe('模型行与刷新', () => {
     assert.doesNotMatch(text(dormant.mini.tree()), /还没有发现任何模型/u);
   });
 
-  it('「立刻刷新」按一下就走一次 refresh，并把结果贴出来', async () => {
+  it('「立刻刷新」只长在插件设置页上，模型清单那一块没有它', async () => {
     const { harness, mini, element, t } = driveModels();
     await mountModels(mini, element);
+    assert.equal(findAll(mini.tree(), (node) => node.type === 'button' && text(node).includes('立刻刷新')).length, 0, '模型清单上不该有刷新');
 
-    const refresh = findButton(mini.tree(), '立刻刷新');
+    const panel = driveClient();
+    panel.mini.mount(panel.element);
+    await panel.mini.flush();
+
+    const refresh = findButton(panel.mini.tree(), '立刻刷新');
     assert.equal(refresh.props.title, t('refreshHint'), '按钮的说明是它自己的那一句，不是报告那一句');
     click(refresh);
-    await mini.flush();
+    await panel.mini.flush();
 
-    assert.equal(harness.panelCalls.filter((call) => call === 'refresh').length, 1);
-    assert.ok(harness.panelCalls.filter((call) => call === 'status').length >= 2, '刷新完要重读报告');
-    assert.match(text(bannerOf(mini)), /已重新发现并发布/u);
-    assert.equal(findButton(mini.tree(), '立刻刷新').props.disabled, false, '刷完按钮要还回来');
+    assert.equal(panel.harness.panelCalls.filter((call) => call === 'refresh').length, 1);
+    assert.ok(panel.harness.panelCalls.filter((call) => call === 'status').length >= 2, '刷新完要重读报告');
+    assert.match(text(bannerOf(panel.mini)), /已重新发现并发布/u);
+    assert.equal(findButton(panel.mini.tree(), '立刻刷新').props.disabled, false, '刷完按钮要还回来');
   });
 
   it('端点失败时把原因摆在界面上，不是只写到控制台', async () => {
@@ -2099,8 +2104,9 @@ describe('模型行与刷新', () => {
   });
 
   it('刷新这一轮没成功时，端点的原话摆出来', async () => {
-    const { mini, element } = driveModels({ fails: 'refresh' });
-    await mountModels(mini, element);
+    const { mini, element } = driveClient({ fails: 'refresh' });
+    mini.mount(element);
+    await mini.flush();
 
     click(findButton(mini.tree(), '立刻刷新'));
     await mini.flush();

@@ -59,7 +59,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # should show a "# == dsh-ape
 
 ### 4. Confirm
 
-The models appear in the selector under the route `Aperture`. Settings live in two places: this package's configuration page at **Plugins → dsh-aperture** carries the instance address and the registration toggle, while the model list is on the official **Settings → Models** page, in this plugin's route cards.
+The models appear in the selector under the route `Aperture`. Settings live in two places: this package's configuration page at **Plugins → dsh-aperture** carries the instance address, the registration toggle and a "Refresh now" button, while the model list is on the official **Settings → Models** page, in this plugin's route cards.
 
 ```
 (Plugins → dsh-aperture)
@@ -72,7 +72,7 @@ After each discovery round, register these models as this plugin’s own provide
 
 Saved: rediscovered and published.
 
-The model list and its per-model overrides live on the Settings → Models page, in this plugin’s route cards: open that row and the models are listed below it.
+The model list and its per-model overrides live on the Settings → Models page, in this plugin’s route cards: open that row and the models are listed below it.   ⟳ Refresh now
 ```
 
 ```
@@ -81,7 +81,7 @@ DeepSeek                                            Edit
 Aperture (Chat Completions)  Custom                  Edit
   ────────────────────────────────────────────────────
   Models on this route  18                            ⌄
-  One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery.   ⟳ Refresh now
+  One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery.
 
   ● deepseek-v4-flash
     context 1,048,576 · output 384,000 · modalities text+image · reasoning on · 1 overridden
@@ -117,7 +117,8 @@ The address, the toggle and the per-model parameters stay drafts until you press
 | Plugins page · Instance address | edits `baseUrl` (written through the settings seam; when it says "overridden", the "Reset to default" beside it falls back to the default) |
 | Plugins page · Registration toggle | edits `sync`: off discovers without registering, and that round withdraws the three routes this plugin had registered — routes of the same name registered elsewhere are left alone; carries the same "overridden / Reset to default" pair |
 | Plugins page · Save | below the form: writes the address and toggle drafts into the settings document; it is revision-fenced, so a form that has drifted from the settings document is refused rather than overwriting someone else's edit; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
-| Models page · Models in a route card | one row per model, one card per row: a state dot at its head (green: this round registered it as a route; grey: registration ran this round but did not include it; amber: no route can serve it — hovering it, or a screen reader, hears exactly that), then the name with its "unserved / N overridden / unsaved edits" tags on the first line and labelled facts (capacities, modalities, reasoning, alias; route and protocol are identical across a card and already named by its head, so rows leave them out) on the second, with long names ellipsised and facts wrapping; expanded, it is that row's override editor — display name, alias and protocol as one group of text fields, context window and max output as the "capacity" group, and two modality checkboxes beside a three-way reasoning switch (follow discovery / on / off); a field keeps only one line naming where its value comes from ("Source: Aperture"), while how-to copy ("Leave it empty to use the discovered name") lives behind the "i" next to the label and only takes up room once opened; the "Refresh now" action at its top right discovers and republishes immediately, and the list and every row's status follow that round |
+| Plugins page · Refresh now | the button beside Save: it writes no settings and simply runs one round of discovery and registration; the outcome (success, or the reason it failed) lands on the same page, and the "what went wrong this round" line follows it |
+| Models page · Models in a route card | one row per model, one card per row: a state dot at its head (green: this round registered it as a route; grey: registration ran this round but did not include it; amber: no route can serve it — hovering it, or a screen reader, hears exactly that), then the name with its "unserved / N overridden / unsaved edits" tags on the first line and labelled facts (capacities, modalities, reasoning, alias; route and protocol are identical across a card and already named by its head, so rows leave them out) on the second, with long names ellipsised and facts wrapping; expanded, it is that row's override editor — display name, alias and protocol as one group of text fields, context window and max output as the "capacity" group, and two modality checkboxes beside a three-way reasoning switch (follow discovery / on / off); a field keeps only one line naming where its value comes from ("Source: Aperture"), while how-to copy ("Leave it empty to use the discovered name") lives behind the "i" next to the label and only takes up room once opened |
 | Models page · Save / Clear overrides / Cancel | write that row only, clear only the fields the backend report says really were overridden, or drop that row's draft; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
 | Models page · The footer block | the models no route can serve (and every model when no route got registered at all): the same rows and the same editor, with one extra line above them on how to attach them to a route |
 
@@ -204,7 +205,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
       k3: moonshotai/kimi-k3
 ```
 
-**The interface says `没注册（路由 aperture 已被另一个适配器注册…）`?** One of the route keys it asks for is already served by someone else — most often by an **older version of this plugin**: 0.2 and earlier only discovered, and it wrote the routes it found into `llm-pi-ai.providers`, a configuration that now conflicts with this plugin directly. This plugin will not rewrite someone else's configuration for you, so fix it by hand following the key name that line gives you: delete the matching `providers.<key>` from the `llm-pi-ai` section, or, if that route name belongs to another plugin, change this plugin's `route` (all three route keys move with it). The next change to the adapter set — a reload after that edit, or pressing the "Refresh now" action on the interface — retries registration; no restart is needed. (The host writes that line in Chinese, as do its action summaries.)
+**The interface says `没注册（路由 aperture 已被另一个适配器注册…）`?** One of the route keys it asks for is already served by someone else — most often by an **older version of this plugin**: 0.2 and earlier only discovered, and it wrote the routes it found into `llm-pi-ai.providers`, a configuration that now conflicts with this plugin directly. This plugin will not rewrite someone else's configuration for you, so fix it by hand following the key name that line gives you: delete the matching `providers.<key>` from the `llm-pi-ai` section, or, if that route name belongs to another plugin, change this plugin's `route` (all three route keys move with it). The next change to the adapter set — a reload after that edit, or pressing the "Refresh now" action on the Plugins page — retries registration; no restart is needed. (The host writes that line in Chinese, as do its action summaries.)
 
 **Saved but not in effect?** DSH's patch layers stack: above the profile patch document sit higher-priority layers such as `$DSH_HOME/cordis.patch.yml`. If the `aperture` row is written there too, a save from the configuration page lands in the profile patch document but is shadowed by that layer (the settings service may also refuse the write outright, in which case the page says so). Delete the row from the higher-priority layer, or edit it there instead.
 

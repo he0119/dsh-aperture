@@ -1,5 +1,6 @@
 /**
- * 配置页：插件列表里本插件那个包页上的设置页——实例地址、注册开关，以及这一轮哪里不对。
+ * 配置页：插件列表里本插件那个包页上的设置页——实例地址、注册开关、「立刻刷新」，以及这一轮哪里
+ * 不对。
  *
  * **模型的清单与逐模型覆盖不在这一页**：它们在官方「模型」页的页脚扩展位
  * （`settings.models.footer`）上，见 [ApertureModels.tsx](./ApertureModels.tsx)。模型本来就列在
@@ -20,6 +21,7 @@
 import * as React from 'react';
 import {
   Button,
+  IconRefreshOutlineRegular,
   SettingsForm,
   SettingsValueField,
   Switch,
@@ -65,10 +67,10 @@ export interface AperturePanelProps {
 // ------------------------------------------------------------------ 页面
 
 /**
- * 配置页：实例地址与注册开关。
+ * 配置页：实例地址、注册开关与「立刻刷新」。
  *
- * 报告仍然要读：模型的清单在另一页上，但「这一轮哪里不对」得在这一页上说——地址填完按保存之后，
- * 用户唯一会盯着看的就是这里。
+ * 报告仍然要读：模型的清单在另一页上，但「这一轮哪里不对」与「立刻刷新」都在这一页上——地址填完
+ * 按保存之后，用户唯一会盯着看的就是这里。
  *
  * @param {object} props - 注入面：`useApertureCard`、`panel`（报告端点）、`save` / `edit` /
  *   `resetField` / `discard` / `failed`（设置表单）与 `t`（字典，注册时声明了 `locale`）。
@@ -137,6 +139,19 @@ export function AperturePanel(props: AperturePanelProps) {
     return { ok: round.ok, summary: t('savedResult', { result: round.summary }) };
   });
 
+  /**
+   * 立刻重新发现并注册一次，不写设置。
+   *
+   * 这一颗按钮只在这一页上：重新发现是「去哪儿发现」这件事的一部分，而模型的清单在另一页上看，
+   * 那边按一下只能刷新一块清单，说不清这一轮到底发生了什么。
+   */
+  const refreshNow = () => run('refresh', async () => {
+    const round = await props.panel.refresh();
+    // 这一轮会改路由与模型，报告要重读——「这一轮哪里不对」那句话跟着变新。
+    setRevision((value) => value + 1);
+    return round;
+  });
+
   const controlsDisabled = !state.available || !state.writable;
   const problem = roundProblem(report, t);
 
@@ -197,6 +212,19 @@ export function AperturePanel(props: AperturePanelProps) {
           </div>
         </div>
       </SettingsForm>
+      <div className="dap-actions">
+        <span className="dap-actionsNote">{t('modelsElsewhere')}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<IconRefreshOutlineRegular size={14} />}
+          onClick={refreshNow}
+          disabled={busy !== ''}
+          title={t('refreshHint')}
+        >
+          {busy === 'refresh' ? t('refreshing') : t('refresh')}
+        </Button>
+      </div>
       {banner === null
         ? null
         : (
@@ -210,7 +238,6 @@ export function AperturePanel(props: AperturePanelProps) {
           </p>
         )}
       {problem === null ? null : <p className="dap-warnNote">{problem}</p>}
-      <p className="dap-hint">{t('modelsElsewhere')}</p>
     </div>
   );
 }

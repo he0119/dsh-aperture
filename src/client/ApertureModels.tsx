@@ -35,11 +35,7 @@
  */
 
 import * as React from 'react';
-import {
-  Button,
-  IconChevronRightOutlineRegular,
-  IconRefreshOutlineRegular,
-} from '@deepseek-ai/dsh-client-ui-primitives';
+import { IconChevronRightOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { PanelAction } from '../panel.ts';
 import type { PanelModel, PanelReport } from '../report.ts';
 import {
@@ -98,7 +94,7 @@ type ModelsScope = 'route' | 'unserved' | 'all';
 /**
  * 模型清单与逐模型覆盖：一行一个模型，展开改这一行的覆盖。
  *
- * @param {object} props - 注入面：`panel`（报告、立刻刷新、按行写入）与 `t`（字典，注册时声明了
+ * @param {object} props - 注入面：`panel`（报告与按行写入）与 `t`（字典，注册时声明了
  *   `locale`）。
  * @returns {object} 这一块元素。
  */
@@ -241,8 +237,6 @@ export function ApertureModels(props: ApertureModelsProps) {
     });
   };
 
-  const refreshReport = () => run('refresh', () => props.panel.refresh(), () => setRevision((value) => value + 1));
-
   /**
    * 这一块画哪些模型。
    *
@@ -309,19 +303,7 @@ export function ApertureModels(props: ApertureModelsProps) {
         {open
           ? (
             <div className="dap-modelsBody" id={bodyId}>
-              <div className="dap-modelsHead">
-                <p className="dap-hint">{t('modelsHint')}</p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={<IconRefreshOutlineRegular size={14} />}
-                  onClick={refreshReport}
-                  disabled={busy !== ''}
-                  title={t('refreshHint')}
-                >
-                  {busy === 'refresh' ? t('refreshing') : t('refresh')}
-                </Button>
-              </div>
+              <p className="dap-hint">{t('modelsHint')}</p>
               {scope === 'route' ? null : <p className="dap-hint">{t('modelsOrphanHint')}</p>}
               {report === null
                 ? <p className="dap-hint">{t('loading')}</p>

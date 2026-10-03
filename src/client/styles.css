@@ -63,12 +63,6 @@
   gap: 12px;
   padding-top: 12px;
 }
-[data-dsh-aperture] .dap-modelsHead {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
 /* 数目跟在标题后面，用等宽数字，免得一轮刷新改写时宽度乱跳。 */
 [data-dsh-aperture] .dap-count {
   font-size: 12px;
