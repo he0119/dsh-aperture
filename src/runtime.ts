@@ -16,7 +16,7 @@ import type { SettingsForms } from '@deepseek-ai/dsh-settings';
 import { fetchModelsListing } from './aperture.ts';
 import { ModelCatalog, type CatalogLoad } from './catalog.ts';
 import { DEFAULT_TIMEOUT_MS, type ResolvedConfig } from './config.ts';
-import { buildProfilePlan, type ProfilePlan, type RoutePlan } from './profile.ts';
+import { planRoutes, type PlannedRoute, type RoutePlan } from './plan.ts';
 import { buildRegistry } from './registry.ts';
 import type { PublishOutcome } from './provider.ts';
 import type { DiscoveredModel } from './types.ts';
@@ -46,7 +46,7 @@ export interface RefreshOutcome {
   /** 全部归一化后的模型。 */
   readonly models: readonly DiscoveredModel[];
   /** 该方案发布的路由。 */
-  readonly routes: readonly RoutePlan[];
+  readonly routes: readonly PlannedRoute[];
   /** 没有任何路由能服务的模型。 */
   readonly unserved: readonly DiscoveredModel[];
   /** 清单提供的内容。 */
@@ -80,7 +80,7 @@ export interface ProviderPublisher {
    * @param plan - 本次要服务的路由与本插件拥有的路由键。
    * @returns 已注册的路由与未能注册时的原因。
    */
-  publish(plan: ProfilePlan): Promise<PublishOutcome>;
+  publish(plan: RoutePlan): Promise<PublishOutcome>;
 }
 
 /** 单飞（single-flight）的发现与发布。 */
@@ -223,14 +223,9 @@ export class ApertureRuntime {
       catalog.lookup,
     );
 
-    const plan = buildProfilePlan(registry.models, {
+    const plan = planRoutes(registry.models, {
       instanceRoot: config.instanceRoot,
-      route: config.route,
-      responsesRoute: config.responsesRoute,
-      anthropicRoute: config.anthropicRoute,
-      displayName: config.displayName,
-      responsesDisplayName: config.responsesDisplayName,
-      anthropicDisplayName: config.anthropicDisplayName,
+      routes: config.routes,
       ...(config.apiKeyEnv === undefined ? {} : { apiKeyEnv: config.apiKeyEnv }),
       headers: config.headers,
       configured: config.models,
@@ -268,7 +263,7 @@ export class ApertureRuntime {
    * 关掉 `sync` 是「撤下本插件的路由」而不是「什么都不做」：适配器换成零条路由，于是配置里
    * 这些模型不再可选，界面上也不会留下一份谁也说不清归属的清单。
    */
-  private async publish(config: ResolvedConfig, plan: ProfilePlan): Promise<PublishOutcome> {
+  private async publish(config: ResolvedConfig, plan: RoutePlan): Promise<PublishOutcome> {
     const routes = config.sync ? plan.routes : [];
     try {
       return await this.deps.provider.publish({ ...plan, routes });

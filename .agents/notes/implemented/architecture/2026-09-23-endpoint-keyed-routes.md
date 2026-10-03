@@ -11,8 +11,8 @@ Aperture 是**按端点**网关的：同一个模型不是所有协议都收。�
 | 模型 | `supported_endpoints` | 结果 |
 | --- | --- | --- |
 | 11 个（DeepSeek / MiMo / Grok / Qwen / LongCat …） | `/v1/chat/completions` | 走 `aperture` |
-| Responses 模型 | `/v1/responses` | 走 `aperture-responses` |
-| `MiniMax-M3` | `/v1/messages` | 走 `aperture-anthropic` |
+| Responses 模型 | `/v1/responses` | 走 `aperture-openai-responses` |
+| `MiniMax-M3` | `/v1/messages` | 走 `aperture-anthropic-messages` |
 | 4 个 Gemini | `/v1beta/models/{model}:generateContent` | 不发布 |
 
 ## Decision

@@ -483,10 +483,10 @@ describe('apply 的注册接线', () => {
       apply(record.ctx, liveConfig().ref);
       await settle();
 
-      assert.deepEqual(record.registeredRoutes(), ['aperture'], '有模型的协议才注册，没模型的那两条不上');
+      assert.deepEqual(record.registeredRoutes(), ['aperture-openai-chat-completions'], '有模型的协议才注册，没模型的那两条不上');
       assert.deepEqual(
         record.directoryEntries(),
-        [{ provider: 'aperture', displayName: 'Aperture (Chat Completions)', settingsNs: 'aperture' }],
+        [{ provider: 'aperture-openai-chat-completions', displayName: 'Aperture (OpenAI Chat Completions)', settingsNs: 'aperture' }],
         '官方「模型」页只该多出有模型的那一行，空路由不是一行事实',
       );
       assert.deepEqual(record.logs.filter((entry) => entry.level === 'warn'), [], '这一轮没有任何可抱怨的');
@@ -509,9 +509,9 @@ describe('apply 的注册接线', () => {
       assert.deepEqual(
         record.directoryEntries(),
         [
-          { provider: 'aperture', displayName: 'Aperture (Chat Completions)', settingsNs: 'aperture' },
-          { provider: 'aperture-responses', displayName: 'Aperture (OpenAI Responses)', settingsNs: 'aperture' },
-          { provider: 'aperture-anthropic', displayName: 'Aperture (Anthropic Messages)', settingsNs: 'aperture' },
+          { provider: 'aperture-openai-chat-completions', displayName: 'Aperture (OpenAI Chat Completions)', settingsNs: 'aperture' },
+          { provider: 'aperture-openai-responses', displayName: 'Aperture (OpenAI Responses)', settingsNs: 'aperture' },
+          { provider: 'aperture-anthropic-messages', displayName: 'Aperture (Anthropic Messages)', settingsNs: 'aperture' },
         ],
         '一条协议一行，且行名说得出它承载的是哪种协议',
       );
@@ -525,14 +525,14 @@ describe('apply 的注册接线', () => {
     try {
       const record = harness({ typert: true });
       // 遗留配置（旧版本写下的 llm-pi-ai 路由）或别的插件占着这个键。
-      record.occupy('aperture');
+      record.occupy('aperture-openai-chat-completions');
       apply(record.ctx, liveConfig().ref);
       await settle();
 
       assert.deepEqual(record.registeredRoutes(), [], '被占着就不注册，别把整份注册撞死');
       assert.deepEqual(
         record.ctx.llm.listProviders().map((provider) => provider.id),
-        ['aperture'],
+        ['aperture-openai-chat-completions'],
         '那个键仍然有人在服务（就是挡住本插件的那一方）',
       );
       const warning = record.logs.find((entry) => entry.level === 'warn');
@@ -540,14 +540,14 @@ describe('apply 的注册接线', () => {
 
       // 用户看得见的是报告里这一句：点名被占的键、并说清要手工做什么（README 引的就是它）。
       const reason = (panelOps(record).status() as PanelReport).refresh?.publish?.reason;
-      assert.match(String(reason), /路由 aperture 已被另一个适配器注册/u);
+      assert.match(String(reason), /路由 aperture-openai-chat-completions 已被另一个适配器注册/u);
       assert.match(String(reason), /llm-pi-ai\.providers/u);
-      assert.match(String(reason), /route 改成另一个名字/u);
+      assert.match(String(reason), /routePrefix 改成另一个名字/u);
 
       // 挡住的那一方走开了（用户照报告删掉了遗留配置）：接缝发这个事件，本插件补注册。
-      record.release('aperture');
+      record.release('aperture-openai-chat-completions');
       record.emit('llm/adapters-updated');
-      assert.deepEqual(record.registeredRoutes(), ['aperture']);
+      assert.deepEqual(record.registeredRoutes(), ['aperture-openai-chat-completions']);
     } finally {
       net.restore();
     }
@@ -559,7 +559,7 @@ describe('apply 的注册接线', () => {
       const record = harness();
       apply(record.ctx, liveConfig().ref);
       await settle();
-      assert.deepEqual(record.registeredRoutes(), ['aperture']);
+      assert.deepEqual(record.registeredRoutes(), ['aperture-openai-chat-completions']);
 
       (record.effects[0]?.dispose as () => void)();
       assert.deepEqual(record.registeredRoutes(), [], 'disposer 撤掉的是注册句柄');
@@ -642,7 +642,7 @@ describe('apply 的两种配置边界', () => {
   it('配置自相矛盾时 apply 响亮抛出，而不是带着坏配置继续跑', () => {
     const record = harness();
     assert.throws(
-      () => apply(record.ctx, liveConfig({ route: 'Bad_Route' }).ref),
+      () => apply(record.ctx, liveConfig({ routePrefix: 'Bad_Route' }).ref),
       /必须是小写连字符形式/u,
       '路由键不合文法：这是配置错误，不是可以继续的状态',
     );

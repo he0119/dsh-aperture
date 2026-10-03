@@ -46,7 +46,7 @@ import {
   type ConfigRef,
 } from './config.ts';
 import { createPanelOps } from './panel.ts';
-import { buildProfilePlan } from './profile.ts';
+import { planRoutes } from './plan.ts';
 import { ApertureProvider } from './provider.ts';
 import { outside } from './relay.ts';
 import { buildRegistry, classifyProtocol } from './registry.ts';
@@ -67,8 +67,10 @@ export { createPanelOps } from './panel.ts';
 export type { PanelAction, PanelDeps, PanelModelPatch, PanelOps } from './panel.ts';
 export { buildReport } from './report.ts';
 export type { DeclaredOverrides, PanelModel, PanelRefresh, PanelReport, PanelRoute } from './report.ts';
-export { DEFAULT_PLACEHOLDER_CREDENTIAL, buildProfilePlan } from './profile.ts';
-export type { ModelProfile, ProfilePlan, ProfileOptions, RoutePlan, RouteProfile } from './profile.ts';
+export { DEFAULT_PLACEHOLDER_CREDENTIAL, planRoutes } from './plan.ts';
+export type { PlannedRoute, ProviderModel, ProviderRoute, RoutePlan, RoutePlanOptions } from './plan.ts';
+export { resolveRoutes } from './routes.ts';
+export type { ResolvedRoute } from './routes.ts';
 export { ApertureProvider } from './provider.ts';
 export type { ProviderDeps, PublishOutcome } from './provider.ts';
 export { buildRegistry, classifyProtocol, isDeepSeekFamily } from './registry.ts';

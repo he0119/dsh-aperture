@@ -19,7 +19,7 @@ Status: implemented
 
 三处一起按「没写」处理：
 
-- `registry.ts` 的 `declaredInput` 与 `profile.ts` 的 `declared` 把空数组、空对象
+- `registry.ts` 的 `declaredInput` 与 `plan.ts` 的 `declared` 把空数组、空对象
   当成未声明；
 - 报告只收用户层原样的条目（`buildReport` 的 `declared`）并收成 `overrideKeys`：
   **键在不在用户层里**，与官方同一条判据；

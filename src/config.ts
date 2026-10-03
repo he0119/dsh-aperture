@@ -15,6 +15,7 @@
 
 import type { Dict } from '@deepseek-ai/cosmokit';
 import z from '@deepseek-ai/schemastery';
+import { resolveRoutes, type ResolvedRoute } from './routes.ts';
 import { REASONING_LEVELS } from './types.ts';
 import { normalizeBaseUrl } from './url.ts';
 
@@ -30,8 +31,13 @@ export const DEFAULT_CONTEXT_WINDOW = 128_000;
 /** 访问网关与清单的单次请求超时。没有哪个部署需要为此改一次配置。 */
 export const DEFAULT_TIMEOUT_MS = 20_000;
 
-/** provider 路由键的文法，与 Models 页面自身的规则一致。 */
-const ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+/**
+ * 路由名前缀的文法，与 Models 页面自身的规则一致。
+ *
+ * 前缀还要与协议名拼得起来（`${prefix}-openai-chat-completions` 等），因此它必须先满足路由键本身
+ * 的文法。
+ */
+const ROUTE_PREFIX_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
 /**
  * 推理档位的键，故意声明成 `string` 而不是字面量联合。
@@ -49,7 +55,7 @@ const modelConfig = z.object({
   /** 选择器里显示的名字。 */
   name: z.string(),
   /** 协议覆盖：OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages。 */
-  api: z.string(),
+  protocol: z.string(),
   /** 上下文容量（token 数）。 */
   contextWindow: z.number().step(1).min(1),
   /** 输出能力（token 数）。 */
@@ -74,8 +80,12 @@ const modelConfig = z.object({
 export interface Config {
   /** Aperture 实例根地址，例如 `https://ai.example.ts.net`。留空则关闭发现。 */
   baseUrl?: string;
-  /** 承载 Chat Completions 模型的路由键；Responses、Anthropic 路由及显示名都从它推出来。 */
-  route?: string;
+  /**
+   * 三条路由名的共同前缀：路由键是前缀加协议名的小写连字符写法（`aperture` →
+   * `aperture-openai-chat-completions`），显示名是前缀的标题写法加同一串协议名（`Aperture (OpenAI
+   * Chat Completions)`）。
+   */
+  routePrefix?: string;
   /** 按请求解析的凭据引用；留空则改为发布一个占位请求头。 */
   apiKeyEnv?: string;
   /** 每条路由的请求都会带上的额外请求头；它们优先于占位凭据。 */
@@ -88,7 +98,7 @@ export interface Config {
   models?: Array<{
     id: string;
     name?: string;
-    api?: string;
+    protocol?: string;
     contextWindow?: number;
     maxTokens?: number;
     input?: Array<'text' | 'image'>;
@@ -116,7 +126,7 @@ export interface Config {
  */
 export const Config = z.object({
   baseUrl: z.string().default(''),
-  route: z.string().default('aperture'),
+  routePrefix: z.string().default('aperture'),
   apiKeyEnv: z.string().default(''),
   headers: z.dict(z.string()).default({}),
   enabledModelIds: z.array(z.string()).default([]),
@@ -164,12 +174,10 @@ export interface ResolvedConfig {
   readonly instanceRoot: string | undefined;
   /** 原样保留的配置值，供诊断使用。 */
   readonly rawBaseUrl: string;
-  readonly route: string;
-  readonly responsesRoute: string;
-  readonly anthropicRoute: string;
-  readonly displayName: string;
-  readonly responsesDisplayName: string;
-  readonly anthropicDisplayName: string;
+  /** 三条路由的共同前缀，写错了路由名时报告里指出来的就是它。 */
+  readonly routePrefix: string;
+  /** 这一代的三条路由（短名、协议、注册键、显示名），顺序固定。 */
+  readonly routes: readonly ResolvedRoute[];
   /** 凭据引用；未配置时为 `undefined`。 */
   readonly apiKeyEnv: string | undefined;
   readonly headers: Readonly<Record<string, string>>;
@@ -181,38 +189,6 @@ export interface ResolvedConfig {
   readonly reasoning: 'auto' | 'off';
   readonly sync: boolean;
   readonly refreshIntervalMinutes: number;
-}
-
-/**
- * 从一个路由键推出这一对路由的名字与显示名。
- *
- * 这三条事实曾经是三个可写字段，但一个部署要换的从来只是前缀：Anthropic 那条加
- * `-anthropic` 后缀，显示名是路由键的标题写法（`aperture` → `Aperture`）。让它们互相
- * 矛盾因此变成不可能，而不是要校验出来的错误。
- *
- * @param route - 已经过文法校验的 OpenAI 兼容路由键。
- * @returns 五个推导出来的路由与显示名。
- */
-function derivedNames(route: string): {
-  responsesRoute: string;
-  anthropicRoute: string;
-  displayName: string;
-  responsesDisplayName: string;
-  anthropicDisplayName: string;
-} {
-  const base = route
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-  // 三条路由各承载一种线缆协议，标签里因此都写出协议名：只叫「Aperture」的那一条说不清它收的是
-  // Chat Completions 还是别的东西，而选择器与官方「模型」页上只有这一个词可看。
-  return {
-    responsesRoute: `${route}-responses`,
-    anthropicRoute: `${route}-anthropic`,
-    displayName: `${base} (Chat Completions)`,
-    responsesDisplayName: `${base} (OpenAI Responses)`,
-    anthropicDisplayName: `${base} (Anthropic Messages)`,
-  };
 }
 
 /**
@@ -230,9 +206,11 @@ export function resolveConfig(config: Config): ResolvedConfig {
   const rawBaseUrl = (config.baseUrl ?? '').trim();
   const instanceRoot = normalizeBaseUrl(rawBaseUrl);
 
-  const route = (config.route ?? '').trim();
-  if (!ROUTE_PATTERN.test(route)) {
-    throw new Error(`route "${route}" 必须是小写连字符形式的 provider 路由名（需匹配 ${String(ROUTE_PATTERN)}）`);
+  const routePrefix = (config.routePrefix ?? '').trim();
+  if (!ROUTE_PREFIX_PATTERN.test(routePrefix)) {
+    throw new Error(
+      `routePrefix "${routePrefix}" 必须是小写连字符形式的路由名前缀（需匹配 ${String(ROUTE_PREFIX_PATTERN)}）`,
+    );
   }
 
   const models = config.models ?? [];
@@ -248,13 +226,14 @@ export function resolveConfig(config: Config): ResolvedConfig {
     seen.add(id);
     assertEfforts(id, model.reasoningEfforts);
     if (
-      model.api !== undefined &&
-      model.api !== 'openai-completions' &&
-      model.api !== 'openai-responses' &&
-      model.api !== 'anthropic-messages'
+      model.protocol !== undefined &&
+      model.protocol !== 'openai-completions' &&
+      model.protocol !== 'openai-responses' &&
+      model.protocol !== 'anthropic-messages'
     ) {
       throw new Error(
-        `models["${id}"].api "${model.api}" 无法服务；请使用 openai-completions、openai-responses 或 anthropic-messages`,
+        `models["${id}"].protocol "${model.protocol}" 无法服务；`
+        + '请使用 openai-completions、openai-responses 或 anthropic-messages',
       );
     }
   }
@@ -264,8 +243,8 @@ export function resolveConfig(config: Config): ResolvedConfig {
   return {
     instanceRoot,
     rawBaseUrl,
-    route,
-    ...derivedNames(route),
+    routePrefix,
+    routes: resolveRoutes(routePrefix),
     apiKeyEnv: apiKeyEnv.length === 0 ? undefined : apiKeyEnv,
     headers: config.headers ?? {},
     enabledModelIds: config.enabledModelIds ?? [],

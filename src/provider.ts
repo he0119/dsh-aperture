@@ -25,7 +25,7 @@ import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credent
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment';
 import { ApertureAdapter } from './adapter/index.ts';
 import { APERTURE_NAMESPACE } from './config.ts';
-import type { ProfilePlan, RoutePlan, RouteProfile } from './profile.ts';
+import type { PlannedRoute, ProviderRoute, RoutePlan } from './plan.ts';
 import type { RuntimeLogger } from './runtime.ts';
 
 /** 一次发布的结果。 */
@@ -60,7 +60,7 @@ export class ApertureProvider {
   private registration: AdapterRegistrationHandle | undefined;
   private directory: DirectoryRegistrationHandle | undefined;
   /** 当前这一代适配器服务的路由。 */
-  private routes: readonly RoutePlan[] = [];
+  private routes: readonly PlannedRoute[] = [];
   /** 最近一次想要服务的路由键；冲突重试要用它。 */
   private desired: readonly string[] = [];
   /** 最近一次注册被谁挡住了；没有冲突时为 `undefined`。 */
@@ -82,9 +82,9 @@ export class ApertureProvider {
    * @param plan - 本次要服务的路由与未被服务的模型。
    * @returns 发生了什么。
    */
-  async publish(plan: ProfilePlan): Promise<PublishOutcome> {
+  async publish(plan: RoutePlan): Promise<PublishOutcome> {
     this.routes = plan.routes;
-    this.desired = plan.routes.map((route) => route.provider);
+    this.desired = plan.routes.map((route) => route.route.id);
     this.registerRoutes();
     this.registerDirectory(plan.routes);
 
@@ -165,15 +165,15 @@ export class ApertureProvider {
    * 只声明**真的有模型**的那些路由：一种协议在这个网关上没有模型时，那一行只会是多出来的空行
    * （该协议下没有任何可选的东西），而它在这里也声明不了任何事实——本插件不写配置。
    */
-  private registerDirectory(routes: readonly RoutePlan[]): void {
+  private registerDirectory(routes: readonly PlannedRoute[]): void {
     if (routes.length === 0) {
       // 没有要服务的路由：首次不注册（接缝拒绝空数组），已注册的把目录清空。
       this.directory?.replace([]);
       return;
     }
     const entries: LlmConfigurableProvider[] = routes.map((route) => ({
-      provider: route.provider,
-      displayName: route.profile.displayName,
+      provider: route.route.id,
+      displayName: route.provider.displayName,
       settingsNs: APERTURE_NAMESPACE,
       settingsPath: [],
       declared: true,
@@ -197,7 +197,7 @@ export class ApertureProvider {
     return `路由 ${blocked.join('、')} 已被另一个适配器注册；本插件不写配置，`
       + '请手工处理：旧版本曾把本插件的路由写进 llm-pi-ai.providers，'
       + `删掉那里的 ${blocked.join(' / ')} 键即可；若那个路由名是别的插件在用的，`
-      + '请把本插件配置里的 route 改成另一个名字（三个路由键一起变）。';
+      + '请把本插件配置里的 routePrefix 改成另一个名字（三条路由键一起变）。';
   }
 
   /**
@@ -206,8 +206,8 @@ export class ApertureProvider {
    * 配置了 `apiKeyEnv` 就**必须**解析出可用的值：那是一个明确的声明，悄悄退回占位凭据会让
    * 一次配错了密钥的部署看起来像一次网关拒绝。
    */
-  private async resolveApiKey(provider: string, profile: RouteProfile): Promise<string | undefined> {
-    const ref = profile.apiKeyEnv;
+  private async resolveApiKey(provider: string, route: ProviderRoute): Promise<string | undefined> {
+    const ref = route.apiKeyEnv;
     if (ref === undefined) return undefined;
     const credentials = this.deps.credentials();
     const resolved = credentials === undefined

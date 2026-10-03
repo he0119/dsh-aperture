@@ -21,7 +21,7 @@ import type { LocaleKey, PanelTranslate } from './locales.ts';
  * 列表以外的键（例如 `reasoningEfforts`）一旦出现在用户层里，这一行就只能整条撤：只清认得
  * 的那几项，它在报告里仍然是「已覆盖」，那颗标签会按不下去。
  */
-export const EDITABLE_KEYS = Object.freeze(['name', 'api', 'contextWindow', 'maxTokens', 'input', 'thinking', 'alias']);
+export const EDITABLE_KEYS = Object.freeze(['name', 'protocol', 'contextWindow', 'maxTokens', 'input', 'thinking', 'alias']);
 
 /**
  * 一个模型这一行的草稿：输入框里的文本与开关。
@@ -37,7 +37,7 @@ export interface RowDraft {
   text: boolean;
   image: boolean;
   reasoning: 'auto' | 'on' | 'off';
-  api: string;
+  protocol: string;
 }
 
 /** 文本类覆盖字段能取的那几个键；协议是有限枚举，单独使用下拉框。 */
@@ -82,7 +82,7 @@ export function initialOf(model: PanelModel): RowDraft {
     image: model.input.includes('image'),
     // 「跟随发现」= 用户层里没写过这个键。写过了，生效值就是用户写的那个值。
     reasoning: declaredIn(model, 'thinking') ? (model.reasoning ? 'on' : 'off') : 'auto',
-    api: declaredIn(model, 'api') ? (model.protocol ?? '') : '',
+    protocol: declaredIn(model, 'protocol') ? (model.protocol ?? '') : '',
   };
 }
 
@@ -129,7 +129,9 @@ export function patchOf(draft: RowDraft, initial: RowDraft): RowPatchResult {
     else if (value !== parseCapacity(initial[field])) patch[field] = value;
   }
 
-  if (draft.api !== initial.api) patch.api = draft.api === '' ? null : draft.api;
+  if (draft.protocol !== initial.protocol) {
+    patch.protocol = draft.protocol === '' ? null : draft.protocol;
+  }
   if (draft.reasoning !== initial.reasoning) {
     patch.thinking = draft.reasoning === 'auto' ? null : draft.reasoning === 'on';
   }
@@ -173,7 +175,7 @@ export function pendingChanges(model: PanelModel, draft: RowDraft): number {
 /** 覆盖键在界面上的名字；界面不编辑的键（`reasoningEfforts`）另给一个词条。 */
 const OVERRIDE_NAMES: Readonly<Record<string, LocaleKey>> = {
   name: 'editName',
-  api: 'editApi',
+  protocol: 'editProtocol',
   contextWindow: 'editContextWindow',
   maxTokens: 'editMaxTokens',
   input: 'editInput',

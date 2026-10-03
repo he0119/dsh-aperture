@@ -71,11 +71,11 @@ describe('配置 schema', () => {
       'models',
       'reasoning',
       'refreshIntervalMinutes',
-      'route',
+      'routePrefix',
       'sync',
     ]);
     assert.equal(value.baseUrl, '');
-    assert.equal(value.route, 'aperture');
+    assert.equal(value.routePrefix, 'aperture');
     assert.equal(value.apiKeyEnv, '');
     assert.deepEqual(value.headers, {});
     assert.deepEqual(value.enabledModelIds, []);
@@ -133,24 +133,38 @@ describe('resolveConfig', () => {
     const resolved = resolveConfig(configured({ baseUrl: 'https://ai.example.ts.net/v1/' }));
     assert.equal(resolved.instanceRoot, 'https://ai.example.ts.net');
     assert.equal(resolved.rawBaseUrl, 'https://ai.example.ts.net/v1/');
-    assert.equal(resolved.route, 'aperture');
+    assert.equal(resolved.routePrefix, 'aperture');
+    assert.deepEqual(
+      resolved.routes.map((route) => route.id),
+      ['aperture-openai-chat-completions', 'aperture-openai-responses', 'aperture-anthropic-messages'],
+    );
   });
 
-  it('Responses、Anthropic 路由与三个显示名都从路由键推出来', () => {
-    // 一个部署要换的只是前缀：换成 `my-gateway` 之后所有派生名字必须一起换，而不是各写各的。
-    const derived = resolveConfig(configured({ route: 'my-gateway' }));
-    assert.equal(derived.responsesRoute, 'my-gateway-responses');
-    assert.equal(derived.anthropicRoute, 'my-gateway-anthropic');
-    assert.equal(derived.displayName, 'My Gateway (Chat Completions)');
-    assert.equal(derived.responsesDisplayName, 'My Gateway (OpenAI Responses)');
-    assert.equal(derived.anthropicDisplayName, 'My Gateway (Anthropic Messages)');
+  it('三条路由键与三个显示名都从前缀推出来，且每条都写出自己的协议', () => {
+    // 一个部署要换的只是前缀：换成 `my-gateway` 之后三条路由的名字必须一起换，而不是各写各的。
+    const derived = resolveConfig(configured({ routePrefix: 'my-gateway' }));
+    assert.deepEqual(derived.routes.map((route) => route.id), [
+      'my-gateway-openai-chat-completions',
+      'my-gateway-openai-responses',
+      'my-gateway-anthropic-messages',
+    ]);
+    assert.deepEqual(derived.routes.map((route) => route.displayName), [
+      'My Gateway (OpenAI Chat Completions)',
+      'My Gateway (OpenAI Responses)',
+      'My Gateway (Anthropic Messages)',
+    ]);
 
     const bare = resolveConfig(defaults());
-    assert.equal(bare.responsesRoute, 'aperture-responses');
-    assert.equal(bare.anthropicRoute, 'aperture-anthropic');
-    assert.equal(bare.displayName, 'Aperture (Chat Completions)');
-    assert.equal(bare.responsesDisplayName, 'Aperture (OpenAI Responses)');
-    assert.equal(bare.anthropicDisplayName, 'Aperture (Anthropic Messages)');
+    assert.deepEqual(bare.routes.map((route) => route.id), [
+      'aperture-openai-chat-completions',
+      'aperture-openai-responses',
+      'aperture-anthropic-messages',
+    ]);
+    assert.deepEqual(bare.routes.map((route) => route.displayName), [
+      'Aperture (OpenAI Chat Completions)',
+      'Aperture (OpenAI Responses)',
+      'Aperture (Anthropic Messages)',
+    ]);
   });
 
   it('在 baseUrl 缺失时让插件保持休眠，而不是失败', () => {
@@ -159,9 +173,12 @@ describe('resolveConfig', () => {
     assert.equal(resolveConfig(configured({ baseUrl: 'not a url' })).instanceRoot, undefined);
   });
 
-  it('拒绝永远无法匹配 provider 语法的路由键', () => {
-    assert.throws(() => resolveConfig(configured({ route: 'Aperture Route' })), /必须是小写连字符形式的 provider 路由名/);
-    assert.throws(() => resolveConfig(configured({ route: '-x' })), /必须是小写连字符形式的 provider 路由名/);
+  it('拒绝永远无法匹配 provider 语法的路由名前缀', () => {
+    assert.throws(
+      () => resolveConfig(configured({ routePrefix: 'Aperture Route' })),
+      /必须是小写连字符形式的路由名前缀/,
+    );
+    assert.throws(() => resolveConfig(configured({ routePrefix: '-x' })), /必须是小写连字符形式的路由名前缀/);
   });
 
   it('拒绝重复或为空的模型 id', () => {
@@ -174,7 +191,7 @@ describe('resolveConfig', () => {
 
   it('拒绝被钉到无人可服务协议上的模型', () => {
     assert.throws(
-      () => resolveConfig(configured({ models: [{ id: 'gemini-2.5-pro', api: 'gemini' }] })),
+      () => resolveConfig(configured({ models: [{ id: 'gemini-2.5-pro', protocol: 'gemini' }] })),
       /无法服务/,
     );
   });

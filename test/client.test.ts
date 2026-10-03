@@ -51,7 +51,7 @@ const CONFIG_SLOT = 'plugins.bundle.config';
 /** 模型清单注册的卡片座位（官方「模型」页按 `settingsNs` 派给每一行路由卡）。 */
 const CARD_SLOT = 'settings.models.provider-card';
 /** 卡片座位里那一条路由的 id（夹具里 `deepseek()` 就挂在它上面）。 */
-const CARD_ROUTE = 'aperture';
+const CARD_ROUTE = 'aperture-openai-chat-completions';
 /** 字典命名空间。 */
 const NS = 'settings.aperturePanel';
 /** 设置命名空间。 */
@@ -269,7 +269,7 @@ function deepseek(overrides: Partial<ModelView> = {}): ModelView {
   return {
     id: 'deepseek-flash',
     name: 'DeepSeek Flash',
-    route: 'aperture',
+    route: CARD_ROUTE,
     protocol: 'openai-completions',
     endpoints: ['/v1/chat/completions'],
     contextWindow: 1_048_576,
@@ -310,10 +310,10 @@ function report(overrides: Partial<Report> = {}): Report {
       ok: true,
       catalog: { available: true, entries: 422 },
       endpoint: { url: 'https://ai.example.ts.net/v1/models', listed: 16 },
-      publish: { routes: ['aperture', 'aperture-anthropic'] },
+      publish: { routes: ['aperture-openai-chat-completions', 'aperture-anthropic-messages'] },
     },
     routes: [
-      { provider: 'aperture', api: 'openai-completions', baseURL: 'https://ai.example.ts.net/v1', models: 1 },
+      { id: 'aperture-openai-chat-completions', protocol: 'openai-completions', baseURL: 'https://ai.example.ts.net/v1', models: 1 },
     ],
     models: [deepseek(), gemini()],
     ...overrides,
@@ -1732,7 +1732,7 @@ describe('模型清单座位', () => {
     const card = driveModels();
     await mountModels(card.mini, card.element);
     const cardText = text(card.mini.tree());
-    assert.equal(cardText.includes(card.t('factRoute', { route: 'aperture' })), false, '卡片头已经写着这条路由');
+    assert.equal(cardText.includes(card.t('factRoute', { route: CARD_ROUTE })), false, '卡片头已经写着这条路由');
     assert.equal(
       cardText.includes(card.t('factProtocol', { protocol: 'openai-completions' })),
       false,
@@ -1762,7 +1762,7 @@ describe('模型行与刷新', () => {
     assert.equal(toggleOf(row).props['aria-expanded'], 'false');
     const collapsed = text(row);
     // 路由与协议不在行内：卡片头已经写着这一条路由（另有专门用例钉），行内只留差异事实。
-    assert.equal(collapsed.includes('aperture'), false);
+    assert.equal(collapsed.includes(CARD_ROUTE), false);
     assert.equal(collapsed.includes('openai-completions'), false);
     for (const fragment of [
       t('factContextWindow', { count: count(1_048_576) }),
@@ -1802,7 +1802,7 @@ describe('模型行与刷新', () => {
     // `publish.routes` 里没有它那条路由，而报告里它仍然挂在那条路由上。
     const skipped = driveModels({
       report: report({
-        refresh: { ...report().refresh!, publish: { routes: ['aperture-anthropic'] } },
+        refresh: { ...report().refresh!, publish: { routes: ['aperture-anthropic-messages'] } },
       }),
     });
     await mountModels(skipped.mini, skipped.element);
@@ -1821,19 +1821,24 @@ describe('模型行与刷新', () => {
     assert.equal(findById(tree, 'dap-deepseek-flash-maxTokens').props.value, '384K');
     assert.equal(findById(tree, 'dap-deepseek-flash-alias').props.value, 'deepseek/deepseek-v4-flash');
     // 协议是有限枚举；没写在用户层里时，下拉框停在「跟随发现」。
-    const protocol = findById(tree, 'dap-deepseek-flash-api');
+    const protocol = findById(tree, 'dap-deepseek-flash-protocol');
     assert.equal(protocol.type, 'select');
     assert.equal(protocol.props.value, '');
     assert.deepEqual(
       findAll(protocol, (node) => node.type === 'option').map((node) => node.props.value),
       ['', 'openai-completions', 'openai-responses', 'anthropic-messages'],
     );
+    // 选项文字用官方「模型」页那三个产品名，写进配置的值仍是 schema 标识符。
+    assert.deepEqual(
+      findAll(protocol, (node) => node.type === 'option').slice(1).map((node) => text(node)),
+      ['OpenAI Chat Completions', 'OpenAI Responses', 'Anthropic Messages'],
+    );
     assert.deepEqual(
       findAll(rowOf(mini, 'deepseek-flash'), (node) => node.props.role === 'checkbox').map((node) => node.props['aria-checked']),
       ['true', 'true'],
     );
     assert.equal(activeSegment(rowOf(mini, 'deepseek-flash')), t('reasoningOn'));
-    assert.equal(findById(tree, 'dap-deepseek-flash-api').props.disabled, false);
+    assert.equal(findById(tree, 'dap-deepseek-flash-protocol').props.disabled, false);
     assert.match(text(rowOf(mini, 'deepseek-flash')), /来源：/u, '每一项都要说得出这个值是谁定的');
   });
 

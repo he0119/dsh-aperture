@@ -42,6 +42,18 @@ const SOURCE_KEYS: Readonly<Record<string, LocaleKey>> = {
   default: 'sourceDefault',
 };
 
+/**
+ * 协议下拉的选项：显示官方「模型」页给这三个协议的产品名，存的值仍是 schema 标识符。
+ *
+ * 那一页自己就是这么分工的（`protocolOpenAiCompletions` → `openai-completions`），这里跟它一致：
+ * 界面上用产品名，写进配置的是标识符，于是选择器里的路由名与这个下拉里的名字是同一套词。
+ */
+const PROTOCOLS: ReadonlyArray<{ value: string; label: LocaleKey }> = [
+  { value: 'openai-completions', label: 'protocolOpenAiCompletions' },
+  { value: 'openai-responses', label: 'protocolOpenAiResponses' },
+  { value: 'anthropic-messages', label: 'protocolAnthropicMessages' },
+];
+
 /** 一个文本类覆盖字段的读写词汇与说明。 */
 interface TextFieldCopy {
   /** 字段名的字典键。 */
@@ -140,14 +152,14 @@ export function ModelEditor(props: ModelEditorProps): ReactNode {
     <div className="dap-fieldCell">
       <div className="dap-selectField">
         <div className="dap-selectHead">
-          <label className="dap-selectLabel" htmlFor={`dap-${model.id}-api`}>{t('editApi')}</label>
-          {declaredIn(model, 'api') ? <Tag tone="info">{t('overridden')}</Tag> : null}
-          {declaredIn(model, 'api')
+          <label className="dap-selectLabel" htmlFor={`dap-${model.id}-protocol`}>{t('editProtocol')}</label>
+          {declaredIn(model, 'protocol') ? <Tag tone="info">{t('overridden')}</Tag> : null}
+          {declaredIn(model, 'protocol')
             ? (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => onStage({ api: '' })}
+                onClick={() => onStage({ protocol: '' })}
                 disabled={disabled}
               >
                 {t('resetField')}
@@ -156,21 +168,21 @@ export function ModelEditor(props: ModelEditorProps): ReactNode {
             : null}
         </div>
         <select
-          id={`dap-${model.id}-api`}
+          id={`dap-${model.id}-protocol`}
           className="dap-select"
-          value={draft.api}
+          value={draft.protocol}
           disabled={disabled}
-          aria-describedby={`dap-${model.id}-api-help dap-${model.id}-api-source`}
-          onChange={(event) => onStage({ api: event.target.value })}
+          aria-describedby={`dap-${model.id}-protocol-help dap-${model.id}-protocol-source`}
+          onChange={(event) => onStage({ protocol: event.target.value })}
         >
           <option value="">{t('reasoningFollow')}</option>
-          <option value="openai-completions">openai-completions</option>
-          <option value="openai-responses">openai-responses</option>
-          <option value="anthropic-messages">anthropic-messages</option>
+          {PROTOCOLS.map((option) => (
+            <option key={option.value} value={option.value}>{t(option.label)}</option>
+          ))}
         </select>
-        <span id={`dap-${model.id}-api-help`} className="dap-hint">{t('editApiHint')}</span>
-        <span id={`dap-${model.id}-api-source`} className="dap-hint">
-          {sourceOf(declaredIn(model, 'api') ? 'config' : 'aperture')}
+        <span id={`dap-${model.id}-protocol-help`} className="dap-hint">{t('editProtocolHint')}</span>
+        <span id={`dap-${model.id}-protocol-source`} className="dap-hint">
+          {sourceOf(declaredIn(model, 'protocol') ? 'config' : 'aperture')}
         </span>
       </div>
     </div>

@@ -255,9 +255,9 @@ function factsSource(apertureFact: unknown, catalogFact: unknown): ModelProvenan
   return catalogFact !== undefined ? 'models.dev' : 'default';
 }
 
-/** 把配置里的一种 `api` 写法映射到可服务的协议。 */
+/** 把配置里的一种 `protocol` 写法映射到可服务的协议。 */
 function protocolFromConfigured(configured: ConfiguredModel): ApertureProtocol | undefined {
-  switch (configured.api?.trim()) {
+  switch (configured.protocol?.trim()) {
     case 'openai-completions':
       return 'openai-completions';
     case 'openai-responses':

@@ -63,8 +63,15 @@ const PLUGIN_ENTRY = join(REPO, 'src', 'index.ts');
 /** 本插件自己的设置段，也是它的 entry id。 */
 const APERTURE = 'aperture';
 
+/** 承载 Chat Completions 的那条路由键；三条路由的名字都由前缀加协议名的小写写法拼出来。 */
+const CHAT_ROUTE = `${APERTURE}-openai-chat-completions`;
+
 /** 三条路由的键。 */
-const ROUTES = [APERTURE, `${APERTURE}-responses`, `${APERTURE}-anthropic`] as const;
+const ROUTES = [
+  CHAT_ROUTE,
+  `${APERTURE}-openai-responses`,
+  `${APERTURE}-anthropic-messages`,
+] as const;
 
 /** 真实实例地址；没给就自己起一个假网关（`before` 里决定）。 */
 const INSTANCE = process.env.DSH_APERTURE_LIVE_URL?.trim();
@@ -196,15 +203,15 @@ describe('live Aperture routes', () => {
   it('向 LLM 服务注册三条路由，每条都只承载自己的协议', async () => {
     assert.deepEqual([...routeIds(ctx)].sort(), [...ROUTES].sort());
     assert.deepEqual(
-      (await ctx.llm.listModels(APERTURE)).map((model) => model.id).sort(),
+      (await ctx.llm.listModels(CHAT_ROUTE)).map((model) => model.id).sort(),
       ['deepseek-flash', 'deepseek-v4-pro'],
     );
     assert.deepEqual(
-      (await ctx.llm.listModels(`${APERTURE}-responses`)).map((model) => model.id),
+      (await ctx.llm.listModels(`${APERTURE}-openai-responses`)).map((model) => model.id),
       ['deepseek-v4-codex'],
     );
     assert.deepEqual(
-      (await ctx.llm.listModels(`${APERTURE}-anthropic`)).map((model) => model.id),
+      (await ctx.llm.listModels(`${APERTURE}-anthropic-messages`)).map((model) => model.id),
       ['MiniMax-M3'],
     );
   });
@@ -217,19 +224,19 @@ describe('live Aperture routes', () => {
     );
     assert.deepEqual(
       ROUTES.map((route) => labels.get(route)),
-      ['Aperture (Chat Completions)', 'Aperture (OpenAI Responses)', 'Aperture (Anthropic Messages)'],
+      ['Aperture (OpenAI Chat Completions)', 'Aperture (OpenAI Responses)', 'Aperture (Anthropic Messages)'],
     );
   });
 
   it('依据网关字段推算已发现模型的容量', async () => {
-    const info = await ctx.llm.resolveModelInfo(APERTURE, 'deepseek-flash');
+    const info = await ctx.llm.resolveModelInfo(CHAT_ROUTE, 'deepseek-flash');
     assert.equal(info.context?.contextWindow, 1_048_576);
     assert.equal(info.defaultMaxTokens, 384_000);
     assert.equal(info.name, 'DeepSeek V4.1 Flash');
   });
 
   it('提供适配器真正会接受的推理档位', async () => {
-    const info = await ctx.llm.resolveModelInfo(APERTURE, 'deepseek-v4-pro');
+    const info = await ctx.llm.resolveModelInfo(CHAT_ROUTE, 'deepseek-v4-pro');
     assert.deepEqual(
       info.reasoning?.efforts.map((effort) => String(effort.id)),
       ['off', 'high', 'max'],
@@ -237,7 +244,7 @@ describe('live Aperture routes', () => {
   });
 
   wireIt('OpenAI Chat Completions 路由真的流式说出话来', async () => {
-    const turn = await run(ctx, APERTURE, 'deepseek-flash');
+    const turn = await run(ctx, CHAT_ROUTE, 'deepseek-flash');
     assert.equal(turn.text, 'pong');
     assert.deepEqual(turn.finish, { kind: 'stop' });
     // 用量来自网关最后那个 usage 块，且穿过 pi-ai 的语义（缓存字段为零时不再出现）。
@@ -245,7 +252,7 @@ describe('live Aperture routes', () => {
   });
 
   wireIt('OpenAI Responses 路由真的流式说出话来', async () => {
-    const turn = await run(ctx, `${APERTURE}-responses`, 'deepseek-v4-codex');
+    const turn = await run(ctx, `${APERTURE}-openai-responses`, 'deepseek-v4-codex');
     assert.equal(turn.text, 'pong');
     assert.deepEqual(turn.finish, { kind: 'stop' });
     assert.equal(turn.usage?.inputTokens, 5);
@@ -253,33 +260,33 @@ describe('live Aperture routes', () => {
   });
 
   wireIt('Anthropic 路由真的流式说出话来，思考与文本各成一块', async () => {
-    const turn = await run(ctx, `${APERTURE}-anthropic`, 'MiniMax-M3');
+    const turn = await run(ctx, `${APERTURE}-anthropic-messages`, 'MiniMax-M3');
     assert.equal(turn.text, 'pong');
     assert.equal(turn.reasoning, '想一想');
     assert.deepEqual(turn.finish, { kind: 'stop' });
   });
 
   wireIt('推理档位按 DeepSeek 方言发到线上', async () => {
-    await run(ctx, APERTURE, 'deepseek-v4-pro', { reasoningEffort: 'high' });
+    await run(ctx, CHAT_ROUTE, 'deepseek-v4-pro', { reasoningEffort: 'high' });
     const high = lastCall(gateway, '/v1/chat/completions');
     assert.equal(high.body.reasoning_effort, 'high', `expected reasoning_effort in ${JSON.stringify(high.body)}`);
     // 模型 id 与归因头都在线上：网关看到的是这次的模型，而不是配置里的路由名。
     assert.equal(high.body.model, 'deepseek-v4-pro');
     assert.match(String(high.headers['user-agent']), /deepseek-harness/u);
 
-    await run(ctx, APERTURE, 'deepseek-v4-pro', { reasoningEffort: 'off' });
+    await run(ctx, CHAT_ROUTE, 'deepseek-v4-pro', { reasoningEffort: 'off' });
     const off = lastCall(gateway, '/v1/chat/completions');
     assert.deepEqual(off.body.thinking, { type: 'disabled' }, `expected disabled thinking in ${JSON.stringify(off.body)}`);
     assert.equal(off.body.reasoning_effort, undefined);
   });
 
   wireIt('Anthropic 的思考签名经重放信封回到下一轮', async () => {
-    const first = await run(ctx, `${APERTURE}-anthropic`, 'MiniMax-M3', { assemble: true });
+    const first = await run(ctx, `${APERTURE}-anthropic-messages`, 'MiniMax-M3', { assemble: true });
     assert.ok(first.message !== undefined, 'expected an assembled assistant message');
     assert.equal(first.message.source.replayState !== undefined, true, 'expected replay state on the assembled message');
 
     await drain(ctx.llm.stream({
-      provider: `${APERTURE}-anthropic`,
+      provider: `${APERTURE}-anthropic-messages`,
       model: 'MiniMax-M3',
       messages: [
         { role: 'user', content: [{ type: 'text', text: '第一轮' }] },
@@ -317,11 +324,11 @@ describe('live Aperture routes', () => {
     await ctx.settings.mutate(APERTURE, [{ op: 'set', path: ['enabledModelIds'], value: ['deepseek-flash'] }]);
 
     await waitFor(
-      async () => (await ctx.llm.listModels(APERTURE)).map((model) => model.id).join(',') === 'deepseek-flash',
+      async () => (await ctx.llm.listModels(CHAT_ROUTE)).map((model) => model.id).join(',') === 'deepseek-flash',
       '已注册的模型清单收敛到单个 id',
     );
     assert.deepEqual(
-      (await ctx.llm.listModels(APERTURE)).map((model) => model.id),
+      (await ctx.llm.listModels(CHAT_ROUTE)).map((model) => model.id),
       ['deepseek-flash'],
     );
 
@@ -339,8 +346,8 @@ describe('live Aperture routes', () => {
     // 撤下之后这个键就没人服务了：LLM 服务连模型清单都给不出来（界面上那一行因此显示成
     // 「没有路由可服务」，而不是「这个路由上一个模型都没有」）。
     await assert.rejects(
-      () => ctx.llm.listModels(APERTURE),
-      /no adapter registered for provider "aperture"/u,
+      () => ctx.llm.listModels(CHAT_ROUTE),
+      /no adapter registered for provider "aperture-openai-chat-completions"/u,
     );
   });
 });

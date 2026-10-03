@@ -83,7 +83,7 @@ export interface ConfiguredModel {
   /** 显示名。 */
   readonly name?: string;
   /** 协议覆盖；也是服务 Aperture 只在未服务端点上通告的模型的唯一方式。 */
-  readonly api?: string;
+  readonly protocol?: string;
   /** 上下文容量，以 token 计。 */
   readonly contextWindow?: number;
   /** 输出容量，以 token 计。 */

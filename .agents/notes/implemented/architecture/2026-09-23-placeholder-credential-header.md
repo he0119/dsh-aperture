@@ -13,7 +13,7 @@ pi-ai 在既没有请求级密钥、又没有非空的 `authorization` / `x-api-
 没有配 `apiKeyEnv` 的路由，按协议带一个占位请求头，让适配器愿意发请求：
 
 - `aperture` 路由 → `authorization: Bearer dsh-aperture`
-- `aperture-anthropic` 路由 → `x-api-key: dsh-aperture`
+- `aperture-anthropic-messages` 路由 → `x-api-key: dsh-aperture`
 
 **这不是密钥**，只是一个让适配器闭嘴的字符串；实测 Aperture 对垃圾 Bearer 照常
 返回 200。
