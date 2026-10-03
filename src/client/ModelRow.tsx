@@ -37,6 +37,11 @@ export interface ModelRowProps {
   busy: string;
   /** 最近一轮注册出去的路由名；`undefined` 是「这一轮没走到注册」，不是「没注册成」。 */
   registeredRoutes: readonly string[] | undefined;
+  /**
+   * 这一行的位置已经交代过路由与协议了（卡片座位上同一张卡里每一行都是同一条路由，卡片头就写着
+   * 它），行内不再重复这两项；页脚座位上模型没有卡片头可依，照旧逐行写出来。
+   */
+  hideRouteFacts?: boolean;
   /** 字典。 */
   t: PanelTranslate;
   /** 展开或收起这一行。 */
@@ -79,12 +84,15 @@ function publishState(
  *
  * @param {object} model - 报告里的这一行。
  * @param {Function} t - 字典。
+ * @param {boolean} hideRoute - 跳过路由与协议这两项（同卡每一行都一样时是重复信息）。
  * @returns {string[]} 事实。
  */
-function factItems(model: PanelModel, t: PanelTranslate): string[] {
+function factItems(model: PanelModel, t: PanelTranslate, hideRoute: boolean): string[] {
   const facts: string[] = [];
-  if (model.route !== undefined) facts.push(t('factRoute', { route: model.route }));
-  if (model.protocol !== undefined) facts.push(t('factProtocol', { protocol: model.protocol }));
+  if (!hideRoute && model.route !== undefined) facts.push(t('factRoute', { route: model.route }));
+  if (!hideRoute && model.protocol !== undefined) {
+    facts.push(t('factProtocol', { protocol: model.protocol }));
+  }
   if (model.contextWindow !== undefined) {
     facts.push(t('factContextWindow', { count: formatCount(model.contextWindow) }));
   }
@@ -106,7 +114,7 @@ function factItems(model: PanelModel, t: PanelTranslate): string[] {
  * @returns {object} 这一行的内容（`li` 由列表那一层画）。
  */
 export function ModelRow(props: ModelRowProps): ReactNode {
-  const { model, draft, open, busy, registeredRoutes, t, onToggle, onStage, onCancel, onSave, onClear } = props;
+  const { model, draft, open, busy, registeredRoutes, hideRouteFacts, t, onToggle, onStage, onCancel, onSave, onClear } = props;
   const overrides = model.overrideKeys ?? [];
   const status = publishState(model, registeredRoutes, t);
   return (
@@ -136,7 +144,7 @@ export function ModelRow(props: ModelRowProps): ReactNode {
             {pendingChanges(model, draft) > 0 ? <Tag tone="warning">{t('dirtyTag')}</Tag> : null}
           </span>
           <span className="dap-factRow">
-            {factItems(model, t).map((item, index) => (
+            {factItems(model, t, hideRouteFacts === true).map((item, index) => (
               <span className="dap-factItem" key={`${model.id}-fact-${String(index)}`}>{item}</span>
             ))}
           </span>

@@ -18,10 +18,14 @@
  * [ModelEditor.tsx](./ModelEditor.tsx)）。草稿与补丁的换算——哪一项改过、该发什么出去——在
  * [draft.ts](./draft.ts) 里，行与编辑器问的是同一个答案。
  *
- * **这一块默认收着**（官方 `DisclosureRow`，一行 24px 的折叠头 + 折叠内容）：卡片座位在官方
- * 「模型」页里是**每一行都渲染**的（页主的派发不带「这一行展开了吗」这个事实），摊开一次是十几
- * 行的清单，收着才不喧宾夺主——标题与模型数目在折叠头上仍然一眼能看到。页主自己的编辑器（点
- * 「编辑」才出现的那一块）与这一块互不影响。
+ * **这一块默认收着**：卡片座位在官方「模型」页里是**每一行都渲染**的（页主的派发不带「这一行展开
+ * 了吗」这个事实），摊开一次是十几行的清单，收着才不喧宾夺主——标题与模型数目在折叠头上仍然一眼
+ * 能看到。页主自己的编辑器（点「编辑」才出现的那一块）与这一块互不影响。
+ *
+ * 折叠头自己画，不走官方 `DisclosureRow`：那是聊天里 24px 高、没有内边距也没有背景反馈的紧凑流式
+ * 行，箭头还要 hover 才出现；摆在设置卡里就成了浮在中间的一条细线。这里按官方「模型」页自己那条
+ * 折叠行的语言画（`border-l2` 上一条细线、`label-secondary` 在 hover 时提到 `label-primary`），
+ * 箭头常驻在最右、数目跟在标题后面。
  *
  * **effect 的依赖里刻意不放注入面**：`inject` 面由渲染器每次渲染重新组装，把它的身份放进依赖会
  * 让 effect 每渲染一次就重跑一次。因此报告用一个自增计数器当重读信号（依赖里只有那个数），注入
@@ -33,8 +37,7 @@
 import * as React from 'react';
 import {
   Button,
-  DisclosureRow,
-  IconFlatListOutlineRegular,
+  IconChevronRightOutlineRegular,
   IconRefreshOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { PanelAction } from '../panel.ts';
@@ -270,6 +273,8 @@ export function ApertureModels(props: ApertureModelsProps) {
   const title = scope === 'route'
     ? t('modelsTitleRoute')
     : scope === 'all' ? t('modelsTitle') : t('modelsTitleUnserved');
+  /** 折叠内容的 id：同一页上这一块可能出现多次（每条路由一次，页脚一次），按座位取才唯一。 */
+  const bodyId = `dap-models-body-${cardRoute ?? 'footer'}`;
 
   return (
     <div data-dsh-aperture="">
@@ -285,61 +290,69 @@ export function ApertureModels(props: ApertureModelsProps) {
             {banner.text}
           </p>
         )}
-      <DisclosureRow
-        className="dap-group"
-        icon={<IconFlatListOutlineRegular size={14} />}
-        title={title}
-        open={open}
-        expandable
-        expandOnRowClick
-        keepContentWhenOpen
-        onToggle={() => setOpen((value) => !value)}
-        collapsedContent={report === null
-          ? null
-          : <span className="dap-count">{t('modelsCount', { count: models.length })}</span>}
-      >
-        <div className="dap-modelsBody">
-          <div className="dap-modelsHead">
-            <p className="dap-hint">{t('modelsHint')}</p>
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<IconRefreshOutlineRegular size={14} />}
-              onClick={refreshReport}
-              disabled={busy !== ''}
-              title={t('refreshHint')}
-            >
-              {busy === 'refresh' ? t('refreshing') : t('refresh')}
-            </Button>
-          </div>
-          {scope === 'route' ? null : <p className="dap-hint">{t('modelsOrphanHint')}</p>}
+      <section className="dap-models">
+        <button
+          type="button"
+          className="dap-modelsToggle"
+          aria-expanded={open ? 'true' : 'false'}
+          aria-controls={bodyId}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <span className="dap-modelsTitle">{title}</span>
           {report === null
-            ? <p className="dap-hint">{t('loading')}</p>
-            : models.length === 0
-              ? <p className="dap-empty">{dormant ? t('dormantHint') : t('noModels')}</p>
-              : (
-                <ul className="dap-rows">
-                  {models.map((model) => (
-                    <li className="dap-card" key={model.id}>
-                      <ModelRow
-                        model={model}
-                        draft={draftOf(model)}
-                        open={opened[model.id] === true}
-                        busy={busy}
-                        registeredRoutes={report === null ? undefined : report.refresh?.publish?.routes}
-                        t={t}
-                        onToggle={() => toggleRow(model)}
-                        onStage={(changes) => stage(model, changes)}
-                        onCancel={() => cancelRow(model)}
-                        onSave={() => submitRow(model)}
-                        onClear={() => clearOverrides(model)}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-        </div>
-      </DisclosureRow>
+            ? null
+            : <span className="dap-count">{t('modelsCount', { count: models.length })}</span>}
+          <span className="dap-chevron" data-open={open ? 'true' : 'false'}>
+            <IconChevronRightOutlineRegular size={14} />
+          </span>
+        </button>
+        {open
+          ? (
+            <div className="dap-modelsBody" id={bodyId}>
+              <div className="dap-modelsHead">
+                <p className="dap-hint">{t('modelsHint')}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<IconRefreshOutlineRegular size={14} />}
+                  onClick={refreshReport}
+                  disabled={busy !== ''}
+                  title={t('refreshHint')}
+                >
+                  {busy === 'refresh' ? t('refreshing') : t('refresh')}
+                </Button>
+              </div>
+              {scope === 'route' ? null : <p className="dap-hint">{t('modelsOrphanHint')}</p>}
+              {report === null
+                ? <p className="dap-hint">{t('loading')}</p>
+                : models.length === 0
+                  ? <p className="dap-empty">{dormant ? t('dormantHint') : t('noModels')}</p>
+                  : (
+                    <ul className="dap-rows">
+                      {models.map((model) => (
+                        <li className="dap-card" key={model.id}>
+                          <ModelRow
+                            model={model}
+                            draft={draftOf(model)}
+                            open={opened[model.id] === true}
+                            busy={busy}
+                            registeredRoutes={report === null ? undefined : report.refresh?.publish?.routes}
+                            hideRouteFacts={scope === 'route'}
+                            t={t}
+                            onToggle={() => toggleRow(model)}
+                            onStage={(changes) => stage(model, changes)}
+                            onCancel={() => cancelRow(model)}
+                            onSave={() => submitRow(model)}
+                            onClear={() => clearOverrides(model)}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+            </div>
+          )
+          : null}
+      </section>
       {problem === null ? null : <p className="dap-warnNote">{problem}</p>}
     </div>
   );

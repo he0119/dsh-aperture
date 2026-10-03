@@ -1157,20 +1157,26 @@ function rowButton(mini: MiniReact, id: string, label: string): HostElement {
  * 事实一起读进来——改过东西之后标签里就有「有未保存的改动」，于是「包含保存」的第一个按钮是行首那颗，
  * 一点就把这一行收起来了。这里按整段文本量，跟设置表单那颗保存按钮同一个办法。
  */
-/** 折叠头那颗按钮（官方 `DisclosureRow` 在替身里渲染成 `.sf-disclosure`）。 */
+/** 折叠头那颗按钮（这一块自己画的那一行）。 */
+function modelsToggle(mini: MiniReact): HostElement {
+  const [toggle] = findAll(
+    mini.tree(),
+    (node) => node.type === 'button' && node.props.className === 'dap-modelsToggle',
+  );
+  assert.ok(toggle, '模型清单应当有一行折叠头');
+  return toggle;
+}
+
+/** 点开折叠头。 */
 function expandModels(mini: MiniReact): void {
-  const [row] = findAll(mini.tree(), (node) => node.props.className === 'sf-disclosure');
-  assert.ok(row, '模型清单应当有一行折叠头');
-  const [toggle] = findAll(row, (node) => node.type === 'button');
-  assert.ok(toggle, '折叠头应当有一颗可点的按钮');
-  click(toggle);
+  click(modelsToggle(mini));
 }
 
 /**
  * 挂上模型清单那一块，并点开折叠头。
  *
- * 这一块默认收着（官方 `DisclosureRow`），模型行的用例都要求它摊开——那一下点击是这一块自己的
- * 交互，默认收着这件事另有专门用例钉。
+ * 这一块默认收着，模型行的用例都要求它摊开——那一下点击是这一块自己的交互，默认收着这件事另有
+ * 专门用例钉。
  */
 async function mountModels(mini: MiniReact, element: unknown): Promise<void> {
   mini.mount(element);
@@ -1680,9 +1686,22 @@ describe('两个座位', () => {
     assert.deepEqual(rowIds(mini.tree()), [], '收着的时候一行都不画');
     assert.equal(findAll(mini.tree(), (node) => node.type === 'button').length, 1, '收着时只有折叠头那颗按钮');
 
+    // 折叠头自己画：收着也要给箭头（官方那条紧凑流式行要 hover 才把图标换成箭头），并且
+    // `aria-expanded` / `aria-controls` 要指对。
+    const toggle = modelsToggle(mini);
+    assert.equal(toggle.props['aria-expanded'], 'false');
+    const bodyId = toggle.props['aria-controls'] as string;
+    const [chevron] = findAll(toggle, (node) => node.props.className === 'dap-chevron');
+    assert.ok(chevron, '折叠头上要常驻一枚箭头');
+    assert.equal(chevron.props['data-open'], 'false', '收着时箭头不转');
+    assert.equal(findAll(mini.tree(), (node) => node.props.id === bodyId).length, 0, '收着时没有折叠内容');
+
     expandModels(mini);
     await mini.flush();
     assert.deepEqual(rowIds(mini.tree()), ['deepseek-flash']);
+    assert.equal(modelsToggle(mini).props['aria-expanded'], 'true');
+    const [body] = findAll(mini.tree(), (node) => node.props.id === bodyId);
+    assert.ok(body, '展开后那头箭头指向的折叠内容要真的在');
   });
 
   it('卡片座位只画那一条路由的模型，页脚座位接没有路由的那些', async () => {
@@ -1705,6 +1724,28 @@ describe('两个座位', () => {
 
     assert.match(text(mini.tree()), new RegExp(t('modelsTitle'), 'u'));
     assert.deepEqual(rowIds(mini.tree()), ['deepseek-flash', 'gemini-2.5-flash']);
+  });
+
+  it('卡片座位不逐行重复「路由 / 协议」：同一张卡里每一行都是那一条路由', async () => {
+    const card = driveModels();
+    await mountModels(card.mini, card.element);
+    const cardText = text(card.mini.tree());
+    assert.equal(cardText.includes(card.t('factRoute', { route: 'aperture' })), false, '卡片头已经写着这条路由');
+    assert.equal(
+      cardText.includes(card.t('factProtocol', { protocol: 'openai-completions' })),
+      false,
+      '协议也由卡片头交代',
+    );
+    // 其余事实照旧逐行写出来（数目本身是 `toLocaleString`，跟组件同一处取）。
+    const contextFact = card.t('factContextWindow', { count: count(1_048_576) });
+    assert.match(cardText, new RegExp(contextFact, 'u'));
+
+    // 页脚座位没有卡片头可依，路由与协议必须自己说。
+    const orphans = driveOrphans({ report: report({ routes: [] }) });
+    await mountModels(orphans.mini, orphans.element);
+    const orphanText = text(orphans.mini.tree());
+    assert.match(orphanText, new RegExp(orphans.t('factRoute', { route: 'aperture' }), 'u'));
+    assert.match(orphanText, new RegExp(orphans.t('factProtocol', { protocol: 'openai-completions' }), 'u'));
   });
 
   it('页脚座位没东西可说时整块不画，也不在别人的页上留一块空地', async () => {
@@ -1732,9 +1773,10 @@ describe('模型行与刷新', () => {
     const row = rowOf(mini, 'deepseek-flash');
     assert.equal(toggleOf(row).props['aria-expanded'], 'false');
     const collapsed = text(row);
+    // 路由与协议不在行内：卡片头已经写着这一条路由（另有专门用例钉），行内只留差异事实。
+    assert.equal(collapsed.includes('aperture'), false);
+    assert.equal(collapsed.includes('openai-completions'), false);
     for (const fragment of [
-      'aperture',
-      'openai-completions',
       t('factContextWindow', { count: count(1_048_576) }),
       t('factMaxTokens', { count: count(384_000) }),
       t('modalityText') + '+' + t('modalityImage'),

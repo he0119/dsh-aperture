@@ -5,12 +5,58 @@
   font-size: 13px;
   color: var(--dsw-alias-label-primary, #e6e6e6);
 }
-[data-dsh-aperture] .dap-group {
+/* 折叠头按官方「模型」页自己那条折叠行的语言画：`border-l2` 上一条细线，`label-secondary` 的
+   `500` 小字，hover 时提到 `label-primary`。官方 `DisclosureRow` 是聊天里 24px 高、没有内边距也
+   没有反馈的紧凑流式行，箭头还要 hover 才出现，摆在设置卡里就是浮在中间的一条细线。
+   左右各外扩 6px：背景与聚焦框能铺满一行，文字仍与卡片头对齐（页主那条折叠行也是这么让位的）。 */
+[data-dsh-aperture] .dap-models {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.28));
+  padding-top: 10px;
 }
-/* 折叠头（标题、图标、chevron）由官方 `DisclosureRow` 画，这里只管折叠开之后那一块。 */
+[data-dsh-aperture] .dap-modelsToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  min-height: 32px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm, 6px);
+  background: none;
+  color: var(--dsw-alias-label-secondary, #c9c9c9);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+[data-dsh-aperture] .dap-modelsToggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.06));
+  color: var(--dsw-alias-label-primary, #e6e6e6);
+}
+[data-dsh-aperture] .dap-modelsToggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary, #7aaaff);
+  outline-offset: 1px;
+}
+/* 标题过长时省略；数目与箭头都不许被挤走。 */
+[data-dsh-aperture] .dap-modelsTitle {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-dsh-aperture] .dap-modelsToggle .dap-count {
+  flex: none;
+  margin-left: 2px;
+}
+[data-dsh-aperture] .dap-modelsToggle .dap-chevron {
+  margin-left: auto;
+}
+/* 折叠内容留在折叠头下面。 */
 [data-dsh-aperture] .dap-modelsBody {
   display: flex;
   flex-direction: column;

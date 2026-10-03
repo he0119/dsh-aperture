@@ -79,29 +79,29 @@ The model list and its per-model overrides live on the Settings → Models page,
 (Settings → Models)
 DeepSeek                                            Edit
 Aperture (Chat Completions)  Custom                  Edit
-  Models on this route 18                       ⟳ Refresh now
-  One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery.
+  ────────────────────────────────────────────────────
+  Models on this route  18                            ⌄
+  One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery.   ⟳ Refresh now
 
   ● deepseek-v4-flash
-    route aperture · protocol openai-completions · context 1,048,576 · output 384,000 · modalities text+image · reasoning on · 1 overridden
-  ● gemini-2.5-flash
-    route aperture · protocol openai-completions · context 128,000 · modalities text · reasoning off
+    context 1,048,576 · output 384,000 · modalities text+image · reasoning on · 1 overridden
 
     (expand a row and you get that row's override editor: name and protocol in one group, capacity in another,
-     modalities beside reasoning, and Save / Clear overrides / Cancel underneath)
+     modalities beside reasoning, and Save / Clear overrides / Cancel underneath. Every row in one card serves
+     the same route, which the card head already names, so the rows leave "route / protocol" out)
 
 + Add model provider
-Models no route can serve 1                     ⟳ Refresh now
-No route serves these models yet: fill in the protocol and the next round registers them.
-● qwen3-vl-32b  unserved
-  context 262,144 · modalities text+image · reasoning on
+  ────────────────────────────────────────────────────
+  Models no route can serve  1                        ⌄
+  (collapsed by default; unfold it for those models and the same editor — they have no card head to lean on,
+   so their rows still spell out "route / protocol")
 ```
 
 **The instance address and the registration toggle** are two fields of one official settings form: where a field says "overridden", a "Reset to default" right beside it drops that key from your settings file (the same two words in the same position as the official plugin-config page), and Save writes only the fields you actually changed. Headings and spacing separate the groups, while a model row is a card (a hairline outline with a large radius, coloured only with theme tokens this page really defines), and the only thing you can expand is a model row.
 
 (English labels are shown above; both pages are bilingual.)
 
-**The model list hangs off two extension seats of the official Models page** (the page owner's own name for them is Extension slots): every route this plugin registers is one row on that page, and each of those rows gets a block of its own drawing **that one route's** models; the models no route can serve (the ones written by hand in the configuration, the ones the catalog never listed), together with every model when no route got registered at all (`sync` off, or this round registered nothing), sit in the block after "Add model provider" at the end of the list — no card can hold them, so without that footer block they would have no way in at all. When there is nothing to say, the footer block is not drawn at all. Both blocks **start collapsed** (the official `DisclosureRow`): the header carries the title and the model count, and one click unfolds the list — every row on that page has this block, and unfolded it is a dozen lines, so collapsed is what keeps it from taking over.
+**The model list hangs off two extension seats of the official Models page** (the page owner's own name for them is Extension slots): every route this plugin registers is one row on that page, and each of those rows gets a block of its own drawing **that one route's** models; the models no route can serve (the ones written by hand in the configuration, the ones the catalog never listed), together with every model when no route got registered at all (`sync` off, or this round registered nothing), sit in the block after "Add model provider" at the end of the list — no card can hold them, so without that footer block they would have no way in at all. When there is nothing to say, the footer block is not drawn at all. Both blocks **start collapsed**: the header (a row of this plugin's own drawing, under a hairline) carries the title and the model count on the left and a permanent chevron on the right, and one click unfolds the list — every row on that page has this block, and unfolded it is a dozen lines, so collapsed is what keeps it from taking over. Inside a route card every row serves the same route, which the card head already names, so those rows leave "route / protocol" out; the footer block has no card head to lean on and still spells them out.
 
 ## Usage
 
@@ -117,7 +117,7 @@ The address, the toggle and the per-model parameters stay drafts until you press
 | Plugins page · Instance address | edits `baseUrl` (written through the settings seam; when it says "overridden", the "Reset to default" beside it falls back to the default) |
 | Plugins page · Registration toggle | edits `sync`: off discovers without registering, and that round withdraws the three routes this plugin had registered — routes of the same name registered elsewhere are left alone; carries the same "overridden / Reset to default" pair |
 | Plugins page · Save | below the form: writes the address and toggle drafts into the settings document; it is revision-fenced, so a form that has drifted from the settings document is refused rather than overwriting someone else's edit; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
-| Models page · Models in a route card | one row per model, one card per row: a state dot at its head (green: this round registered it as a route; grey: registration ran this round but did not include it; amber: no route can serve it — hovering it, or a screen reader, hears exactly that), then the name with its "unserved / N overridden / unsaved edits" tags on the first line and labelled facts (route, protocol, capacities, modalities, reasoning, alias) on the second, with long names ellipsised and facts wrapping; expanded, it is that row's override editor — display name, alias and protocol as one group of text fields, context window and max output as the "capacity" group, and two modality checkboxes beside a three-way reasoning switch (follow discovery / on / off); a field keeps only one line naming where its value comes from ("Source: Aperture"), while how-to copy ("Leave it empty to use the discovered name") lives behind the "i" next to the label and only takes up room once opened; the "Refresh now" action at its top right discovers and republishes immediately, and the list and every row's status follow that round |
+| Models page · Models in a route card | one row per model, one card per row: a state dot at its head (green: this round registered it as a route; grey: registration ran this round but did not include it; amber: no route can serve it — hovering it, or a screen reader, hears exactly that), then the name with its "unserved / N overridden / unsaved edits" tags on the first line and labelled facts (capacities, modalities, reasoning, alias; route and protocol are identical across a card and already named by its head, so rows leave them out) on the second, with long names ellipsised and facts wrapping; expanded, it is that row's override editor — display name, alias and protocol as one group of text fields, context window and max output as the "capacity" group, and two modality checkboxes beside a three-way reasoning switch (follow discovery / on / off); a field keeps only one line naming where its value comes from ("Source: Aperture"), while how-to copy ("Leave it empty to use the discovered name") lives behind the "i" next to the label and only takes up room once opened; the "Refresh now" action at its top right discovers and republishes immediately, and the list and every row's status follow that round |
 | Models page · Save / Clear overrides / Cancel | write that row only, clear only the fields the backend report says really were overridden, or drop that row's draft; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
 | Models page · The footer block | the models no route can serve (and every model when no route got registered at all): the same rows and the same editor, with one extra line above them on how to attach them to a route |
 
