@@ -18,6 +18,11 @@
  * [ModelEditor.tsx](./ModelEditor.tsx)）。草稿与补丁的换算——哪一项改过、该发什么出去——在
  * [draft.ts](./draft.ts) 里，行与编辑器问的是同一个答案。
  *
+ * **这一块默认收着**（官方 `DisclosureRow`，一行 24px 的折叠头 + 折叠内容）：卡片座位在官方
+ * 「模型」页里是**每一行都渲染**的（页主的派发不带「这一行展开了吗」这个事实），摊开一次是十几
+ * 行的清单，收着才不喧宾夺主——标题与模型数目在折叠头上仍然一眼能看到。页主自己的编辑器（点
+ * 「编辑」才出现的那一块）与这一块互不影响。
+ *
  * **effect 的依赖里刻意不放注入面**：`inject` 面由渲染器每次渲染重新组装，把它的身份放进依赖会
  * 让 effect 每渲染一次就重跑一次。因此报告用一个自增计数器当重读信号（依赖里只有那个数），注入
  * 面里的函数只在事件处理里调用，拿到的永远是当轮的那份。
@@ -26,7 +31,12 @@
  */
 
 import * as React from 'react';
-import { Button, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives';
+import {
+  Button,
+  DisclosureRow,
+  IconFlatListOutlineRegular,
+  IconRefreshOutlineRegular,
+} from '@deepseek-ai/dsh-client-ui-primitives';
 import type { PanelAction } from '../panel.ts';
 import type { PanelModel, PanelReport } from '../report.ts';
 import {
@@ -94,6 +104,7 @@ export function ApertureModels(props: ApertureModelsProps) {
     ? props.t
     : (key, params) => interpolate(zhDict[key] ?? key, params);
 
+  const [open, setOpen] = React.useState(false);
   const [report, setReport] = React.useState<PanelReport | null>(null);
   const [banner, setBanner] = React.useState<Notice | null>(null);
   const [busy, setBusy] = React.useState('');
@@ -274,54 +285,62 @@ export function ApertureModels(props: ApertureModelsProps) {
             {banner.text}
           </p>
         )}
-      <section className="dap-group">
-        <div className="dap-groupHead">
-          <span className="dap-titleWrap">
-            <h3 className="dap-groupTitle">{title}</h3>
-            {report === null
-              ? null
-              : <span className="dap-count">{t('modelsCount', { count: models.length })}</span>}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<IconRefreshOutlineRegular size={14} />}
-            onClick={refreshReport}
-            disabled={busy !== ''}
-            title={t('refreshHint')}
-          >
-            {busy === 'refresh' ? t('refreshing') : t('refresh')}
-          </Button>
+      <DisclosureRow
+        className="dap-group"
+        icon={<IconFlatListOutlineRegular size={14} />}
+        title={title}
+        open={open}
+        expandable
+        expandOnRowClick
+        keepContentWhenOpen
+        onToggle={() => setOpen((value) => !value)}
+        collapsedContent={report === null
+          ? null
+          : <span className="dap-count">{t('modelsCount', { count: models.length })}</span>}
+      >
+        <div className="dap-modelsBody">
+          <div className="dap-modelsHead">
+            <p className="dap-hint">{t('modelsHint')}</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<IconRefreshOutlineRegular size={14} />}
+              onClick={refreshReport}
+              disabled={busy !== ''}
+              title={t('refreshHint')}
+            >
+              {busy === 'refresh' ? t('refreshing') : t('refresh')}
+            </Button>
+          </div>
+          {scope === 'route' ? null : <p className="dap-hint">{t('modelsOrphanHint')}</p>}
+          {report === null
+            ? <p className="dap-hint">{t('loading')}</p>
+            : models.length === 0
+              ? <p className="dap-empty">{dormant ? t('dormantHint') : t('noModels')}</p>
+              : (
+                <ul className="dap-rows">
+                  {models.map((model) => (
+                    <li className="dap-card" key={model.id}>
+                      <ModelRow
+                        model={model}
+                        draft={draftOf(model)}
+                        open={opened[model.id] === true}
+                        busy={busy}
+                        registeredRoutes={report === null ? undefined : report.refresh?.publish?.routes}
+                        t={t}
+                        onToggle={() => toggleRow(model)}
+                        onStage={(changes) => stage(model, changes)}
+                        onCancel={() => cancelRow(model)}
+                        onSave={() => submitRow(model)}
+                        onClear={() => clearOverrides(model)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
         </div>
-        <p className="dap-hint">{t('modelsHint')}</p>
-        {scope === 'route' ? null : <p className="dap-hint">{t('modelsOrphanHint')}</p>}
-        {problem === null ? null : <p className="dap-warnNote">{problem}</p>}
-        {report === null
-          ? <p className="dap-hint">{t('loading')}</p>
-          : models.length === 0
-            ? <p className="dap-empty">{dormant ? t('dormantHint') : t('noModels')}</p>
-            : (
-              <ul className="dap-rows">
-                {models.map((model) => (
-                  <li className="dap-card" key={model.id}>
-                    <ModelRow
-                      model={model}
-                      draft={draftOf(model)}
-                      open={opened[model.id] === true}
-                      busy={busy}
-                      registeredRoutes={report === null ? undefined : report.refresh?.publish?.routes}
-                      t={t}
-                      onToggle={() => toggleRow(model)}
-                      onStage={(changes) => stage(model, changes)}
-                      onCancel={() => cancelRow(model)}
-                      onSave={() => submitRow(model)}
-                      onClear={() => clearOverrides(model)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
-      </section>
+      </DisclosureRow>
+      {problem === null ? null : <p className="dap-warnNote">{problem}</p>}
     </div>
   );
 }

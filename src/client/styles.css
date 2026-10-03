@@ -10,23 +10,18 @@
   flex-direction: column;
   gap: 12px;
 }
-[data-dsh-aperture] .dap-groupHead {
+/* 折叠头（标题、图标、chevron）由官方 `DisclosureRow` 画，这里只管折叠开之后那一块。 */
+[data-dsh-aperture] .dap-modelsBody {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}
+[data-dsh-aperture] .dap-modelsHead {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-}
-[data-dsh-aperture] .dap-titleWrap {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-[data-dsh-aperture] .dap-groupTitle {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
 }
 /* 数目跟在标题后面，用等宽数字，免得一轮刷新改写时宽度乱跳。 */
 [data-dsh-aperture] .dap-count {

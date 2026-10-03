@@ -775,6 +775,7 @@ function createPrimitives(renderer: MiniReact): Record<string, unknown> {
     SettingsFormModel: FakeSettingsFormModel,
     settingsTextField,
     IconChevronRightOutlineRegular: Icon,
+    IconFlatListOutlineRegular: Icon,
     IconRefreshOutlineRegular: Icon,
   };
 }
@@ -1156,6 +1157,28 @@ function rowButton(mini: MiniReact, id: string, label: string): HostElement {
  * 事实一起读进来——改过东西之后标签里就有「有未保存的改动」，于是「包含保存」的第一个按钮是行首那颗，
  * 一点就把这一行收起来了。这里按整段文本量，跟设置表单那颗保存按钮同一个办法。
  */
+/** 折叠头那颗按钮（官方 `DisclosureRow` 在替身里渲染成 `.sf-disclosure`）。 */
+function expandModels(mini: MiniReact): void {
+  const [row] = findAll(mini.tree(), (node) => node.props.className === 'sf-disclosure');
+  assert.ok(row, '模型清单应当有一行折叠头');
+  const [toggle] = findAll(row, (node) => node.type === 'button');
+  assert.ok(toggle, '折叠头应当有一颗可点的按钮');
+  click(toggle);
+}
+
+/**
+ * 挂上模型清单那一块，并点开折叠头。
+ *
+ * 这一块默认收着（官方 `DisclosureRow`），模型行的用例都要求它摊开——那一下点击是这一块自己的
+ * 交互，默认收着这件事另有专门用例钉。
+ */
+async function mountModels(mini: MiniReact, element: unknown): Promise<void> {
+  mini.mount(element);
+  await mini.flush();
+  expandModels(mini);
+  await mini.flush();
+}
+
 /** 这一块画出来的行 id（按渲染顺序）。 */
 function rowIds(node: unknown): string[] {
   return findAll(node, (element) => element.type === 'li' && element.props.className === 'dap-card')
@@ -1450,8 +1473,7 @@ describe('Web Client 端', () => {
   it('模型清单读得到报告，也读得到设置：地址空着与「一个都没有」是两句话', async () => {
     const options = { report: report({ models: [] }), section: { value: { baseUrl: '', sync: true } } };
     const { mini, modelsElement, t } = driveModels(options);
-    mini.mount(modelsElement);
-    await mini.flush();
+    await mountModels(mini, modelsElement);
 
     assert.match(text(mini.tree()), new RegExp(t('dormantHint'), 'u'));
   });
@@ -1646,19 +1668,32 @@ describe('Web Client 端', () => {
     assert.equal(findAll(mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-card').length, 0);
   });
 });
-
 describe('两个座位', () => {
-  it('卡片座位只画那一条路由的模型，页脚座位接没有路由的那些', async () => {
+  it('两块默认都收着：折叠头上有标题与模型数目，摊开才是清单', async () => {
     const { mini, element, t } = driveModels();
     mini.mount(element);
     await mini.flush();
+
+    const collapsed = text(mini.tree());
+    assert.match(collapsed, new RegExp(t('modelsTitleRoute'), 'u'));
+    assert.match(collapsed, new RegExp(t('modelsCount', { count: 1 }), 'u'));
+    assert.deepEqual(rowIds(mini.tree()), [], '收着的时候一行都不画');
+    assert.equal(findAll(mini.tree(), (node) => node.type === 'button').length, 1, '收着时只有折叠头那颗按钮');
+
+    expandModels(mini);
+    await mini.flush();
+    assert.deepEqual(rowIds(mini.tree()), ['deepseek-flash']);
+  });
+
+  it('卡片座位只画那一条路由的模型，页脚座位接没有路由的那些', async () => {
+    const { mini, element, t } = driveModels();
+    await mountModels(mini, element);
     assert.match(text(mini.tree()), new RegExp(t('modelsTitleRoute'), 'u'));
     assert.deepEqual(rowIds(mini.tree()), ['deepseek-flash']);
     assert.equal(text(mini.tree()).includes(t('modelsOrphanHint')), false, '卡片上那几行都有路由');
 
     const orphan = driveOrphans();
-    orphan.mini.mount(orphan.element);
-    await orphan.mini.flush();
+    await mountModels(orphan.mini, orphan.element);
     assert.match(text(orphan.mini.tree()), new RegExp(orphan.t('modelsTitleUnserved'), 'u'));
     assert.match(text(orphan.mini.tree()), new RegExp(orphan.t('modelsOrphanHint'), 'u'));
     assert.deepEqual(rowIds(orphan.mini.tree()), ['gemini-2.5-flash']);
@@ -1666,8 +1701,7 @@ describe('两个座位', () => {
 
   it('一条路由都没注册时页脚座位管全部：那些模型不能没有入口', async () => {
     const { mini, element, t } = driveOrphans({ report: report({ routes: [] }) });
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
 
     assert.match(text(mini.tree()), new RegExp(t('modelsTitle'), 'u'));
     assert.deepEqual(rowIds(mini.tree()), ['deepseek-flash', 'gemini-2.5-flash']);
@@ -1684,8 +1718,7 @@ describe('两个座位', () => {
   it('清单读不到时页脚座位仍然要说一句：那句话不该只长在卡片上', async () => {
     const broken = report({ models: [deepseek()], refresh: { ...report().refresh!, catalog: { available: false, entries: 0, reason: '网关 502' } } });
     const { mini, element } = driveOrphans({ report: broken });
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
 
     assert.match(text(mini.tree()), /网关 502/u);
   });
@@ -1694,8 +1727,7 @@ describe('两个座位', () => {
 describe('模型行与刷新', () => {
   it('模型行收起时只剩一行事实，展开才给编辑器', async () => {
     const { mini, element, t } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
 
     const row = rowOf(mini, 'deepseek-flash');
     assert.equal(toggleOf(row).props['aria-expanded'], 'false');
@@ -1720,8 +1752,7 @@ describe('模型行与刷新', () => {
 
   it('状态点说清这一行写没写进路由，点旁边那句话是它的说法', async () => {
     const { mini, element, t } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
 
     // 点自己不说话（官方 `StateDot` 是 aria-hidden 的），说给谁听得看外面那层的 aria-label。
     const dots = (instance: MiniReact): Array<[string, string]> => findAll(
@@ -1734,8 +1765,7 @@ describe('模型行与刷新', () => {
 
     // 这一轮没走到注册时不能说成「没注册上去」：报告里根本没有这一项。
     const unknown = driveModels({ report: report({ refresh: { ...report().refresh!, publish: undefined } }) });
-    unknown.mini.mount(unknown.element);
-    await unknown.mini.flush();
+    await mountModels(unknown.mini, unknown.element);
     assert.deepEqual(dots(unknown.mini).map(([label]) => label), [unknown.t('statusUnknown')]);
 
     // 跑过同步但这一行没写进去（比如路由本轮没被写）时，才说「还没写进路由」：这一轮的
@@ -1745,21 +1775,18 @@ describe('模型行与刷新', () => {
         refresh: { ...report().refresh!, publish: { routes: ['aperture-anthropic'] } },
       }),
     });
-    skipped.mini.mount(skipped.element);
-    await skipped.mini.flush();
+    await mountModels(skipped.mini, skipped.element);
     assert.deepEqual(dots(skipped.mini), [[skipped.t('statusNotPublished'), 'idle']]);
 
     // 没有路由可服务的那一行不长在卡片上：卡片按路由分块，它落在页脚那一块里。
     const orphan = driveOrphans();
-    orphan.mini.mount(orphan.element);
-    await orphan.mini.flush();
+    await mountModels(orphan.mini, orphan.element);
     assert.deepEqual(dots(orphan.mini), [[orphan.t('statusUnserved'), 'warning']]);
   });
 
   it('展开一行：输入框预填的是此刻的生效值', async () => {
     const { mini, element, t } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
     const tree = mini.tree();
@@ -1786,8 +1813,7 @@ describe('模型行与刷新', () => {
 
   it('改一个字段保存：补丁里只有那一个字段', async () => {
     const { harness, mini, element } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
     change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '32768');
@@ -1805,8 +1831,7 @@ describe('模型行与刷新', () => {
   it('两行各开各的：保存一行不牵连那一行', async () => {
     const served = report({ models: [deepseek(), gemini({ route: CARD_ROUTE })] });
     const { harness, mini, element } = driveModels({ report: served });
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
     await openRow(mini, 'gemini-2.5-flash');
 
@@ -1829,8 +1854,7 @@ describe('模型行与刷新', () => {
 
   it('留空表示这一项不覆盖：文本给 null、别名给空串', async () => {
     const { harness, mini, element } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
     change(findById(mini.tree(), 'dap-deepseek-flash-name'), '');
@@ -1844,8 +1868,7 @@ describe('模型行与刷新', () => {
 
   it('取消：丢掉草稿、收起面板、什么都不写', async () => {
     const { harness, mini, element } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
     change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '1');
@@ -1861,8 +1884,7 @@ describe('模型行与刷新', () => {
 
   it('收起不动草稿，用标签说还有没保存的改动', async () => {
     const { harness, mini, element, t } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
     change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '1');
@@ -1879,8 +1901,7 @@ describe('模型行与刷新', () => {
   it('清空覆盖：只碰报告里确实覆盖过的键，逐项置空', async () => {
     const custom = report({ models: [deepseek({ overrideKeys: ['thinking', 'alias'] }), gemini()] });
     const { harness, mini, element } = driveModels({ report: custom });
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
     click(rowButton(mini, 'deepseek-flash', '清空覆盖'));
@@ -1891,8 +1912,7 @@ describe('模型行与刷新', () => {
   it('清空覆盖遇到界面不认识的键：整行撤回才是唯一能回到发现值的做法', async () => {
     const custom = report({ models: [deepseek({ overrideKeys: ['contextWindow', 'reasoningEfforts'] }), gemini()] });
     const { harness, mini, element } = driveModels({ report: custom });
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
 
     await openRow(mini, 'deepseek-flash');
     assert.ok(text(rowOf(mini, 'deepseek-flash')).includes('推理档位'), '不认识的键也要报出来');
@@ -1903,8 +1923,7 @@ describe('模型行与刷新', () => {
 
   it('没有覆盖过的一行不给「清空覆盖」', async () => {
     const { mini, element } = driveOrphans();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'gemini-2.5-flash');
 
     assert.equal(findAll(rowOf(mini, 'gemini-2.5-flash'), (node) => node.type === 'button' && text(node) === '清空覆盖').length, 0);
@@ -1912,8 +1931,7 @@ describe('模型行与刷新', () => {
 
   it('容量认 1M / 100K 的写法，非法值在本地挡下来、不打端点', async () => {
     const { harness, mini, element, t } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
     for (const [illegal, field] of [['1G', '上下文容量'], ['1.5', '上下文容量'], ['0', '上下文容量']] as const) {
@@ -1936,8 +1954,7 @@ describe('模型行与刷新', () => {
 
   it('换一种写法写同一个数不算改动', async () => {
     const { harness, mini, element } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
     change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), '1M');
@@ -1951,8 +1968,7 @@ describe('模型行与刷新', () => {
 
   it('未服务的模型可以就地填上协议', async () => {
     const { harness, mini, element } = driveOrphans();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'gemini-2.5-flash');
 
     assert.equal(findById(mini.tree(), 'dap-gemini-2.5-flash-api').props.value, '');
@@ -2003,8 +2019,7 @@ describe('模型行与刷新', () => {
 
   it('没有模型时说清楚是「还没发现」还是「还没填地址」', async () => {
     const empty = driveModels({ report: report({ refresh: undefined, routes: [], models: [] }) });
-    empty.mini.mount(empty.element);
-    await empty.mini.flush();
+    await mountModels(empty.mini, empty.element);
     assert.match(text(empty.mini.tree()), /还没有发现任何模型/u);
 
     // 地址空着的时候发现根本不会跑，空状态要说这句，不然「还没发现到模型」等于没说。
@@ -2012,16 +2027,14 @@ describe('模型行与刷新', () => {
       report: report({ refresh: undefined, routes: [], models: [] }),
       section: { value: { baseUrl: '', sync: true } },
     });
-    dormant.mini.mount(dormant.element);
-    await dormant.mini.flush();
+    await mountModels(dormant.mini, dormant.element);
     assert.match(text(dormant.mini.tree()), /还没有实例地址/u);
     assert.doesNotMatch(text(dormant.mini.tree()), /还没有发现任何模型/u);
   });
 
   it('「立刻刷新」按一下就走一次 refresh，并把结果贴出来', async () => {
     const { harness, mini, element, t } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
 
     const refresh = findButton(mini.tree(), '立刻刷新');
     assert.equal(refresh.props.title, t('refreshHint'), '按钮的说明是它自己的那一句，不是报告那一句');
@@ -2036,8 +2049,7 @@ describe('模型行与刷新', () => {
 
   it('端点失败时把原因摆在界面上，不是只写到控制台', async () => {
     const { harness, mini, element } = driveModels({ fails: 'status' });
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
 
     assert.match(text(mini.tree()), /面板暂时连不上后台/u);
     assert.match(text(mini.tree()), /后台还没起来/u);
@@ -2046,8 +2058,7 @@ describe('模型行与刷新', () => {
 
   it('刷新这一轮没成功时，端点的原话摆出来', async () => {
     const { mini, element } = driveModels({ fails: 'refresh' });
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
 
     click(findButton(mini.tree(), '立刻刷新'));
     await mini.flush();
@@ -2058,8 +2069,7 @@ describe('模型行与刷新', () => {
 
   it('写这一行失败：端点的原因贴在界面上', async () => {
     const { harness, mini, element } = driveModels({ fails: 'edit' });
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
     change(findById(mini.tree(), 'dap-deepseek-flash-maxTokens'), '8192');
@@ -2082,8 +2092,7 @@ describe('模型行与刷新', () => {
 
   it('清空覆盖失败：编辑器与尚未保存的草稿也原样保留', async () => {
     const { mini, element } = driveModels({ fails: 'edit' });
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
     change(findById(mini.tree(), 'dap-deepseek-flash-maxTokens'), '8192');
@@ -2098,8 +2107,7 @@ describe('模型行与刷新', () => {
 
   it('effect 的依赖里只有原始值，一轮交互只渲染少数几次', async () => {
     const { mini, element } = driveModels();
-    mini.mount(element);
-    await mini.flush();
+    await mountModels(mini, element);
 
     const primitive = (value: unknown): boolean => value === null || (typeof value !== 'object' && typeof value !== 'function');
     const withDeps = mini.hookDeps().filter((deps): deps is unknown[] => deps !== undefined);
