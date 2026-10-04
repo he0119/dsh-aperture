@@ -18,7 +18,8 @@ import type { SettingsForms, SettingsPathOp } from '@deepseek-ai/dsh-settings';
 import type { ModelCatalog } from '../src/catalog.ts';
 import { memoizedConfig, resolveConfig, type Config } from '../src/config.ts';
 import { createPanelOps, type PanelDeps, type PanelModelPatch } from '../src/panel.ts';
-import type { RoutePlan } from '../src/profile.ts';
+import type { PlannedRoute } from '../src/plan.ts';
+import { resolveRoutes } from '../src/routes.ts';
 import { ApertureRuntime, type RefreshOutcome, type RuntimeLogger } from '../src/runtime.ts';
 import type { DiscoveredModel } from '../src/types.ts';
 import { fakeProvider } from './helpers.ts';
@@ -41,13 +42,14 @@ function model(id: string): DiscoveredModel {
   };
 }
 
-/** 一条已发布的路由。 */
-function routePlan(provider: string): RoutePlan {
+/** 一条已发布的路由：命名走真实那一套，只有模型清单由调用方决定。 */
+function routePlan(protocol: 'openai-completions' | 'openai-responses' | 'anthropic-messages' = 'openai-completions'): PlannedRoute {
+  const route = resolveRoutes('aperture').find((candidate) => candidate.protocol === protocol)!;
   return {
-    provider,
-    profile: {
-      displayName: provider,
-      api: 'openai-completions',
+    route,
+    provider: {
+      displayName: route.displayName,
+      protocol: route.protocol,
       baseURL: 'https://ai.example.ts.net/v1',
       models: [{ id: 'm', name: 'm', input: ['text'] }],
     },
@@ -66,7 +68,7 @@ function outcome(overrides: Partial<RefreshOutcome> = {}): RefreshOutcome {
     endpoint: 'https://ai.example.ts.net/v1/models',
     listed: 1,
     models: discovered,
-    routes: [{ ...routePlan('aperture'), models: discovered }],
+    routes: [{ ...routePlan(), models: discovered }],
     unserved: [],
     catalog: { entries: 422, lookup: () => undefined },
     ...overrides,
@@ -147,8 +149,7 @@ function fakeRuntime(first?: RefreshOutcome, next?: RefreshOutcome) {
 function liveSettings(options: { baseUrl?: string; models?: unknown[] } = {}) {
   let section: Record<string, unknown> = {
     baseUrl: options.baseUrl ?? 'https://ai.example.ts.net',
-    route: 'aperture',
-    anthropicRoute: 'aperture-anthropic',
+    routePrefix: 'aperture',
     models: options.models ?? [],
   };
   let user: Record<string, unknown> = { models: section.models };
@@ -208,7 +209,7 @@ function panel(overrides: Partial<PanelDeps> & {
   });
   const ops = createPanelOps({
     runtime: overrides.runtime ?? runtime,
-    config: overrides.config ?? (() => resolveConfig({ baseUrl: 'https://ai.example.ts.net', route: 'aperture' })),
+    config: overrides.config ?? (() => resolveConfig({ baseUrl: 'https://ai.example.ts.net', routePrefix: 'aperture' })),
     settings: overrides.settings ?? service,
   });
   return { ops, triggers, writes };
@@ -228,8 +229,8 @@ describe('panel.status', () => {
     const report = ops.status();
     assert.equal(report.place, 'https://ai.example.ts.net');
     assert.deepEqual(report.routes, [{
-      provider: 'aperture',
-      api: 'openai-completions',
+      id: 'aperture-openai-chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'https://ai.example.ts.net/v1',
       models: 1,
     }]);
@@ -244,7 +245,7 @@ describe('panel.status', () => {
 
     const [first] = report.models;
     assert.equal(first?.id, 'deepseek-flash');
-    assert.equal(first?.route, 'aperture');
+    assert.equal(first?.route, 'aperture-openai-chat-completions');
     assert.equal(first?.protocol, 'openai-completions');
     assert.equal(first?.contextWindow, 1_048_576);
     assert.equal(first?.maxTokens, 384_000);
@@ -268,7 +269,7 @@ describe('panel.status', () => {
       first: outcome(),
       config: () => resolveConfig({
         baseUrl: 'https://ai.example.ts.net',
-        route: 'aperture',
+        routePrefix: 'aperture',
         models: [materialized],
         modelAliases: { 'deepseek-flash': 'deepseek/deepseek-v4-flash' },
       }),
@@ -315,7 +316,7 @@ describe('panel.status', () => {
     const { ops } = panel({
       first: outcome({
         models: [routed, unserved],
-        routes: [{ ...routePlan('aperture'), models: [routed] }],
+        routes: [{ ...routePlan(), models: [routed] }],
         unserved: [unserved],
       }),
     });
@@ -332,7 +333,7 @@ describe('panel.edit', () => {
   const section = {
     value: {
       models: [
-        { id: 'other', api: 'anthropic-messages' },
+        { id: 'other', protocol: 'anthropic-messages' },
         { id: 'deepseek-flash', reasoningEfforts: { low: 'low' } },
       ],
     },
@@ -351,7 +352,7 @@ describe('panel.edit', () => {
       op: 'set',
       path: ['models'],
       value: [
-        { id: 'other', api: 'anthropic-messages' },
+        { id: 'other', protocol: 'anthropic-messages' },
         // `reasoningEfforts` 界面根本不编辑，因此它必须原样活着。
         { id: 'deepseek-flash', reasoningEfforts: { low: 'low' }, contextWindow: 8192, thinking: false },
       ],
@@ -393,7 +394,7 @@ describe('panel.edit', () => {
       op: 'set',
       path: ['models'],
       value: [
-        { id: 'other', api: 'anthropic-messages', maxTokens: 4096 },
+        { id: 'other', protocol: 'anthropic-messages', maxTokens: 4096 },
         { id: 'deepseek-flash', reasoningEfforts: { low: 'low' } },
       ],
     }]);
@@ -518,7 +519,7 @@ describe('panel.edit', () => {
   it('非法值在写入前就被挡下来：坏配置会让下一轮刷新直接抛异常', async () => {
     // 类型系统挡不住界面发来的坏值，运行时校验才是权威的，因此这里故意喂进去。
     const invalid: unknown[] = [
-      { api: 'gemini-native' },
+      { protocol: 'gemini-native' },
       { contextWindow: 0 },
       { contextWindow: 1.5 },
       { maxTokens: -1 },

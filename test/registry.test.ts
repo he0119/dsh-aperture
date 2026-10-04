@@ -118,7 +118,7 @@ describe('buildRegistry 的配置行为', () => {
   it('仍然加入网关没有公布的配置模型', () => {
     const { models } = registry({
       enabledModelIds: ['deepseek-flash'],
-      models: [{ id: 'hand-listed', api: 'openai-completions', contextWindow: 32_000, thinking: true }],
+      models: [{ id: 'hand-listed', protocol: 'openai-completions', contextWindow: 32_000, thinking: true }],
     });
     assert.deepEqual(
       models.map((model) => model.id),
@@ -159,7 +159,7 @@ describe('buildRegistry 的配置行为', () => {
   });
 
   it('让配置为一个只在不可服务传输上提供的模型兜底', () => {
-    const { unserved } = registry({ models: [{ id: 'gemini-2.5-pro', api: 'openai-completions' }] });
+    const { unserved } = registry({ models: [{ id: 'gemini-2.5-pro', protocol: 'openai-completions' }] });
     assert.equal(
       unserved.some((model) => model.id === 'gemini-2.5-pro'),
       false,

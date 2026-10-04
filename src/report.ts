@@ -54,10 +54,10 @@ export interface PanelModel {
 
 /** 报告里的一条已注册路由。 */
 export interface PanelRoute {
-  /** provider 路由键。 */
-  readonly provider: string;
+  /** provider 路由键，例如 `aperture-openai-chat-completions`。 */
+  readonly id: string;
   /** 服务它的线缆协议。 */
-  readonly api?: string;
+  readonly protocol?: string;
   /** 该协议下所有模型的基点地址。 */
   readonly baseURL?: string;
   /** 该路由承载的模型数。 */
@@ -143,9 +143,9 @@ export function buildReport(
     keys.set(id, [...(keys.get(id) ?? []), 'alias']);
   }
   const routes: PanelRoute[] = (outcome?.routes ?? []).map((route) => ({
-    provider: route.provider,
-    api: route.profile.api,
-    baseURL: route.profile.baseURL,
+    id: route.route.id,
+    protocol: route.provider.protocol,
+    baseURL: route.provider.baseURL,
     models: route.models.length,
   }));
 
@@ -172,7 +172,7 @@ export function buildReport(
   };
 
   for (const route of outcome?.routes ?? []) {
-    for (const model of route.models) models.push(describe(model, route.provider));
+    for (const model of route.models) models.push(describe(model, route.route.id));
   }
   // 没有任何路由能服务的模型跟在后面：它们没有协议可用，或者被配置挡掉了。
   for (const model of outcome?.models ?? []) {

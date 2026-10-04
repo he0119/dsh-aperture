@@ -148,11 +148,12 @@ pnpm test && pnpm run typecheck && pnpm run build
   Host + `test/` + `tsdown.config.ts` 走 `tsconfig.test.json`，`pnpm run typecheck` 会把两份都跑完。
 - 本包自带的 `cordis.patch.yml`（组合层）**故意不写 `config`**：缺省值只有 schema 一处，而补丁层是
   整行替换，写进去会让「已覆盖」的判据凭空为真，并把将来的缺省值钉死。
-- 本插件**不写任何配置**：发现结果经 `ctx.llm.registerAdapter` 注册成自己的三条路由（`route` /
-  `route-responses` / `route-anthropic`，默认即 `aperture` / `aperture-responses` /
-  `aperture-anthropic`），关掉 `sync` 就撤下它们。路由键已被别人服务时不硬闯：跳过注册、把那个键
-  写进报告的原因里，并在 `llm/adapters-updated` 时重试。**每一轮刷新都必须从 HMR 事务之外起跑**
-  （经 `src/relay.ts` 那条模块作用域的通道），别把刷新挪回事件处理器里。
+- 本插件**不写任何配置**：发现结果经 `ctx.llm.registerAdapter` 注册成自己的三条路由，键是
+  `<routePrefix>` 加上协议名的小写连字符写法（默认 `aperture-openai-chat-completions` /
+  `aperture-openai-responses` / `aperture-anthropic-messages`），关掉 `sync` 就撤下它们。命名只在
+  `src/routes.ts` 里推一次，别在别处拼路由名。路由键已被别人服务时不硬闯：跳过注册、把那个键写进
+  报告的原因里，并在 `llm/adapters-updated` 时重试。**每一轮刷新都必须从 HMR 事务之外起跑**（经
+  `src/relay.ts` 那条模块作用域的通道），别把刷新挪回事件处理器里。
 - **只有真的有模型的路由**才注册进 provider 目录（`registerConfigurableProviders`），于是官方
   「模型」页里多出来的行就是实际可选的那几种协议；那一行自己的编辑器对本插件是只读的（设置段
   是 `aperture`，不是模型页的通用表单），要改就在同一行的扩展位上改（本插件挂的那一块），或者

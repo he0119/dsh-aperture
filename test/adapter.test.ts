@@ -18,27 +18,32 @@ import { ApertureAdapter } from '../src/adapter/index.ts';
 import { buildModel, supportedEfforts } from '../src/adapter/route.ts';
 import { toStreamChunks } from '../src/adapter/stream.ts';
 import { DEFAULT_CONTEXT_WINDOW } from '../src/config.ts';
-import type { ModelProfile, RoutePlan, RouteProfile } from '../src/profile.ts';
+import type { PlannedRoute, ProviderModel, ProviderRoute } from '../src/plan.ts';
+import { resolveRoutes } from '../src/routes.ts';
 import type { RuntimeLogger } from '../src/runtime.ts';
 import type { DiscoveredModel } from '../src/types.ts';
 
 /** 什么都不输出的 logger。 */
 const quiet: RuntimeLogger = { error() {}, info() {}, warn() {}, debug() {} };
 
-/** 一条路由。 */
-function route(overrides: Partial<RouteProfile> = {}, provider = 'aperture'): RoutePlan {
-  const profile: RouteProfile = {
-    displayName: 'Aperture',
-    api: 'openai-completions',
+/** 一条已注册的路由：命名用真实的那一套，只有事实可以被覆盖。 */
+function route(
+  overrides: Partial<ProviderRoute> = {},
+  protocol: 'openai-completions' | 'openai-responses' | 'anthropic-messages' = 'openai-completions',
+): PlannedRoute {
+  const named = resolveRoutes('aperture').find((candidate) => candidate.protocol === protocol)!;
+  const provider: ProviderRoute = {
+    displayName: named.displayName,
+    protocol: named.protocol,
     baseURL: 'https://ai.example.ts.net/v1',
     models: [],
     ...overrides,
   };
-  return { provider, profile, models: profile.models.map(discovered) };
+  return { route: named, provider, models: provider.models.map(discovered) };
 }
 
-/** 报告侧的那个模型，与 profile 里的条目同 id。 */
-function discovered(model: ModelProfile): DiscoveredModel {
+/** 报告侧的那个模型，与 provider 里的条目同 id。 */
+function discovered(model: ProviderModel): DiscoveredModel {
   return {
     id: model.id,
     name: model.name,
@@ -51,12 +56,12 @@ function discovered(model: ModelProfile): DiscoveredModel {
 }
 
 /** 一个模型条目。 */
-function model(overrides: Partial<ModelProfile> = {}): ModelProfile {
+function model(overrides: Partial<ProviderModel> = {}): ProviderModel {
   return { id: 'm', name: 'M', input: ['text'], ...overrides };
 }
 
 /** 一个服务一份固定路由集合的适配器。 */
-function adapter(plans: readonly RoutePlan[]): ApertureAdapter {
+function adapter(plans: readonly PlannedRoute[]): ApertureAdapter {
   return new ApertureAdapter({
     routes: () => plans,
     resolveApiKey: () => Promise.resolve(undefined),
@@ -71,7 +76,7 @@ function assistant(content: AssistantMessage['content'], stopReason: AssistantMe
     role: 'assistant',
     content,
     api: 'openai-completions',
-    provider: 'aperture',
+    provider: 'aperture-openai-chat-completions',
     model: 'm',
     usage: {
       input: 11,
@@ -98,7 +103,7 @@ async function chunks(
 ): Promise<Array<Record<string, unknown>>> {
   const collected: Array<Record<string, unknown>> = [];
   for await (const chunk of toStreamChunks(stream, {
-    provider: 'aperture',
+    provider: 'aperture-openai-chat-completions',
     model: 'm',
     ...(contextWindow === undefined ? {} : { contextWindow }),
   })) {
@@ -109,17 +114,17 @@ async function chunks(
 
 describe('buildModel', () => {
   it('把缺省容量补成 pi-ai 坚持要的字段，同时不改变「没声明过」这件事', () => {
-    const built = buildModel('aperture', route().profile, model());
+    const built = buildModel('aperture-openai-chat-completions', route().provider, model());
     assert.equal(built.contextWindow, DEFAULT_CONTEXT_WINDOW);
     assert.equal(built.maxTokens, 32_768);
     assert.equal(built.reasoning, false);
     assert.equal(built.baseUrl, 'https://ai.example.ts.net/v1');
-    assert.equal(built.provider, 'aperture');
+    assert.equal(built.provider, 'aperture-openai-chat-completions');
     assert.deepEqual(built.input, ['text']);
   });
 
   it('把未声明的档位钉成不支持，只放行声明过的那些', () => {
-    const built = buildModel('aperture', route().profile, model({
+    const built = buildModel('aperture-openai-chat-completions', route().provider, model({
       reasoningEfforts: { off: 'disabled', high: 'high', max: 'max' },
     }));
     assert.equal(built.reasoning, true);
@@ -136,7 +141,7 @@ describe('buildModel', () => {
   });
 
   it('把「off 没有线缆写法」表达成「支持，但什么都不发」', () => {
-    const built = buildModel('aperture', route().profile, model({
+    const built = buildModel('aperture-openai-chat-completions', route().provider, model({
       reasoningEfforts: { off: null, high: 'high' },
     }));
     // 关键差别：这个键**不在**表里（而不是 null）。pi-ai 把缺键读作「支持、发空」，
@@ -146,7 +151,7 @@ describe('buildModel', () => {
   });
 
   it('随协议带上兼容开关', () => {
-    const completions = buildModel('aperture', route().profile, model({
+    const completions = buildModel('aperture-openai-chat-completions', route().provider, model({
       reasoningEfforts: { off: null, high: 'high' },
       compat: { supportsReasoningEffort: true, thinkingFormat: 'deepseek' },
     }));
@@ -159,21 +164,21 @@ describe('适配器的元数据', () => {
     const plan = route({ models: [model({ id: 'a' }), model({ id: 'b', input: ['text', 'image'] })] });
     const built = adapter([plan]);
 
-    assert.deepEqual(built.providerInfo('aperture'), { id: 'aperture', name: 'Aperture' });
-    assert.deepEqual(await built.listModels('aperture'), [
-      { provider: 'aperture', id: 'a', name: 'M', inputModalities: ['text'] },
-      { provider: 'aperture', id: 'b', name: 'M', inputModalities: ['text', 'image'] },
+    assert.deepEqual(built.providerInfo('aperture-openai-chat-completions'), { id: 'aperture-openai-chat-completions', name: 'Aperture (OpenAI Chat Completions)' });
+    assert.deepEqual(await built.listModels('aperture-openai-chat-completions'), [
+      { provider: 'aperture-openai-chat-completions', id: 'a', name: 'M', inputModalities: ['text'] },
+      { provider: 'aperture-openai-chat-completions', id: 'b', name: 'M', inputModalities: ['text', 'image'] },
     ]);
     assert.deepEqual(await built.listModels('nobody'), [], '不服务的路由给空清单，而不是抛');
   });
 
   it('只在模型自己声明过输出上限时才把它当默认值交出去', async () => {
     const declared = adapter([route({ models: [model({ id: 'a', maxTokens: 4096 })] })]);
-    assert.equal((await declared.resolveModel('aperture', 'a')).defaultMaxTokens, 4096);
+    assert.equal((await declared.resolveModel('aperture-openai-chat-completions', 'a')).defaultMaxTokens, 4096);
 
     // 没声明过上限的模型不该被本插件钉上一个凭空的默认：缺省上限只活在 pi-ai 侧的请求上。
     const undeclared = adapter([route({ models: [model({ id: 'a' })] })]);
-    assert.equal('defaultMaxTokens' in (await undeclared.resolveModel('aperture', 'a')), false);
+    assert.equal('defaultMaxTokens' in (await undeclared.resolveModel('aperture-openai-chat-completions', 'a')), false);
   });
 
   it('只在模型提供了档位时才报推理档位', async () => {
@@ -183,15 +188,15 @@ describe('适配器的元数据', () => {
         model({ id: 'plain' }),
       ],
     })]);
-    const thinking = await built.resolveModel('aperture', 'thinking');
+    const thinking = await built.resolveModel('aperture-openai-chat-completions', 'thinking');
     assert.deepEqual(thinking.reasoning?.efforts.map((effort) => String(effort.id)), ['off', 'high']);
-    assert.equal((await built.resolveModel('aperture', 'plain')).reasoning, undefined);
+    assert.equal((await built.resolveModel('aperture-openai-chat-completions', 'plain')).reasoning, undefined);
   });
 
   it('不认识的模型只回显身份，而不是编造容量', async () => {
     const built = adapter([route({ models: [model()] })]);
-    assert.deepEqual(await built.resolveModel('aperture', 'ghost'), {
-      provider: 'aperture',
+    assert.deepEqual(await built.resolveModel('aperture-openai-chat-completions', 'ghost'), {
+      provider: 'aperture-openai-chat-completions',
       id: 'ghost',
       name: 'ghost',
     });
@@ -203,7 +208,7 @@ describe('适配器的派发边界', () => {
     const built = adapter([route({ models: [model({ reasoningEfforts: { off: null, high: 'high' } })] })]);
     await assert.rejects(
       () => drain(built.stream({
-        provider: 'aperture',
+        provider: 'aperture-openai-chat-completions',
         model: 'm',
         messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
         reasoningEffort: 'max' as never,
@@ -216,7 +221,7 @@ describe('适配器的派发边界', () => {
     const built = adapter([route({ models: [model()] })]);
     await assert.rejects(
       () => drain(built.stream({
-        provider: 'aperture',
+        provider: 'aperture-openai-chat-completions',
         model: 'm',
         messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
         stop: ['###'],
@@ -238,7 +243,7 @@ describe('适配器的派发边界', () => {
   });
 
   it('prepareCall 把派发绑在那一代路由上：之后的刷新不会换掉端点', async () => {
-    let plans: RoutePlan[] = [route({
+    let plans: PlannedRoute[] = [route({
       baseURL: 'http://127.0.0.1:1/v1',
       models: [model({ id: 'only-here' })],
     })];
@@ -249,7 +254,7 @@ describe('适配器的派发边界', () => {
       logger: quiet,
     });
 
-    const prepared = await built.prepareCall('aperture', 'only-here');
+    const prepared = await built.prepareCall('aperture-openai-chat-completions', 'only-here');
     assert.equal(prepared.model.id, 'only-here');
 
     // 刷新把整份路由换掉：这个模型在新一代里不存在。
@@ -258,17 +263,17 @@ describe('适配器的派发边界', () => {
     // 直接派发走的是新一代，因此这个模型不认识。
     await assert.rejects(
       () => drain(built.stream({
-        provider: 'aperture',
+        provider: 'aperture-openai-chat-completions',
         model: 'only-here',
         messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
       })),
-      /路由 "aperture" 上没有模型 "only-here"/u,
+      /路由 "aperture-openai-chat-completions" 上没有模型 "only-here"/u,
     );
 
     // 而准备好的那一代照旧往前走：它已经走到传输层（127.0.0.1:1 没人监听），
     // 而不是在模型解析处停下——这正是「能力与端点属于同一代」的证据。
     const errorChunk = await lastFinish(prepared.stream({
-      provider: 'aperture',
+      provider: 'aperture-openai-chat-completions',
       model: 'only-here',
       messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
     }));
@@ -451,7 +456,7 @@ describe('pi-ai 事件流的转换', () => {
         kind: 'aperture',
         version: 1,
         api: 'openai-completions',
-        provider: 'aperture',
+        provider: 'aperture-openai-chat-completions',
         model: 'm',
         responseId: 'resp-1',
         stopReason: 'stop',

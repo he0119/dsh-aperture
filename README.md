@@ -80,7 +80,7 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 ```
 （设置 → 模型）
 DeepSeek                                            编辑
-Aperture (Chat Completions)  自定义                  编辑
+Aperture (OpenAI Chat Completions)  自定义                  编辑
   ────────────────────────────────────────────────────
   模型  18 个                                        ⌄
   一行一个模型；展开改这一行的覆盖，「保存」只写这一行。顺序来自发现顺序。
@@ -126,12 +126,12 @@ Aperture (Chat Completions)  自定义                  编辑
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture 实例地址。末尾 `/v1` 会被容忍并去掉；空值表示休眠（不探测、不注册） |
-| `route` | `aperture` | Chat Completions 模型的路由名；Responses、Anthropic 路由分别追加 `-responses`、`-anthropic`。三个选择器名称也由它推出来，并各自写出协议名：`Aperture (Chat Completions)`、`Aperture (OpenAI Responses)`、`Aperture (Anthropic Messages)` |
+| `routePrefix` | `aperture` | 三条路由名的共同前缀：路由键是前缀加上协议名的小写连字符写法——`aperture-openai-chat-completions`、`aperture-openai-responses`、`aperture-anthropic-messages`；三个选择器名称同样由它推出来，各自写出同一串协议名：`Aperture (OpenAI Chat Completions)`、`Aperture (OpenAI Responses)`、`Aperture (Anthropic Messages)`（这三个名字逐字取官方「模型」页给协议用的产品名） |
 | `apiKeyEnv` | `''` | 凭据 seam 里的引用名；非空时不再带占位凭据 |
 | `headers` | `{}` | 每条请求额外带的头；同名时**归因头**与**占位凭据**仍会按协议补齐 |
 | `enabledModelIds` | `[]` | 非空时只保留这些 id（`models` 里显式列出的不受限） |
 | `modelAliases` | `{}` | 网关 id → models.dev id |
-| `models` | `[]` | 逐模型覆盖或补充：`id`、`name`、`api`、`contextWindow`、`maxTokens`、`input`、`thinking`、`reasoningEfforts` |
+| `models` | `[]` | 逐模型覆盖或补充：`id`、`name`、`protocol`、`contextWindow`、`maxTokens`、`input`、`thinking`、`reasoningEfforts` |
 | `modelMetadataUrl` | `https://models.dev/models.json` | 目录地址；设成 `''` 关闭补全 |
 | `images` | `ignore` | `metadata` = 采用 models.dev 的输入模态（图片） |
 | `reasoning` | `auto` | `off` = 所有模型都当不会推理 |
@@ -154,7 +154,7 @@ Aperture (Chat Completions)  自定义                  编辑
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-**有些模型没出现在选择器里？** 看**插件 → dsh-aperture** 配置页上那句话——它说有几个模型没有路由可服务、都叫什么（本插件的路由卡下面列的是那一条路由真的能服务的模型）。只提供 Gemini 原生 `generateContent` 端点的模型接不进来——本插件可发布 Chat Completions、OpenAI Responses 与 Anthropic Messages，不能转换 Gemini 原生协议。走错端点时 Aperture 会明确告诉你该用哪个：
+**有些模型没出现在选择器里？** 看**插件 → dsh-aperture** 配置页上那句话——它说有几个模型没有路由可服务、都叫什么（本插件的路由卡下面列的是那一条路由真的能服务的模型）。只提供 Gemini 原生 `generateContent` 端点的模型接不进来——本插件可发布 OpenAI Chat Completions、OpenAI Responses 与 Anthropic Messages，不能转换 Gemini 原生协议。走错端点时 Aperture 会明确告诉你该用哪个：
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat
@@ -194,7 +194,9 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
       k3: moonshotai/kimi-k3
 ```
 
-**界面上说 `没注册（路由 aperture 已被另一个适配器注册…）`？** 说明请求的路由键里有一个已经被别人服务了——最常见的原因是**旧版本的本插件**：0.2 及更早只做发现，它会把自己发现的路由写进 `llm-pi-ai.providers`，那份配置现在与本插件直接冲突。本插件不替你改别人的配置，照那一行给出的键名手工处理：删掉 `llm-pi-ai` 段里对应的 `providers.<键>`；如果那个路由名是别的插件在用的，就改本插件配置里的 `route`（三个路由键一起变）。下一个适配器集合变化（改完配置的重载、或者在插件页按那颗「立刻刷新」）就会重新尝试注册，不必重启。
+**界面上说 `没注册（路由 aperture-openai-responses 已被另一个适配器注册…）`？** 说明请求的路由键里有一个已经被别人服务了——最常见的原因是**旧版本的本插件**：0.2 及更早只做发现，它会把自己发现的路由写进 `llm-pi-ai.providers`。本插件不替你改别人的配置，照那一行给出的键名手工处理：删掉 `llm-pi-ai` 段里对应的 `providers.<键>`；如果那个路由名是别的插件在用的，就改本插件配置里的 `routePrefix`（三条路由键一起变）。下一个适配器集合变化（改完配置的重载、或者在插件页按那颗「立刻刷新」）就会重新尝试注册，不必重启。
+
+**从 0.2 或更早升上来，`llm-pi-ai.providers` 里那几个 `aperture*` 键要不要自己删？** 要，而且这次没有哪个键会替你报错：本插件现在的路由键是前缀加协议名（默认 `aperture-openai-chat-completions` / `aperture-openai-responses` / `aperture-anthropic-messages`），与那时写下的 `aperture`、`aperture-responses`、`aperture-anthropic` 一个都不同名，因此注册不会撞键。那三个遗留键留着只会让 `llm-pi-ai` 继续服务一份过期的路由（选择器里出现重复模型），升级时一并删掉即可。
 
 **保存了但没生效？** DSH 的补丁层是叠加的：profile 的补丁文档之上还有 `$DSH_HOME/cordis.patch.yml` 这类更高优先级的层。如果 `aperture` 这一行在那里也被写过，配置页上的保存会落在 profile 的补丁文档里、却被上面那层盖住（这一笔也可能被设置接缝直接拒收，配置页会说没被收下）。把那一行从高优先级的层里删掉，或者直接改那一处。
 
@@ -204,7 +206,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 
 **需要真密钥而不是占位凭据？** Aperture 靠网络身份（Tailscale）认证，本不需要密钥；插件默认在每条请求上带 `authorization: Bearer dsh-aperture`（Anthropic 路由是 `x-api-key: dsh-aperture`），只是让 pi-ai 愿意把请求发出去，**不是密钥**。真要密钥时把 `apiKeyEnv` 指向凭据 seam 里的记录，占位凭据就不再带。
 
-**改了 `route` 之后旧路由还在？** 插件只认自己当前请求的三个键（`route`、`route` + `-responses`、`route` + `-anthropic`），进程退出后旧键就没有服务者了；它不再出现在选择器里，也不需要清理，除非有别的适配器顶上那个键。
+**改了 `routePrefix` 之后旧路由还在？** 插件只认自己当前请求的三个键（`<前缀>-chat-completions`、`<前缀>-openai-responses`、`<前缀>-anthropic-messages`），进程退出后旧键就没有服务者了；它不再出现在选择器里，也不需要清理，除非有别的适配器顶上那个键。
 
 ## 它做了什么
 
@@ -212,13 +214,13 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 GET {baseUrl}/v1/models
         │
         ├─ 每个模型：supported_endpoints ──► 分流
-        │     /v1/chat/completions        ──► route                     （openai-completions）
-        │     /v1/responses               ──► route + -responses        （openai-responses）
-        │     /v1/messages                ──► route + -anthropic        （anthropic-messages）
+        │     /v1/chat/completions        ──► routePrefix + -openai-chat-completions  （openai-completions）
+        │     /v1/responses               ──► routePrefix + -openai-responses        （openai-responses）
+        │     /v1/messages                ──► routePrefix + -anthropic-messages      （anthropic-messages）
         │     只有原生 generateContent     ──► 不发布（配置页那句话里报出来）
         ├─ 容量：Aperture 字段 ─► models.dev ─► 默认值
         ├─ 推理：Aperture 字段 ─► models.dev ─► 关闭
-        └─ 注册成三条 provider 路由（route / route-responses / route-anthropic）
+        └─ 注册成三条 provider 路由（<routePrefix> + 协议名的小写写法）
 ```
 
 三条路由各自只承载一种协议，模型 id 就是网关的 id；本插件不写任何配置，发现结果只活在这一次注册里（重启后由第一轮发现重新决定）。路由键被别的适配器占着时本插件不硬闯：它跳过注册、在报告里点名那个键，并在适配器集合发生变化时自己重试。每条决策为什么是这样、放弃了哪些替代方案，见 [.agents/notes/implemented/](https://github.com/he0119/dsh-aperture/tree/main/.agents/notes/implemented)（中文）；当前机制与已知边界见 [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md)。

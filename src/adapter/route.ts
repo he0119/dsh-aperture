@@ -18,7 +18,7 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
 import type { Api, Model as PiModel, ProviderStreams, ThinkingLevel, ThinkingLevelMap } from '@earendil-works/pi-ai';
 import { DEFAULT_CONTEXT_WINDOW } from '../config.ts';
-import { REASONING_LEVELS, type ModelProfile, type ReasoningEfforts, type RouteProfile } from '../profile.ts';
+import { REASONING_LEVELS, type ProviderModel, type ProviderRoute, type ReasoningEfforts } from '../plan.ts';
 import type { ApertureProtocol } from '../types.ts';
 
 /**
@@ -50,21 +50,21 @@ const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
  * 把一条已发布的模型变成 pi-ai 的 `Model`。
  *
  * @param provider - provider 路由键。
- * @param profile - 该路由的协议与地址。
+ * @param route - 该路由的协议与地址。
  * @param model - 已发布的模型。
  * @returns pi-ai 的模型描述符。
  */
 export function buildModel(
   provider: string,
-  profile: RouteProfile,
-  model: ModelProfile,
+  route: ProviderRoute,
+  model: ProviderModel,
 ): PiModel<Api> {
   return {
     id: model.id,
     name: model.name,
-    api: profile.api,
+    api: route.protocol,
     provider,
-    baseUrl: profile.baseURL,
+    baseUrl: route.baseURL,
     input: [...model.input],
     cost: { ...ZERO_COST },
     contextWindow: model.contextWindow ?? DEFAULT_CONTEXT_WINDOW,

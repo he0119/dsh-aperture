@@ -20,8 +20,10 @@ schema 表达不了的东西（兼容开关、`thinkingLevelMap` 的逐档位写
 本插件自己实现 provider 侧：依赖 `@earendil-works/pi-ai`，实现一个 `LlmAdapter`，经
 `ctx.llm.registerAdapter` 把三条路由注册到宿主的 LLM 服务，**不写任何配置**。
 
-- 三条路由键不变，仍是 `route` / `route-responses` / `route-anthropic`（默认 `aperture` /
-  `aperture-responses` / `aperture-anthropic`），各自只承载一种协议。协议实现在
+- 三条路由各自只承载一种协议，键是 `<routePrefix>` 加协议名的小写连字符写法（默认
+  `aperture-openai-chat-completions` / `aperture-openai-responses` / `aperture-anthropic-messages`；
+  命名与
+  配置键的来历见[三条路由的名字都写出自己的协议](2026-10-04-route-names-carry-their-protocol.md)）。协议实现在
   `src/adapter/route.ts` 里从 pi-ai 的 `.lazy` 入口取——聚合入口会连带拉进整份 provider 目录，
   本插件一条都不需要。
 - 线缆转换在 `src/adapter/` 下分四块：`context.ts`（宿主消息词汇 → pi-ai 的 `Context`）、

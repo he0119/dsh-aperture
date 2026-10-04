@@ -35,15 +35,16 @@ const PLUGIN_ENTRY = join(REPO, 'lib', 'index.js');
 /** 本插件自己的设置段，也是它的 entry id。 */
 const APERTURE = 'aperture';
 
-// 本插件注册的三条路由键：三种线缆协议各一条。它们必须在跑完之后都出现在
-// `ctx.llm.listProviders()` 里，晚到或缺失都会让下面那段等待空转到超时。
-const ROUTES = [APERTURE, `${APERTURE}-responses`, `${APERTURE}-anthropic`];
+// 本插件注册的三条路由键：`<前缀>-<协议名的小写连字符写法>`，三种线缆协议各一条。它们必须在跑完
+// 之后都出现在 `ctx.llm.listProviders()` 里，晚到或缺失都会让下面那段等待空转到超时。
+const CHAT_ROUTE = `${APERTURE}-openai-chat-completions`;
+const ROUTES = [CHAT_ROUTE, `${APERTURE}-openai-responses`, `${APERTURE}-anthropic-messages`];
 
 /** 每条路由配一个模型来展示 `resolveModelInfo`；不存在的模型会被接缝拒绝并打印原因。 */
 const SAMPLES = [
-  [APERTURE, 'deepseek-v4-pro'],
+  [CHAT_ROUTE, 'deepseek-v4-pro'],
   [`${APERTURE}-responses`, 'deepseek-v4-codex'],
-  [`${APERTURE}-anthropic`, 'MiniMax-M3'],
+  [`${APERTURE}-messages`, 'MiniMax-M3'],
 ];
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));

@@ -30,7 +30,7 @@ import {
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout';
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment';
 import type { Api, Model as PiModel } from '@earendil-works/pi-ai';
-import type { ModelProfile, RoutePlan, RouteProfile } from '../profile.ts';
+import type { PlannedRoute, ProviderModel, ProviderRoute } from '../plan.ts';
 import type { RuntimeLogger } from '../runtime.ts';
 import { toPiContext } from './context.ts';
 import { buildModel, effortOption, protocolApi, supportedEfforts } from './route.ts';
@@ -51,9 +51,9 @@ const IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT';
 /** 适配器需要的外部事实。 */
 export interface AdapterDeps {
   /** 当前这一代要服务的路由；换一份新数组就是新一代。 */
-  readonly routes: () => readonly RoutePlan[];
+  readonly routes: () => readonly PlannedRoute[];
   /** 解析一条路由的凭据；未配置 `apiKeyEnv` 时返回 `undefined`（该路由用占位凭据）。 */
-  readonly resolveApiKey: (provider: string, profile: RouteProfile) => Promise<string | undefined>;
+  readonly resolveApiKey: (provider: string, route: ProviderRoute) => Promise<string | undefined>;
   /** 附件服务；没有它的部署里图片不可转换。 */
   readonly attachments: () => AttachmentStore | undefined;
   /** 诊断。 */
@@ -62,14 +62,14 @@ export interface AdapterDeps {
 
 /** 一条路由上的一个模型的全部派发事实。 */
 interface Entry {
-  readonly route: RoutePlan;
-  readonly model: ModelProfile;
+  readonly route: PlannedRoute;
+  readonly model: ProviderModel;
   readonly pi: PiModel<Api>;
 }
 
 /** 一次刷新对应的一代路由。 */
 interface Snapshot {
-  readonly routes: readonly RoutePlan[];
+  readonly routes: readonly PlannedRoute[];
   readonly entries: ReadonlyMap<string, Entry>;
 }
 
@@ -97,14 +97,14 @@ export class ApertureAdapter extends LlmAdapter {
   /** {@inheritDoc LlmAdapter.providerInfo} */
   override providerInfo(provider: string): LlmProviderInfo {
     const route = this.findRoute(provider);
-    return { id: provider, name: route?.profile.displayName ?? provider };
+    return { id: provider, name: route?.provider.displayName ?? provider };
   }
 
   /** {@inheritDoc LlmAdapter.listModels} */
   override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
     const route = this.findRoute(provider);
     if (route === undefined) return [];
-    return route.profile.models.map((model) => ({
+    return route.provider.models.map((model) => ({
       provider,
       id: model.id,
       name: model.name,
@@ -160,8 +160,8 @@ export class ApertureAdapter extends LlmAdapter {
   }
 
   /** 找到当前这一代里的某条路由。 */
-  private findRoute(provider: string): RoutePlan | undefined {
-    return this.deps.routes().find((route) => route.provider === provider);
+  private findRoute(provider: string): PlannedRoute | undefined {
+    return this.deps.routes().find((route) => route.route.id === provider);
   }
 
   /** 取当前这一代；路由数组换了身份才重建。 */
@@ -172,11 +172,11 @@ export class ApertureAdapter extends LlmAdapter {
     }
     const entries = new Map<string, Entry>();
     for (const route of routes) {
-      for (const model of route.profile.models) {
-        entries.set(entryKey(route.provider, model.id), {
+      for (const model of route.provider.models) {
+        entries.set(entryKey(route.route.id, model.id), {
           route,
           model,
-          pi: buildModel(route.provider, route.profile, model),
+          pi: buildModel(route.route.id, route.provider, model),
         });
       }
     }
@@ -205,7 +205,7 @@ export class ApertureAdapter extends LlmAdapter {
         'UNSUPPORTED_REASONING_EFFORT',
       );
     }
-    const apiKey = await this.deps.resolveApiKey(options.provider, route.profile);
+    const apiKey = await this.deps.resolveApiKey(options.provider, route.provider);
 
     // 消费者侧的取消：宿主停止迭代时我们要把底层请求也停掉，否则一次被放弃的对话会把连接
     // 一直挂到网关自己超时。
@@ -239,9 +239,9 @@ export class ApertureAdapter extends LlmAdapter {
       );
 
       const iterator = toStreamChunks(
-        protocolApi(route.profile.api).streamSimple(pi, context, {
+        protocolApi(route.provider.protocol).streamSimple(pi, context, {
           ...(apiKey === undefined ? {} : { apiKey }),
-          headers: requestHeaders(route.profile.headers),
+          headers: requestHeaders(route.provider.headers),
           ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
           ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
           ...(effort === undefined ? {} : { reasoning: effortOption(effort) }),

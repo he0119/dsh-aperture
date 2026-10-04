@@ -33,7 +33,7 @@ export interface PanelModelPatch {
   /** 显示名。 */
   readonly name?: string | null;
   /** 协议覆盖；也是让「未服务」的模型变得可服务的唯一方式。 */
-  readonly api?: string | null;
+  readonly protocol?: string | null;
   /** 上下文容量，以 token 计。 */
   readonly contextWindow?: number | null;
   /** 最大输出，以 token 计。 */
@@ -182,12 +182,16 @@ function mergeEntry(
     else entry.name = name;
   }
 
-  if (patch.api !== undefined) {
-    const api = patch.api === null ? '' : patch.api.trim();
-    if (api.length === 0) delete entry.api;
-    else if (api !== 'openai-completions' && api !== 'openai-responses' && api !== 'anthropic-messages') {
-      return { error: `api "${api}" 无法服务；只能是 openai-completions、openai-responses 或 anthropic-messages` };
-    } else entry.api = api;
+  if (patch.protocol !== undefined) {
+    const protocol = patch.protocol === null ? '' : patch.protocol.trim();
+    if (protocol.length === 0) delete entry.protocol;
+    else if (
+      protocol !== 'openai-completions'
+      && protocol !== 'openai-responses'
+      && protocol !== 'anthropic-messages'
+    ) {
+      return { error: `protocol "${protocol}" 无法服务；只能是 openai-completions、openai-responses 或 anthropic-messages` };
+    } else entry.protocol = protocol;
   }
 
   for (const field of ['contextWindow', 'maxTokens'] as const) {

@@ -80,7 +80,7 @@ anything that cannot be served can simply be deleted.
 ```
 (Settings → Models)
 DeepSeek                                            Edit
-Aperture (Chat Completions)  Custom                  Edit
+Aperture (OpenAI Chat Completions)  Custom                  Edit
   ────────────────────────────────────────────────────
   Models  18                                         ⌄
   One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery.
@@ -129,12 +129,12 @@ Every key lives under that row's `config:` in the profile patch document (user l
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture instance root. A trailing `/v1` is tolerated and stripped; empty leaves the plugin dormant (no discovery, no registration) |
-| `route` | `aperture` | Route key for Chat Completions models; Responses and Anthropic append `-responses` and `-anthropic`. All three selector labels are derived from it and each names its protocol: `Aperture (Chat Completions)`, `Aperture (OpenAI Responses)`, `Aperture (Anthropic Messages)` |
+| `routePrefix` | `aperture` | Common prefix of the three route names: a route key is the prefix plus its protocol name in lowercase with dashes — `aperture-openai-chat-completions`, `aperture-openai-responses`, `aperture-anthropic-messages`; the three selector labels come from the same prefix and spell out the same protocol names: `Aperture (OpenAI Chat Completions)`, `Aperture (OpenAI Responses)`, `Aperture (Anthropic Messages)` — those three names are the official Models page's product names for the protocols, word for word |
 | `apiKeyEnv` | `''` | Credential-seam reference; non-empty stops sending the placeholder credential |
 | `headers` | `{}` | Extra request headers; on a name collision the **attribution header** and the **placeholder credential** are still filled in per protocol |
 | `enabledModelIds` | `[]` | Non-empty restricts discovery to these ids (explicit `models` entries are exempt) |
 | `modelAliases` | `{}` | Gateway id → models.dev id |
-| `models` | `[]` | Per-model overrides and extras: `id`, `name`, `api`, `contextWindow`, `maxTokens`, `input`, `thinking`, `reasoningEfforts` |
+| `models` | `[]` | Per-model overrides and extras: `id`, `name`, `protocol`, `contextWindow`, `maxTokens`, `input`, `thinking`, `reasoningEfforts` |
 | `modelMetadataUrl` | `https://models.dev/models.json` | Catalog URL; `''` disables enrichment |
 | `images` | `ignore` | `metadata` adopts models.dev input modalities (images) |
 | `reasoning` | `auto` | `off` declares every model non-reasoning |
@@ -157,7 +157,7 @@ Missing capacity and reasoning levels are filled in from Aperture's own fields �
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-**Some models never show up in the selector?** Look at the sentence on this plugin's configuration page at **Plugins → dsh-aperture** — it says how many models have no route to serve them and what they are called (the route cards on the Models page list only the models that route really serves). Models that only offer Gemini's native `generateContent` endpoint cannot be attached — this plugin can publish Chat Completions, OpenAI Responses, and Anthropic Messages, but does not translate Gemini's native protocol. Using the wrong endpoint fails loudly, and Aperture names the right one:
+**Some models never show up in the selector?** Look at the sentence on this plugin's configuration page at **Plugins → dsh-aperture** — it says how many models have no route to serve them and what they are called (the route cards on the Models page list only the models that route really serves). Models that only offer Gemini's native `generateContent` endpoint cannot be attached — this plugin can publish OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, but does not translate Gemini's native protocol. Using the wrong endpoint fails loudly, and Aperture names the right one:
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat
@@ -203,7 +203,9 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
       k3: moonshotai/kimi-k3
 ```
 
-**The interface says `没注册（路由 aperture 已被另一个适配器注册…）`?** One of the route keys it asks for is already served by someone else — most often by an **older version of this plugin**: 0.2 and earlier only discovered, and it wrote the routes it found into `llm-pi-ai.providers`, a configuration that now conflicts with this plugin directly. This plugin will not rewrite someone else's configuration for you, so fix it by hand following the key name that line gives you: delete the matching `providers.<key>` from the `llm-pi-ai` section, or, if that route name belongs to another plugin, change this plugin's `route` (all three route keys move with it). The next change to the adapter set — a reload after that edit, or pressing the "Refresh now" action on the Plugins page — retries registration; no restart is needed. (The host writes that line in Chinese, as do its action summaries.)
+**The interface says `没注册（路由 aperture-openai-responses 已被另一个适配器注册…）`?** One of the route keys it asks for is already served by someone else — most often by an **older version of this plugin**: 0.2 and earlier only discovered, and it wrote the routes it found into `llm-pi-ai.providers`. This plugin will not rewrite someone else's configuration for you, so fix it by hand following the key name that line gives you: delete the matching `providers.<key>` from the `llm-pi-ai` section, or, if that route name belongs to another plugin, change this plugin's `routePrefix` (all three route keys move with it). The next change to the adapter set — a reload after that edit, or pressing the "Refresh now" action on the Plugins page — retries registration; no restart is needed. (The host writes that line in Chinese, as do its action summaries.)
+
+**Coming from 0.2 or earlier, do I have to delete those `aperture*` keys in `llm-pi-ai.providers` myself?** Yes — and this time no key will point them out for you: the plugin's route keys are now the prefix plus the protocol name (by default `aperture-openai-chat-completions`, `aperture-openai-responses`, `aperture-anthropic-messages`), none of which matches the `aperture`, `aperture-responses` or `aperture-anthropic` written back then, so registration never collides. Leaving them behind only lets `llm-pi-ai` keep serving a stale route (duplicate models in the selector); delete them while upgrading.
 
 **Saved but not in effect?** DSH's patch layers stack: above the profile patch document sit higher-priority layers such as `$DSH_HOME/cordis.patch.yml`. If the `aperture` row is written there too, a save from the configuration page lands in the profile patch document but is shadowed by that layer (the settings service may also refuse the write outright, in which case the page says so). Delete the row from the higher-priority layer, or edit it there instead.
 
@@ -213,7 +215,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 
 **Need a real key instead of the placeholder credential?** Aperture authenticates by network identity (Tailscale) and needs none; the plugin sends `authorization: Bearer dsh-aperture` on every request (the Anthropic route sends `x-api-key: dsh-aperture`), only to make pi-ai willing to send the request. It is **not a key**. When a real credential is needed, point `apiKeyEnv` at a credential-seam record and the placeholder credential is no longer sent.
 
-**The old route is still there after changing `route`?** The plugin only knows the three keys it currently asks for (`route`, `route` + `-responses`, and `route` + `-anthropic`); once the process exits, the old key has no one serving it. It no longer appears in the selector and needs no cleanup, unless another adapter takes that key over.
+**Is the old route still there after changing `routePrefix`?** The plugin only knows the three keys it currently asks for (`<prefix>-chat-completions`, `<prefix>-openai-responses`, `<prefix>-anthropic-messages`); once the process exits, the old key has no one serving it. It no longer appears in the selector and needs no cleanup, unless another adapter takes that key over.
 
 ## What it does
 
@@ -221,15 +223,15 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 GET {baseUrl}/v1/models
         │
         ├─ per model: supported_endpoints ──► routing
-        │     /v1/chat/completions        ──► route                (openai-completions)
-        │     /v1/responses               ──► route + -responses   (openai-responses)
-        │     /v1/messages                ──► route + -anthropic   (anthropic-messages)
+        │     /v1/chat/completions        ──► routePrefix + -openai-chat-completions  (openai-completions)
+        │     /v1/responses               ──► routePrefix + -openai-responses        (openai-responses)
+        │     /v1/messages                ──► routePrefix + -anthropic-messages      (anthropic-messages)
         │     native generateContent only ──► not published (named by the Plugins page)
         │
         ├─ capacity:  Aperture fields ─► models.dev ─► default
         ├─ reasoning: Aperture fields ─► models.dev ─► off
         │
-        └─ registered as three provider routes (route / route-responses / route-anthropic)
+        └─ registered as three provider routes (<routePrefix> + the protocol name, lowercased with dashes)
 ```
 
 Each route carries exactly one protocol, and a model id is the gateway's id; the plugin writes no configuration at all, so a discovery result only lives in that one registration (after a restart the first discovery round decides again). When another adapter already holds a route key, the plugin does not force its way in: it skips registration, names the key in the report, and retries on its own whenever the adapter set changes. Why each decision is what it is — and which alternatives were rejected — is in [.agents/notes/implemented/](https://github.com/he0119/dsh-aperture/tree/main/.agents/notes/implemented) (Chinese); current mechanisms and known limits are in [docs/internals.md](https://github.com/he0119/dsh-aperture/blob/main/docs/internals.md) (Chinese).

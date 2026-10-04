@@ -1,6 +1,10 @@
 /**
  * 发布阶段：把发现的模型变成本插件自己服务的一条 provider 路由。
  *
+ * 这一层造的是**要注册出去的路由**，不是 dsh 的 profile（那份 profile patch 文档），因此名字一律
+ * 说 route：{@link ProviderRoute} 是一条路由在 pi-ai 侧的事实，{@link PlannedRoute} 把它与它承载
+ * 的模型绑在一起，{@link RoutePlan} 是一整代。
+ *
  * 这里不做任何负载转换：三种协议都由 pi-ai 实现，剩下的工作只是逐模型陈述它无法从一个
  * 无法识别的网关 URL 推断出的事实——模型有多大、接受什么，以及它的推理控制在协议上如何
  * 传输。
@@ -10,7 +14,7 @@
  * 是必填的，而没有谁声明过输出上限的模型不该被钉上一个凭空的数字，因此缺省值只作为
  * pi-ai 侧的请求上限，同时**不**作为本插件向宿主声明的默认值（见 `defaultMaxTokens`）。
  *
- * @module dsh-aperture/profile
+ * @module dsh-aperture/plan
  */
 
 import { isDeepSeekFamily } from './registry.ts';
@@ -22,6 +26,7 @@ import {
   type Modality,
   type ReasoningLevel,
 } from './types.ts';
+import type { ResolvedRoute } from './routes.ts';
 import { buildRouteBaseUrl } from './url.ts';
 
 /** 无凭据路由发送的占位凭据的默认值。 */
@@ -47,7 +52,7 @@ export interface ModelCompat {
 }
 
 /** 一条 pi-ai 路由上的一个模型。 */
-export interface ModelProfile {
+export interface ProviderModel {
   /** 网关接受的模型 id。 */
   readonly id: string;
   /** 选择器里显示的名字。 */
@@ -65,11 +70,11 @@ export interface ModelProfile {
 }
 
 /** 一条发布出去的路由：pi-ai 侧的 provider 事实。 */
-export interface RouteProfile {
+export interface ProviderRoute {
   /** 选择器里显示的路由名。 */
   readonly displayName: string;
-  /** 线缆协议。 */
-  readonly api: ApertureProtocol;
+  /** 线缆协议，也是适配器挑哪一种 pi-ai 实现的依据。 */
+  readonly protocol: ApertureProtocol;
   /** 该协议下所有模型的基点地址。 */
   readonly baseURL: string;
   /** 每条请求带上的头；没有时为缺失。 */
@@ -77,25 +82,20 @@ export interface RouteProfile {
   /** 该路由解析凭据用的引用；没有时以占位凭据发出。 */
   readonly apiKeyEnv?: string;
   /** 该路由承载的模型。 */
-  readonly models: readonly ModelProfile[];
+  readonly models: readonly ProviderModel[];
 }
 
 /** 一次发布过程所需的全部内容。 */
-export interface ProfileOptions {
+export interface RoutePlanOptions {
   /** 归一化后的实例根。 */
   readonly instanceRoot: string;
-  /** 拥有 OpenAI Chat Completions 模型的路由键。 */
-  readonly route: string;
-  /** 拥有 OpenAI Responses 模型的路由键。 */
-  readonly responsesRoute: string;
-  /** 拥有 Anthropic Messages 模型的路由键。 */
-  readonly anthropicRoute: string;
-  /** OpenAI Chat Completions 路由的选择器标签。 */
-  readonly displayName: string;
-  /** OpenAI Responses 路由的选择器标签。 */
-  readonly responsesDisplayName: string;
-  /** Anthropic 路由的选择器标签。 */
-  readonly anthropicDisplayName: string;
+  /**
+   * 这一代的三条路由，顺序即它们在报告与界面上出现的顺序。
+   *
+   * 命名（短名、路由键、显示名）只在 `resolveRoutes` 里推一次，这一层只按协议归拢模型；名字因此
+   * 不可能与发出去的东西对不上。
+   */
+  readonly routes: readonly ResolvedRoute[];
   /** 凭据引用；部署配置了才有。 */
   readonly apiKeyEnv?: string;
   /** 额外的路由头；它们优先于占位头。 */
@@ -104,20 +104,20 @@ export interface ProfileOptions {
   readonly configured: readonly ConfiguredModel[];
 }
 
-/** 一条要注册出去的路由。 */
-export interface RoutePlan {
-  /** provider 路由键。 */
-  readonly provider: string;
-  /** pi-ai 侧的 provider 事实。 */
-  readonly profile: RouteProfile;
+/** 一条要注册出去的路由：命名 + pi-ai 侧的事实 + 它承载的模型。 */
+export interface PlannedRoute {
+  /** 这条路由的命名（短名、协议、路由键、显示名）。 */
+  readonly route: ResolvedRoute;
+  /** pi-ai 侧要用的事实，适配器按它派发。 */
+  readonly provider: ProviderRoute;
   /** 该路由发布的模型，用于报告与模型信息查询。 */
   readonly models: readonly DiscoveredModel[];
 }
 
 /** 完整的发布方案。 */
-export interface ProfilePlan {
+export interface RoutePlan {
   /** 至少含一个模型的路由，顺序稳定。 */
-  readonly routes: readonly RoutePlan[];
+  readonly routes: readonly PlannedRoute[];
   /** 没有任何路由可以服务的已发现模型。 */
   readonly unserved: readonly DiscoveredModel[];
 }
@@ -129,31 +129,16 @@ export interface ProfilePlan {
  * @param options - 路由与凭据配置。
  * @returns 要发布的路由，以及未能被服务的模型。
  */
-export function buildProfilePlan(models: readonly DiscoveredModel[], options: ProfileOptions): ProfilePlan {
-  const completions = models.filter((model) => model.protocol === 'openai-completions');
-  const responses = models.filter((model) => model.protocol === 'openai-responses');
-  const anthropic = models.filter((model) => model.protocol === 'anthropic-messages');
-
-  const routes: RoutePlan[] = [];
-  if (completions.length > 0) {
+export function planRoutes(models: readonly DiscoveredModel[], options: RoutePlanOptions): RoutePlan {
+  const routes: PlannedRoute[] = [];
+  for (const route of options.routes) {
+    const carrying = models.filter((model) => model.protocol === route.protocol);
+    // 一种协议在这个网关上没有模型时不发布那一条：空路由在界面上只是一行没有内容的行。
+    if (carrying.length === 0) continue;
     routes.push({
-      provider: options.route,
-      profile: buildProfile('openai-completions', completions, options),
-      models: completions,
-    });
-  }
-  if (responses.length > 0) {
-    routes.push({
-      provider: options.responsesRoute,
-      profile: buildProfile('openai-responses', responses, options),
-      models: responses,
-    });
-  }
-  if (anthropic.length > 0) {
-    routes.push({
-      provider: options.anthropicRoute,
-      profile: buildProfile('anthropic-messages', anthropic, options),
-      models: anthropic,
+      route,
+      provider: buildProviderRoute(route, carrying, options),
+      models: carrying,
     });
   }
 
@@ -163,24 +148,20 @@ export function buildProfilePlan(models: readonly DiscoveredModel[], options: Pr
   };
 }
 
-/** 构建一种协议的路由 profile。 */
-function buildProfile(
-  protocol: ApertureProtocol,
+/** 构建一条路由在 pi-ai 侧的事实。 */
+function buildProviderRoute(
+  route: ResolvedRoute,
   models: readonly DiscoveredModel[],
-  options: ProfileOptions,
-): RouteProfile {
-  const headers = routeHeaders(protocol, options);
+  options: RoutePlanOptions,
+): ProviderRoute {
+  const headers = routeHeaders(route.protocol, options);
   return {
-    displayName: protocol === 'openai-completions'
-      ? options.displayName
-      : protocol === 'openai-responses'
-        ? options.responsesDisplayName
-        : options.anthropicDisplayName,
-    api: protocol,
-    baseURL: buildRouteBaseUrl(options.instanceRoot, protocol),
+    displayName: route.displayName,
+    protocol: route.protocol,
+    baseURL: buildRouteBaseUrl(options.instanceRoot, route.protocol),
     ...(headers === undefined ? {} : { headers }),
     ...(options.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.apiKeyEnv }),
-    models: models.map((model) => buildModelEntry(model, protocol, options)),
+    models: models.map((model) => buildModelEntry(model, route.protocol, options)),
   };
 }
 
@@ -196,7 +177,7 @@ function buildProfile(
  */
 function routeHeaders(
   protocol: ApertureProtocol,
-  options: ProfileOptions,
+  options: RoutePlanOptions,
 ): Record<string, string> | undefined {
   const headers: Record<string, string> = {};
   const hasCredential =
@@ -222,8 +203,8 @@ function routeHeaders(
 function buildModelEntry(
   model: DiscoveredModel,
   protocol: ApertureProtocol,
-  options: ProfileOptions,
-): ModelProfile {
+  options: RoutePlanOptions,
+): ProviderModel {
   const configured = options.configured.find((candidate) => candidate.id.trim() === model.id);
   const reasoning = resolveReasoning(model, protocol, configured);
 
@@ -242,7 +223,7 @@ function resolveReasoning(
   model: DiscoveredModel,
   protocol: ApertureProtocol,
   configured: ConfiguredModel | undefined,
-): Pick<ModelProfile, 'reasoningEfforts' | 'compat'> {
+): Pick<ProviderModel, 'reasoningEfforts' | 'compat'> {
   // 空字典等于什么都没声明。pi-ai 会以「reasoningEfforts 是空的」为由拒绝整段配置——
   // 于是所有路由一条都发布不出去，而用户写下 `{}` 想说的显然不是「这条模型没有任何推理
   // 档位」（那该写 `false`）。pi-ai 自己的建议是省略这个字段以沿用 provider 的能力，

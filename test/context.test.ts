@@ -257,7 +257,7 @@ describe('assistant 历史的重放', () => {
     kind: REPLAY_KIND,
     version: REPLAY_VERSION,
     api: 'anthropic-messages',
-    provider: 'aperture-anthropic',
+    provider: 'aperture-anthropic-messages',
     model: 'MiniMax-M3',
     responseId: 'msg-1',
     responseModel: 'MiniMax-M3-2026',
@@ -284,7 +284,7 @@ describe('assistant 历史的重放', () => {
     }));
 
     const message = context.messages[0] as PiAssistantMessage;
-    assert.equal(message.provider, 'aperture-anthropic');
+    assert.equal(message.provider, 'aperture-anthropic-messages');
     assert.equal(message.responseId, 'msg-1');
     assert.equal(message.responseModel, 'MiniMax-M3-2026');
     assert.deepEqual(message.content, [
@@ -322,7 +322,7 @@ describe('assistant 历史的重放', () => {
     await assert.rejects(
       () => toPiContext(request({
         messages: [assistant([{ type: 'text', text: 'pong' }], {
-          response: { kind: REPLAY_KIND, version: 99, api: 'x', provider: 'aperture', model: 'm', stopReason: 'stop' },
+          response: { kind: REPLAY_KIND, version: 99, api: 'x', provider: 'aperture-openai-chat-completions', model: 'm', stopReason: 'stop' },
         })],
       })),
       /版本 99 不是本适配器认得的/u,

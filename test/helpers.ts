@@ -38,7 +38,7 @@ export function catalogDocument(): unknown {
  * 用例（`test/provider.test.ts`），而端到端那一份（`test/live.test.ts`）用的是真的 LLM 服务。
  */
 export const fakeProvider: ProviderPublisher = {
-  publish: (plan) => Promise.resolve({ routes: plan.routes.map((route) => route.provider) }),
+  publish: (plan) => Promise.resolve({ routes: plan.routes.map((route) => route.route.id) }),
 };
 
 /** 所有字段都取默认值的构建选项，使测试只陈述自身要验证的内容。 */
