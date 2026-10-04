@@ -80,7 +80,7 @@ The model list and its per-model overrides live on the Settings → Models page,
 DeepSeek                                            Edit
 Aperture (Chat Completions)  Custom                  Edit
   ────────────────────────────────────────────────────
-  Models on this route  18                            ⌄
+  Models  18                                         ⌄
   One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery.
 
   ● deepseek-v4-flash
@@ -92,7 +92,7 @@ Aperture (Chat Completions)  Custom                  Edit
 
 + Add model provider
   ────────────────────────────────────────────────────
-  Models no route can serve  1                        ⌄
+  Unserved models  1                                 ⌄
   (collapsed by default; unfold it for those models and the same editor — they have no card head to lean on,
    so their rows still spell out "route / protocol")
 ```

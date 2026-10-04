@@ -45,8 +45,8 @@ export const zh = {
 
   // 模型清单挂在官方「模型」页上：卡片座位按路由分块，页脚座位接卡片接不住的那些，因此标题有三种。
   modelsTitle: 'Aperture 的模型',
-  modelsTitleRoute: '这一条路由的模型',
-  modelsTitleUnserved: '没有路由可服务的模型',
+  modelsTitleRoute: '模型',
+  modelsTitleUnserved: '未服务的模型',
   modelsHint: '一行一个模型；展开改这一行的覆盖，「保存」只写这一行。顺序来自发现顺序。',
   modelsOrphanHint: '这些模型还没有路由可以服务：填上「协议」，下一轮刷新就会把它们注册进去。',
   modelsCount: '{count} 个',
@@ -144,11 +144,11 @@ export const en = {
   // The model list lives on the official Models page: the card seat is one block per route and the
   // footer seat takes what no card can hold, so there are three headings.
   modelsTitle: 'Aperture models',
-  modelsTitleRoute: 'Models on this route',
-  modelsTitleUnserved: 'Models no route can serve',
+  modelsTitleRoute: 'Models',
+  modelsTitleUnserved: 'Unserved models',
   modelsHint: 'One model per row; expand a row to edit its overrides, and Save writes only that row. The order comes from discovery.',
   modelsOrphanHint: 'No route serves these models yet: fill in the protocol and the next round registers them.',
-  modelsCount: '{count} models',
+  modelsCount: '{count}',
   noModels: 'No models discovered yet.',
   modelsElsewhere: 'The model list and its per-model overrides live on the Settings → Models page, in this plugin’s route cards: open that row and the models are listed below it.',
   unservedTag: 'unserved',
