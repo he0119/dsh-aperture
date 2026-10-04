@@ -198,15 +198,17 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 
 **从 0.2 或更早升上来，`llm-pi-ai.providers` 里那几个 `aperture*` 键要不要自己删？** 要，而且这次没有哪个键会替你报错：本插件现在的路由键是前缀加协议名（默认 `aperture-openai-chat-completions` / `aperture-openai-responses` / `aperture-anthropic-messages`），与那时写下的 `aperture`、`aperture-responses`、`aperture-anthropic` 一个都不同名，因此注册不会撞键。那三个遗留键留着只会让 `llm-pi-ai` 继续服务一份过期的路由（选择器里出现重复模型），升级时一并删掉即可。
 
+**配置里的 `route` 键去哪了？** 它改名成了 `routePrefix`。旧键不报错，但会被 schema 忽略——前缀于是静默回到缺省的 `aperture`。当初把前缀写成了别的名字（`route: my-gateway`）的话，升级后要把它抄到 `routePrefix` 上；只写过缺省值的话，把旧键删掉即可。
+
 **保存了但没生效？** DSH 的补丁层是叠加的：profile 的补丁文档之上还有 `$DSH_HOME/cordis.patch.yml` 这类更高优先级的层。如果 `aperture` 这一行在那里也被写过，配置页上的保存会落在 profile 的补丁文档里、却被上面那层盖住（这一笔也可能被设置接缝直接拒收，配置页会说没被收下）。把那一行从高优先级的层里删掉，或者直接改那一处。
 
 **从 0.2 升上来，我的 `settings.yaml` 去哪了？** 0.1.7 起设置不再有独立文件，而是落在 profile 的补丁文档里。首次启动时 `$DSH_HOME/settings.yaml` 会被改名成 `settings.yaml.imported`，各段按设置命名空间搬进补丁文档——`aperture:` 段原样搬过去，仍能过 schema 的键与值都不变，所以地址与逐模型覆盖都还在。此后被读的只有补丁文档，`settings.yaml.imported` 只是留档，改它没有用；搬不过去的段（值已不合法）也只留在那份留档里，并在日志里说一声。
 
-**本部署没有「插件」页 / 没有界面？** 两处界面都只在 Web 界面里有（插件页那一份靠 Typert Remote 端点工作）。headless profile 里插件照常发现、照常注册路由，只是没有可点按的页面。模型在官方「模型」页里也会出现相应的行（只有真的有模型的那几种协议才占一行）：那一行自己的编辑器对本插件是只读的（设置段是 `aperture`，不是模型页的通用表单），但本插件在那一行里与列表末尾各挂了自己的一块编辑器，所以改模型还是那一页上的事；没有界面时改配置。
+**本部署没有「插件」页 / 没有界面？** 两处界面都只在 Web 界面里有（插件页那一份靠 Typert Remote 端点工作）。headless profile 里插件照常发现、照常注册路由，只是没有可点按的页面。模型在官方「模型」页里也会出现相应的行（只有真的有模型的那几种协议才占一行）：那一行自己的编辑器对本插件是只读的（设置段是 `aperture`，不是模型页的通用表单），但本插件在那一行里挂了自己的一块编辑器，所以改模型还是那一页上的事（没有路由可服务的模型不在那一页出现，界面在时由插件页那句话交代）；没有界面时改配置。
 
 **需要真密钥而不是占位凭据？** Aperture 靠网络身份（Tailscale）认证，本不需要密钥；插件默认在每条请求上带 `authorization: Bearer dsh-aperture`（Anthropic 路由是 `x-api-key: dsh-aperture`），只是让 pi-ai 愿意把请求发出去，**不是密钥**。真要密钥时把 `apiKeyEnv` 指向凭据 seam 里的记录，占位凭据就不再带。
 
-**改了 `routePrefix` 之后旧路由还在？** 插件只认自己当前请求的三个键（`<前缀>-chat-completions`、`<前缀>-openai-responses`、`<前缀>-anthropic-messages`），进程退出后旧键就没有服务者了；它不再出现在选择器里，也不需要清理，除非有别的适配器顶上那个键。
+**改了 `routePrefix` 之后旧路由还在？** 插件只认自己当前请求的三个键（`<前缀>-openai-chat-completions`、`<前缀>-openai-responses`、`<前缀>-anthropic-messages`），进程退出后旧键就没有服务者了；它不再出现在选择器里，也不需要清理，除非有别的适配器顶上那个键。
 
 ## 它做了什么
 
