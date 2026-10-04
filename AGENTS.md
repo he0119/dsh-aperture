@@ -109,12 +109,13 @@ pnpm test && pnpm run typecheck && pnpm run build
   `import type {} from '…/client'` 一一对应。宿主只校验它是字符串数组，多写一个模块图里没有的 id
   不报错也不连边，所以它是**声明**——`apply` 真正等的是服务，不是清单。
 - 界面注册一律走 `ctx.slots.inject(槽位, …)`：设置页挂在插件页的 `plugins.bundle.config` 上
-  （键是包名），模型清单挂在官方「模型」页的两个扩展位上——`settings.models.provider-card`
-  （键是设置命名空间 `aperture`，页主按它把贡献派给本插件注册的每一行路由卡；组件从递进来的
-  目录行认出自己管哪一条路由）与 `settings.models.footer`（列表条目，接卡片接不住的那些）。这三
-  个槽位都由**别的页**声明，那些声明完全可能晚于本插件的 `apply`，直接 `register` 会撞上「槽位
-  尚未声明」。那两个座位与它们的 owner props 由「模型」页声明（它自己叫 Extension slots），本
-  插件只往里注册内容——**那一行自己的编辑器对本插件是只读的**，能编辑的是挂进去的那两块。
+  （键是包名），模型清单挂在官方「模型」页的扩展位 `settings.models.provider-card` 上（键是设置
+  命名空间 `aperture`，页主按它把贡献派给本插件注册的每一行路由卡；组件从递进来的目录行认出
+  自己管哪一条路由）。这两个槽位都由**别的页**声明，那些声明完全可能晚于本插件的 `apply`，直接
+  `register` 会撞上「槽位尚未声明」。这个座位与它的 owner props 由「模型」页声明（它自己叫
+  Extension slots），本插件只往里注册内容——**那一行自己的编辑器对本插件是只读的**，能编辑的
+  是挂进去的那一块。没有路由可服务的模型在那张页上**没有座位**，它们由配置页那句话交代
+  （`settings.models.footer` 因此不注册）。
 - 颜色只许引用「这一页真的定义过」的 token：Theme 检查面列出的 `--dsw-alias-*`，加上官方原语自己
   引用的那几个（`bg-layer-3` / `border-l4` / `interactive-bg-hover` 等）与圆角 `--dsw-radius-*`。
   名单外的名字要登记进 `test/client.test.ts` 的那份 `allowed` 名单并写明理由。反例是
