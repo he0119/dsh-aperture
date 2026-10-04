@@ -2,6 +2,9 @@
 
 Status: implemented
 
+**页脚座位那一半已被取代**：[没有路由可服务的模型不在「模型」页出现](../simplification/2026-10-04-unserved-models-move-to-the-config-page.md)
+——那个座位整个不注册了。本篇只记录当时的取舍；卡片座位那一半仍然有效。
+
 ## Problem
 
 逐模型覆盖（显示名、别名、协议、容量、模态、推理）原来长在本插件的配置页上，而模型列在官方

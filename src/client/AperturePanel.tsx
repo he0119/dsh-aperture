@@ -1,15 +1,14 @@
 /**
- * 配置页：插件列表里本插件那个包页上的设置页——实例地址、注册开关、「立刻刷新」，以及这一轮哪里
- * 不对。
+ * 配置页：插件列表里本插件那个包页上的设置页——实例地址、注册开关、「立刻刷新」，这一轮哪里不对，
+ * 以及**哪些模型没有路由可服务**。
  *
- * **模型的清单与逐模型覆盖不在这一页**：它们在官方「模型」页的页脚扩展位
- * （`settings.models.footer`）上，见 [ApertureModels.tsx](./ApertureModels.tsx)。模型本来就列在
- * 那一页里（provider 目录那几行就是本插件的路由），在模型旁边改模型比「先去插件页、再回来找模型」
- * 少一次往返；这一页只留「去哪儿发现」这一件事。
+ * **模型的清单与逐模型覆盖不在这一页**：它们在官方「模型」页本插件那几行路由卡里，见
+ * [ApertureModels.tsx](./ApertureModels.tsx)。模型本来就列在那一页里（provider 目录那几行就是本
+ * 插件的路由），在模型旁边改模型比「先去插件页、再回来找模型」少一次往返。
  *
- * 页面只交内容，控件用官方原语，**没有卡片**——标题与面包屑由页主画。表单状态读注入面里的
- * `useApertureCard`（官方 `SettingsFormModel` 的投影）；报告只是为了那一句「这一轮哪里不对」而读的
- * （清单读不到、路由没注册上），因此这里不摊开任何模型事实。
+ * 没有路由可服务的模型在那一页上**没有座位**：那一页只列真的有路由的模型，这些模型于是改由这一页
+ * 一句话交代——有几个、叫什么，以及去哪儿给它们写协议。报告因此不只用来讲「这一轮哪里不对」，还要
+ * 数出这一群人；数量为零时这句话不出现。
  *
  * **effect 的依赖里刻意不放注入面**：`inject` 面由渲染器每次渲染重新组装，把它的身份放进依赖会
  * 让 effect 每渲染一次就重跑一次。因此报告用一个自增计数器当重读信号（依赖里只有那个数），注入
@@ -155,6 +154,29 @@ export function AperturePanel(props: AperturePanelProps) {
   const controlsDisabled = !state.available || !state.writable;
   const problem = roundProblem(report, t);
 
+  /**
+   * 没有路由可服务的模型：几个、叫什么。
+   *
+   * 名字最多报五个，多的用「等 N 个」收住——这一页是提示，不是清单；那些模型没有编辑器入口，改的
+   * 地方是配置里的 `models[].protocol`。
+   */
+  const routes = report?.routes ?? [];
+  const unserved = (report?.models ?? []).filter((model) => model.route === undefined);
+  const named = unserved.slice(0, 5).map((model) => model.id);
+  const rest = unserved.length - named.length;
+  const unservedNote = unserved.length === 0 || routes.length === 0
+    ? null
+    : t('unservedHint', {
+      count: unserved.length,
+      ids: rest > 0
+        ? `${named.join(t('listSeparator'))} ${t('moreModels', { count: rest })}`
+        : named.join(t('listSeparator')),
+    });
+  /** 一条路由都没注册时那句：注册失败的原因由 `problem` 说，这里只管「什么都没注册」这件事。 */
+  const noRoutesNote = report !== null && routes.length === 0 && problem === null
+    ? t('noRoutesHint')
+    : null;
+
   return (
     <div data-dsh-aperture="">
       <SettingsForm
@@ -225,6 +247,8 @@ export function AperturePanel(props: AperturePanelProps) {
           {busy === 'refresh' ? t('refreshing') : t('refresh')}
         </Button>
       </div>
+      {unservedNote === null ? null : <p className="dap-hint">{unservedNote}</p>}
+      {noRoutesNote === null ? null : <p className="dap-hint">{noRoutesNote}</p>}
       {banner === null
         ? null
         : (

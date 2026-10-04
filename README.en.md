@@ -73,6 +73,8 @@ After each discovery round, register these models as this plugin’s own provide
 Saved: rediscovered and published.
 
 The model list and its per-model overrides live on the Settings → Models page, in this plugin’s route cards: open that row and the models are listed below it.   ⟳ Refresh now
+1 more model has no route to serve it (gemini-2.5-flash): give it a models[].protocol in the configuration and it gets a route;
+anything that cannot be served can simply be deleted.
 ```
 
 ```
@@ -91,24 +93,20 @@ Aperture (Chat Completions)  Custom                  Edit
      the same route, which the card head already names, so the rows leave "route / protocol" out)
 
 + Add model provider
-  ────────────────────────────────────────────────────
-  Unserved models  1                                 ⌄
-  (collapsed by default; unfold it for those models and the same editor — they have no card head to lean on,
-   so their rows still spell out "route / protocol")
 ```
 
 **The instance address and the registration toggle** are two fields of one official settings form: where a field says "overridden", a "Reset to default" right beside it drops that key from your settings file (the same two words in the same position as the official plugin-config page), and Save writes only the fields you actually changed. Headings and spacing separate the groups, while a model row is a card (a hairline outline with a large radius, coloured only with theme tokens this page really defines), and the only thing you can expand is a model row.
 
 (English labels are shown above; both pages are bilingual.)
 
-**The model list hangs off two extension seats of the official Models page** (the page owner's own name for them is Extension slots): every route this plugin registers is one row on that page, and each of those rows gets a block of its own drawing **that one route's** models; the models no route can serve (the ones written by hand in the configuration, the ones the catalog never listed), together with every model when no route got registered at all (`sync` off, or this round registered nothing), sit in the block after "Add model provider" at the end of the list — no card can hold them, so without that footer block they would have no way in at all. When there is nothing to say, the footer block is not drawn at all. Both blocks **start collapsed**: the header (a row of this plugin's own drawing, under a hairline) carries the title and the model count on the left and a permanent chevron on the right, and one click unfolds the list — every row on that page has this block, and unfolded it is a dozen lines, so collapsed is what keeps it from taking over. Inside a route card every row serves the same route, which the card head already names, so those rows leave "route / protocol" out; the footer block has no card head to lean on and still spells them out.
+**The model list hangs off an extension seat inside this plugin's own rows on the official Models page** (the page owner's own name for them is Extension slots): every route this plugin registers is one row on that page, and that row gets a block of its own drawing **that one route's** models — so a model listed on that page always really has a route. The models no route can serve (the ones written by hand in the configuration, the ones the catalog never listed) take up no seat there; the Plugins page says one sentence about them instead: how many, which ones, and where to give them a protocol. That block **starts collapsed**: the header (a row of this plugin's own drawing, under a hairline) carries the title and the model count on the left and a permanent chevron on the right, and one click unfolds the list — every row on that page has this block, and unfolded it is a dozen lines, so collapsed is what keeps it from taking over. Inside a route card every row serves the same route, which the card head already names, so those rows leave "route / protocol" out.
 
 ## Usage
 
 The interface lives in two places, each minding its own business:
 
 - **Plugins → dsh-aperture**: open this plugin in the plugin list; the settings page hangs off the package, so there is no separate Configure button. The page header's name, icon and description come from the package's `locale/*.json` and `package.json`'s `icon`; the page itself is drawn by the Plugins page. This page holds two things only: the instance address and the registration toggle.
-- **Settings → Models**: this plugin's model list hangs off that official page — one block inside each route's row (that row's models), and one block after "Add model provider" at the end of the list (the models no route can serve). The page owner declares both seats' names; this plugin only registers content into them.
+- **Settings → Models**: this plugin's model list hangs off that official page — one block inside each route's row (that row's own models); the models no route can serve do not appear on that page at all, the Plugins page's sentence covers them. The page owner declares that seat's name; this plugin only registers content into it.
 
 The address, the toggle and the per-model parameters stay drafts until you press Save; models are **one row at a time**, and collapsing a row does not throw its draft away — the "unsaved edits" tag stays visible.
 
@@ -118,11 +116,11 @@ The address, the toggle and the per-model parameters stay drafts until you press
 | Plugins page · Registration toggle | edits `sync`: off discovers without registering, and that round withdraws the three routes this plugin had registered — routes of the same name registered elsewhere are left alone; carries the same "overridden / Reset to default" pair |
 | Plugins page · Save | below the form: writes the address and toggle drafts into the settings document; it is revision-fenced, so a form that has drifted from the settings document is refused rather than overwriting someone else's edit; it returns only once that round of re-discovery has landed, so the interface shows the new configuration right away |
 | Plugins page · Refresh now | the button beside Save: it writes no settings and simply runs one round of discovery and registration; the outcome (success, or the reason it failed) lands on the same page, and the "what went wrong this round" line follows it |
-| Models page · Models in a route card | one row per model, one card per row: a state dot at its head (green: this round registered it as a route; grey: registration ran this round but did not include it; amber: no route can serve it — hovering it, or a screen reader, hears exactly that), then the name with its "unserved / N overridden / unsaved edits" tags on the first line and labelled facts (capacities, modalities, reasoning, alias; route and protocol are identical across a card and already named by its head, so rows leave them out) on the second, with long names ellipsised and facts wrapping; expanded, it is that row's override editor — display name, alias and protocol as one group of text fields, context window and max output as the "capacity" group, and two modality checkboxes beside a three-way reasoning switch (follow discovery / on / off); a field keeps only one line naming where its value comes from ("Source: Aperture"), while how-to copy ("Leave it empty to use the discovered name") lives behind the "i" next to the label and only takes up room once opened |
+| Models page · Models in a route card | one row per model, one card per row: a state dot at its head (green: this round registered it as a route; grey: registration ran this round but did not include it — hovering it, or a screen reader, hears exactly that), then the name with its "N overridden / unsaved edits" tags on the first line and labelled facts (capacities, modalities, reasoning, alias; route and protocol are identical across a card and already named by its head, so rows leave them out) on the second, with long names ellipsised and facts wrapping; expanded, it is that row's override editor — display name, alias and protocol as one group of text fields, context window and max output as the "capacity" group, and two modality checkboxes beside a three-way reasoning switch (follow discovery / on / off); a field keeps only one line naming where its value comes from ("Source: Aperture"), while how-to copy ("Leave it empty to use the discovered name") lives behind the "i" next to the label and only takes up room once opened |
 | Models page · Save / Clear overrides / Cancel | write that row only, clear only the fields the backend report says really were overridden, or drop that row's draft; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
-| Models page · The footer block | the models no route can serve (and every model when no route got registered at all): the same rows and the same editor, with one extra line above them on how to attach them to a route |
+| Plugins page · Unserved models | how many models the report found with no route to serve them, and their names (at most five, then "and N more"): give them a `models[].protocol` and they get a route, anything that cannot be served can simply be deleted; when no route got registered at all, one sentence says that instead |
 
-In-place edits are configuration: capacities and modalities land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. Capacities accept the `1M` / `100K` spelling (decimal suffixes, the same vocabulary as the official Models page: `1M` is 1000000, not 1048576); what gets stored is still a plain token count, and the field spells it back in the shortest form that survives a round trip (`384000` → `384K`, while `1048576` is not a whole thousand and stays written out). The protocol field is the only way out for an unserved model: filling it in publishes a model that only answers on its native endpoint under the matching route.
+In-place edits are configuration: capacities and modalities land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. Capacities accept the `1M` / `100K` spelling (decimal suffixes, the same vocabulary as the official Models page: `1M` is 1000000, not 1048576); what gets stored is still a plain token count, and the field spells it back in the shortest form that survives a round trip (`384000` → `384K`, while `1048576` is not a whole thousand and stays written out). An unserved model does not appear on this page; its way out is in the configuration — write a `protocol` on that `models` entry and a model that only answers on its native endpoint gets published under the matching route.
 
 ## Configuration
 
@@ -159,7 +157,7 @@ Missing capacity and reasoning levels are filled in from Aperture's own fields �
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-**Some models never show up in the selector?** Look at the rows tagged `未服务` (unserved) on the official **Settings → Models** page (this plugin's route card lists that route's models, and the block at the end of the list holds the ones no route can serve). Models that only offer Gemini's native `generateContent` endpoint cannot be attached — this plugin can publish Chat Completions, OpenAI Responses, and Anthropic Messages, but does not translate Gemini's native protocol. Using the wrong endpoint fails loudly, and Aperture names the right one:
+**Some models never show up in the selector?** Look at the sentence on this plugin's configuration page at **Plugins → dsh-aperture** — it says how many models have no route to serve them and what they are called (the route cards on the Models page list only the models that route really serves). Models that only offer Gemini's native `generateContent` endpoint cannot be attached — this plugin can publish Chat Completions, OpenAI Responses, and Anthropic Messages, but does not translate Gemini's native protocol. Using the wrong endpoint fails loudly, and Aperture names the right one:
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat
@@ -183,7 +181,7 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
           max: max
 ```
 
-**Want a model the gateway did not list?** Add it explicitly with `models` — for instance the `未服务` (unserved) Gemini models on the Settings → Models page, if you know they work on an OpenAI-compatible endpoint after all:
+**Want a model the gateway did not list?** Add it explicitly with `models` — for instance the Gemini models that sentence on the configuration page reports, if you know they work on an OpenAI-compatible endpoint after all:
 
 ```yaml
 # ~/.dsh/profiles/web/cordis.patch.yml
@@ -226,7 +224,7 @@ GET {baseUrl}/v1/models
         │     /v1/chat/completions        ──► route                (openai-completions)
         │     /v1/responses               ──► route + -responses   (openai-responses)
         │     /v1/messages                ──► route + -anthropic   (anthropic-messages)
-        │     native generateContent only ──► not published (reported under unserved)
+        │     native generateContent only ──► not published (named by the Plugins page)
         │
         ├─ capacity:  Aperture fields ─► models.dev ─► default
         ├─ reasoning: Aperture fields ─► models.dev ─► off

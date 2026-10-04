@@ -50,8 +50,6 @@ const PRIMITIVES = '@deepseek-ai/dsh-client-ui-primitives';
 const CONFIG_SLOT = 'plugins.bundle.config';
 /** 模型清单注册的卡片座位（官方「模型」页按 `settingsNs` 派给每一行路由卡）。 */
 const CARD_SLOT = 'settings.models.provider-card';
-/** 模型清单注册的页脚座位（官方「模型」页提供商列表之后）。 */
-const MODELS_SLOT = 'settings.models.footer';
 /** 卡片座位里那一条路由的 id（夹具里 `deepseek()` 就挂在它上面）。 */
 const CARD_ROUTE = 'aperture';
 /** 字典命名空间。 */
@@ -261,8 +259,6 @@ interface Driven {
   readonly modelsProps: Record<string, unknown>;
   /** 卡片座位元素。 */
   readonly modelsElement: unknown;
-  /** 页脚座位元素（卡片接不住的那些：没有路由可服务的、以及一条路由都没注册时的全部）。 */
-  readonly orphansElement: unknown;
   readonly t: (key: string, params?: Record<string, unknown>) => string;
 }
 
@@ -1031,7 +1027,6 @@ function driveClient(options: FakePanelOptions = {}, withoutService = false): Dr
   };
   const registration = registrationFor(CONFIG_SLOT);
   const cardRegistration = registrationFor(CARD_SLOT);
-  const footerRegistration = registrationFor(MODELS_SLOT);
 
   // 渲染器每轮渲染都会重新组装注入面。这里用一组 getter 把这件事还原：每读一次都是新的包装
   // 对象（里面的函数与 store 仍是同一份）。因此「把注入面放进 effect 依赖」在真渲染器里会自
@@ -1061,7 +1056,7 @@ function driveClient(options: FakePanelOptions = {}, withoutService = false): Dr
     },
   };
 
-  /** 两个座位那一份注入面都一样：只有 hooks 与 panel，没有设置表单的动作。 */
+  /** 卡片座位那一份注入面：只有 hooks 与 panel，没有设置表单的动作。 */
   const modelsProps: Record<string, unknown> = {
     t,
     get useApertureCard() {
@@ -1082,7 +1077,6 @@ function driveClient(options: FakePanelOptions = {}, withoutService = false): Dr
     element: harness.mini.createElement(registration.component, props),
     modelsProps: cardProps,
     modelsElement: harness.mini.createElement(cardRegistration.component, cardProps),
-    orphansElement: harness.mini.createElement(footerRegistration.component, modelsProps),
     t,
   };
 }
@@ -1098,17 +1092,6 @@ function driveClient(options: FakePanelOptions = {}, withoutService = false): Dr
 function driveModels(options: FakePanelOptions = {}): Driven {
   const driven = driveClient(options);
   return { ...driven, element: driven.modelsElement, props: driven.modelsProps };
-}
-
-/**
- * 只挂页脚座位那一块：没有路由可服务的模型（一条路由都没注册时它管全部）。
- *
- * @param {object} options - 端点行为的开关。
- * @returns {object} 与 `driveClient` 同形，只是 `element` / `props` 指向页脚那一块。
- */
-function driveOrphans(options: FakePanelOptions = {}): Driven {
-  const driven = driveClient(options);
-  return { ...driven, element: driven.orphansElement, props: {} };
 }
 
 // ------------------------------------------------------------------ 小工具
@@ -1250,7 +1233,7 @@ describe('Web Client 端', () => {
     // 声明的服务清单与真正去要的那一份必须对得上。
     assert.deepEqual(plain(harness.exports.inject), ['slots', 'locale', 'remote', 'configForms']);
     assert.deepEqual([...harness.dependencies], ['remote.aperturePanel']);
-    assert.deepEqual([...harness.slotInjections], [CONFIG_SLOT, CARD_SLOT, MODELS_SLOT]);
+    assert.deepEqual([...harness.slotInjections], [CONFIG_SLOT, CARD_SLOT]);
   });
 
   it('把 aperturePanel 贡献挂到 Remote 服务上', async () => {
@@ -1455,25 +1438,20 @@ describe('Web Client 端', () => {
     assert.equal(syncSwitch(mini).props['aria-checked'], 'true');
   });
 
-  it('模型清单挂在官方「模型」页的两个扩展位上：键、条目 id、字典与注入面', async () => {
+  it('模型清单只挂在官方「模型」页的卡片座位上：键、字典与注入面', async () => {
     const { harness } = driveClient();
-    const find = (slot: string): Registration => {
-      const found = harness.registrations.find((entry) => entry.options.name === slot);
-      assert.ok(found, `模型清单要注册到官方「模型」页的 ${slot}`);
-      return found;
-    };
+    const card = harness.registrations.find((entry) => entry.options.name === CARD_SLOT);
+    assert.ok(card, `模型清单要注册到官方「模型」页的 ${CARD_SLOT}`);
+    assert.equal(
+      harness.registrations.some((entry) => entry.options.name === 'settings.models.footer'),
+      false,
+      '没有路由可服务的模型不在那一页占座位',
+    );
     // 卡片是**键控**槽位，键是设置命名空间：页主按它把贡献派给本插件注册的每一行路由。
-    const card = find(CARD_SLOT);
     assert.equal(card.options.key, SETTINGS_NS);
     assert.equal(card.options.id, undefined);
-    // 页脚是**列表**槽位：条目按 id 排序，包名就是它。
-    const footer = find(MODELS_SLOT);
-    assert.equal(footer.options.id, PACKAGE);
-    assert.equal(footer.options.key, undefined);
-    for (const registration of [card, footer]) {
-      assert.equal(registration.options.locale, NS);
-      assert.deepEqual(Object.keys(registration.options.inject()).sort(), ['hooks', 'panel']);
-    }
+    assert.equal(card.options.locale, NS);
+    assert.deepEqual(Object.keys(card.options.inject()).sort(), ['hooks', 'panel']);
   });
 
   it('模型清单读得到报告，也读得到设置：地址空着与「一个都没有」是两句话', async () => {
@@ -1673,15 +1651,54 @@ describe('Web Client 端', () => {
     assert.equal(findAll(mini.tree(), (node) => node.props.id === 'dap-base-url').length, 0);
     assert.equal(findAll(mini.tree(), (node) => node.type === 'li' && node.props.className === 'dap-card').length, 0);
   });
+
+  it('没有路由可服务的模型在这一页交代：几个、叫什么', async () => {
+    const { mini, element, t } = driveClient();
+    mini.mount(element);
+    await mini.flush();
+
+    const note = t('unservedHint', { count: 1, ids: 'gemini-2.5-flash' });
+    assert.ok(text(mini.tree()).includes(note), `配置页应当说一句「${note}」`);
+  });
+
+  it('名字太多就收住：最多报五个，多的写「等 N 个」', async () => {
+    const models = Array.from({ length: 7 }, (_, index) => gemini({ id: `orphan-${index + 1}` }));
+    const { mini, element, t } = driveClient({ report: report({ models: [deepseek(), ...models] }) });
+    mini.mount(element);
+    await mini.flush();
+
+    const ids = 'orphan-1、orphan-2、orphan-3、orphan-4、orphan-5';
+    const note = t('unservedHint', { count: 7, ids: `${ids} ${t('moreModels', { count: 2 })}` });
+    assert.ok(text(mini.tree()).includes(note), `配置页应当说一句「${note}」`);
+  });
+
+  it('每个模型都有路由时这句话不出现', async () => {
+    const { mini, element, t } = driveClient({ report: report({ models: [deepseek()] }) });
+    mini.mount(element);
+    await mini.flush();
+
+    const absent = t('unservedHint', { count: 1, ids: 'gemini-2.5-flash' });
+    assert.equal(text(mini.tree()).includes(absent), false);
+  });
+
+  it('一条路由都没注册时说另一句：选择器里不会出现本插件的模型', async () => {
+    const { mini, element, t } = driveClient({ report: report({ routes: [] }) });
+    mini.mount(element);
+    await mini.flush();
+
+    assert.match(text(mini.tree()), new RegExp(t('noRoutesHint'), 'u'));
+    const absent = t('unservedHint', { count: 1, ids: 'gemini-2.5-flash' });
+    assert.equal(text(mini.tree()).includes(absent), false, '一条都没注册时不谈「还有几个没服务」');
+  });
 });
-describe('两个座位', () => {
+describe('模型清单座位', () => {
   it('两块默认都收着：折叠头上有标题与模型数目，摊开才是清单', async () => {
     const { mini, element, t } = driveModels();
     mini.mount(element);
     await mini.flush();
 
     const collapsed = text(mini.tree());
-    assert.match(collapsed, new RegExp(t('modelsTitleRoute'), 'u'));
+    assert.match(collapsed, new RegExp(t('modelsTitle'), 'u'));
     assert.match(collapsed, new RegExp(t('modelsCount', { count: 1 }), 'u'));
     assert.deepEqual(rowIds(mini.tree()), [], '收着的时候一行都不画');
     assert.equal(findAll(mini.tree(), (node) => node.type === 'button').length, 1, '收着时只有折叠头那颗按钮');
@@ -1704,26 +1721,11 @@ describe('两个座位', () => {
     assert.ok(body, '展开后那头箭头指向的折叠内容要真的在');
   });
 
-  it('卡片座位只画那一条路由的模型，页脚座位接没有路由的那些', async () => {
+  it('卡片座位只画那一条路由的模型：没有路由的那些不在这张页上出现', async () => {
     const { mini, element, t } = driveModels();
     await mountModels(mini, element);
-    assert.match(text(mini.tree()), new RegExp(t('modelsTitleRoute'), 'u'));
-    assert.deepEqual(rowIds(mini.tree()), ['deepseek-flash']);
-    assert.equal(text(mini.tree()).includes(t('modelsOrphanHint')), false, '卡片上那几行都有路由');
-
-    const orphan = driveOrphans();
-    await mountModels(orphan.mini, orphan.element);
-    assert.match(text(orphan.mini.tree()), new RegExp(orphan.t('modelsTitleUnserved'), 'u'));
-    assert.match(text(orphan.mini.tree()), new RegExp(orphan.t('modelsOrphanHint'), 'u'));
-    assert.deepEqual(rowIds(orphan.mini.tree()), ['gemini-2.5-flash']);
-  });
-
-  it('一条路由都没注册时页脚座位管全部：那些模型不能没有入口', async () => {
-    const { mini, element, t } = driveOrphans({ report: report({ routes: [] }) });
-    await mountModels(mini, element);
-
     assert.match(text(mini.tree()), new RegExp(t('modelsTitle'), 'u'));
-    assert.deepEqual(rowIds(mini.tree()), ['deepseek-flash', 'gemini-2.5-flash']);
+    assert.deepEqual(rowIds(mini.tree()), ['deepseek-flash']);
   });
 
   it('卡片座位不逐行重复「路由 / 协议」：同一张卡里每一行都是那一条路由', async () => {
@@ -1740,25 +1742,11 @@ describe('两个座位', () => {
     const contextFact = card.t('factContextWindow', { count: count(1_048_576) });
     assert.match(cardText, new RegExp(contextFact, 'u'));
 
-    // 页脚座位没有卡片头可依，路由与协议必须自己说。
-    const orphans = driveOrphans({ report: report({ routes: [] }) });
-    await mountModels(orphans.mini, orphans.element);
-    const orphanText = text(orphans.mini.tree());
-    assert.match(orphanText, new RegExp(orphans.t('factRoute', { route: 'aperture' }), 'u'));
-    assert.match(orphanText, new RegExp(orphans.t('factProtocol', { protocol: 'openai-completions' }), 'u'));
   });
 
-  it('页脚座位没东西可说时整块不画，也不在别人的页上留一块空地', async () => {
-    const { mini, element } = driveOrphans({ report: report({ models: [deepseek()] }) });
-    mini.mount(element);
-    await mini.flush();
-
-    assert.equal(mini.tree(), null);
-  });
-
-  it('清单读不到时页脚座位仍然要说一句：那句话不该只长在卡片上', async () => {
-    const broken = report({ models: [deepseek()], refresh: { ...report().refresh!, catalog: { available: false, entries: 0, reason: '网关 502' } } });
-    const { mini, element } = driveOrphans({ report: broken });
+  it('卡片头上那句「哪里不对」不跟着座位走：清单读不到时卡片里也要说', async () => {
+    const broken = report({ refresh: { ...report().refresh!, catalog: { available: false, entries: 0, reason: '网关 502' } } });
+    const { mini, element } = driveModels({ report: broken });
     await mountModels(mini, element);
 
     assert.match(text(mini.tree()), /网关 502/u);
@@ -1820,10 +1808,6 @@ describe('模型行与刷新', () => {
     await mountModels(skipped.mini, skipped.element);
     assert.deepEqual(dots(skipped.mini), [[skipped.t('statusNotPublished'), 'idle']]);
 
-    // 没有路由可服务的那一行不长在卡片上：卡片按路由分块，它落在页脚那一块里。
-    const orphan = driveOrphans();
-    await mountModels(orphan.mini, orphan.element);
-    assert.deepEqual(dots(orphan.mini), [[orphan.t('statusUnserved'), 'warning']]);
   });
 
   it('展开一行：输入框预填的是此刻的生效值', async () => {
@@ -1964,11 +1948,11 @@ describe('模型行与刷新', () => {
   });
 
   it('没有覆盖过的一行不给「清空覆盖」', async () => {
-    const { mini, element } = driveOrphans();
+    const { mini, element } = driveModels({ report: report({ models: [deepseek({ overrideKeys: [] })] }) });
     await mountModels(mini, element);
-    await openRow(mini, 'gemini-2.5-flash');
+    await openRow(mini, 'deepseek-flash');
 
-    assert.equal(findAll(rowOf(mini, 'gemini-2.5-flash'), (node) => node.type === 'button' && text(node) === '清空覆盖').length, 0);
+    assert.equal(findAll(rowOf(mini, 'deepseek-flash'), (node) => node.type === 'button' && text(node) === '清空覆盖').length, 0);
   });
 
   it('容量认 1M / 100K 的写法，非法值在本地挡下来、不打端点', async () => {
@@ -2006,21 +1990,6 @@ describe('模型行与刷新', () => {
     await mini.flush();
 
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { contextWindow: 1_000_000 }]], '384k 与 384K 是同一个数');
-  });
-
-  it('未服务的模型可以就地填上协议', async () => {
-    const { harness, mini, element } = driveOrphans();
-    await mountModels(mini, element);
-    await openRow(mini, 'gemini-2.5-flash');
-
-    assert.equal(findById(mini.tree(), 'dap-gemini-2.5-flash-api').props.value, '');
-    assert.match(text(rowOf(mini, 'gemini-2.5-flash')), /填上协议它才有路由/u);
-    change(findById(mini.tree(), 'dap-gemini-2.5-flash-api'), 'openai-completions');
-    await mini.flush();
-    click(rowSave(mini, 'gemini-2.5-flash'));
-    await mini.flush();
-
-    assert.deepEqual(plain(harness.editCalls), [['gemini-2.5-flash', { api: 'openai-completions' }]]);
   });
 
   it('这一轮哪里不对就说一句：清单读不到、该写的没写进去', async () => {

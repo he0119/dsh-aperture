@@ -1,14 +1,11 @@
 /**
- * 模型清单与逐模型编辑器：挂在官方「模型」页的两个扩展位上，本插件的配置页只留实例地址与注册开关。
+ * 模型清单与逐模型编辑器：挂在官方「模型」页的卡片扩展位 `settings.models.provider-card` 上，
+ * 本插件的配置页只留实例地址与注册开关。
  *
- * 两个座位分工（页主自己的 README 叫 Extension slots，0.1.7-rc.1 与 0.2.0-rc.2 两版逐字相同）：
- *
- * - `settings.models.provider-card`：**本插件每一条路由的那张卡里**——座位按 `settingsNs` 派发，
- *   因此本插件注册的每一行都会得到这一块；组件从递进来的目录行认出自己管哪一条路由，只画那一条
- *   路由的模型。这是主入口：模型就列在它所属的那一行下面。
- * - `settings.models.footer`：提供商列表之后。它只接卡片接不住的那些——没有路由可服务的模型（例
- *   如配置里手写的、清单里没有的），以及一条路由都没注册时（`sync` 关着、或这一轮什么都没注册成）
- *   的全部模型。没有它，这些模型在界面上就再也没有入口。
+ * 座位按 `settingsNs` 派发（页主自己的 README 叫 Extension slots），因此本插件注册的每一行路由
+ * 都会得到这一块；组件从递进来的目录行认出自己管哪一条路由，只画那一条路由的模型——**能列在这一页
+ * 上的模型一定有路由**，没有路由可服务的那些不在这一页出现（它们的去处见
+ * [AperturePanel.tsx](./AperturePanel.tsx) 里那句提示）。
  *
  * 不放在本插件的配置页里：模型本来就在那一页上列着（provider 目录那几行就是本插件的路由），在模型
  * 旁边编辑模型比「先去插件页、再回来选模型」少一次往返。
@@ -78,16 +75,13 @@ export interface ApertureModelsProps {
    */
   useApertureCard: ApertureCardHook;
   /**
-   * 卡片座位递来的那一行目录（路由 id 在里面）；页脚座位没有这一项。
+   * 卡片座位递来的那一行目录（路由 id 在里面）。
    *
    * 类型写成结构里的一小块，而不是官方 `ProviderDirectoryEntry` 整份：这一块只用得上路由 id，
    * 官方以后往那一份里加字段不该牵动这里。
    */
   provider?: { readonly provider: string };
 }
-
-/** 这一块该画哪些模型：某一条路由的，还是卡片接不住的那些。 */
-type ModelsScope = 'route' | 'unserved' | 'all';
 
 // -------------------------------------------------------------- 模型清单
 
@@ -238,36 +232,24 @@ export function ApertureModels(props: ApertureModelsProps) {
   };
 
   /**
-   * 这一块画哪些模型。
+   * 这一块画哪一条路由的模型。
    *
-   * 卡片座位上只画**这一条路由**的模型；页脚座位接卡片接不住的：一条路由都没注册时它管全部（否则
-   * 那些模型在界面上没有入口），否则只管没有路由可服务的那些。
+   * 只有卡片座位：座位递来的目录行就是这一块管的那条路由，报告里的模型按 `route` 归属它。拿不到
+   * 目录行（座位没递 `provider`）就什么都不画——**没有路由可服务的模型不该在这一页出现**，它们由
+   * 配置页那句话交代。
    */
   const cardRoute = props.provider?.provider;
-  const scope: ModelsScope = cardRoute !== undefined
-    ? 'route'
-    : (report?.routes ?? []).length === 0
-      ? 'all'
-      : 'unserved';
-  const models = (report?.models ?? []).filter((model) => {
-    if (scope === 'route') return model.route === cardRoute;
-    if (scope === 'all') return true;
-    return model.route === undefined;
-  });
-  /** 页脚座位没东西可说时整块不画：它不该在别人的页上留一块空地。 */
-  const silent = cardRoute === undefined && scope === 'unserved' && models.length === 0;
+  const models = (report?.models ?? []).filter((model) => model.route === cardRoute);
 
   // 只取「地址空着吗」这一项：没有地址时发现根本不会跑，这时说「还没发现到模型」等于没说。
   const dormant = props.useApertureCard(
     (snapshot) => snapshot.available && snapshot.baseUrl.text === '',
   );
   const problem = roundProblem(report, t);
-  if (silent && problem === null) return null;
+  if (cardRoute === undefined) return null;
 
-  const title = scope === 'route'
-    ? t('modelsTitleRoute')
-    : scope === 'all' ? t('modelsTitle') : t('modelsTitleUnserved');
-  /** 折叠内容的 id：同一页上这一块可能出现多次（每条路由一次，页脚一次），按座位取才唯一。 */
+  const title = t('modelsTitle');
+  /** 折叠内容的 id：同一页上每一条路由各有一块，按座位取才唯一。 */
   const bodyId = `dap-models-body-${cardRoute ?? 'footer'}`;
 
   return (
@@ -304,7 +286,6 @@ export function ApertureModels(props: ApertureModelsProps) {
           ? (
             <div className="dap-modelsBody" id={bodyId}>
               <p className="dap-hint">{t('modelsHint')}</p>
-              {scope === 'route' ? null : <p className="dap-hint">{t('modelsOrphanHint')}</p>}
               {report === null
                 ? <p className="dap-hint">{t('loading')}</p>
                 : models.length === 0
@@ -319,7 +300,7 @@ export function ApertureModels(props: ApertureModelsProps) {
                             open={opened[model.id] === true}
                             busy={busy}
                             registeredRoutes={report === null ? undefined : report.refresh?.publish?.routes}
-                            hideRouteFacts={scope === 'route'}
+                            hideRouteFacts
                             t={t}
                             onToggle={() => toggleRow(model)}
                             onStage={(changes) => stage(model, changes)}
