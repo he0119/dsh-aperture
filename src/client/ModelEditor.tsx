@@ -243,45 +243,46 @@ export function ModelEditor(props: ModelEditorProps): ReactNode {
           })}
         </div>
       </div>
-      {/* 模态与推理并排：它们都是「一个开关加一句话」，横着放比竖着叠省一半高度。 */}
-      <div className="dap-grid2">
-        <div className="dap-editGroup">
-          <span className="dap-editGroupTitle">{t('editInput')}</span>
-          <div className="dap-control">
-            <Checkbox
-              checked={draft.text}
-              onChange={(next) => onStage({ text: next })}
-              label={t('modalityText')}
-              disabled={disabled}
-            />
-            <Checkbox
-              checked={draft.image}
-              onChange={(next) => onStage({ image: next })}
-              label={t('modalityImage')}
-              disabled={disabled}
-            />
-            {overrides.includes('input') ? <Tag tone="neutral">{t('overridden')}</Tag> : null}
-          </div>
-          <span className="dap-hint">{sourceOf(model.provenance.input)}</span>
-        </div>
-        <div className="dap-editGroup">
-          <span className="dap-editGroupTitle">{t('editReasoning')}</span>
-          {/* 显式给出 `Value`：`options` 里的字面量会被拓宽成 `string`，不给的话 `onChange`
-              拿到的就是 `string`，与草稿上的字面量联合对不上。 */}
-          <SegmentedControl<RowDraft['reasoning']>
-            id={`dap-${model.id}-reasoning`}
-            label={t('editReasoning')}
-            value={draft.reasoning}
-            options={[
-              { value: 'auto', label: t('reasoningFollow') },
-              { value: 'on', label: t('reasoningOn') },
-              { value: 'off', label: t('reasoningOff') },
-            ]}
-            onChange={(next) => onStage({ reasoning: next })}
+      {/* 一个字段一行，输入类型与推理各占一行——官方「模型」页也让输入类型在容量字段下方独占一行。
+          分段控件挂 `dap-controlStart`：flex 列的默认拉伸会把它撑满整行，官方自己也是放在
+          `align-items: flex-start` 的容器里用的。 */}
+      <div className="dap-editGroup">
+        <span className="dap-editGroupTitle">{t('editInput')}</span>
+        <div className="dap-control">
+          <Checkbox
+            checked={draft.text}
+            onChange={(next) => onStage({ text: next })}
+            label={t('modalityText')}
             disabled={disabled}
           />
-          <span className="dap-hint">{sourceOf(model.provenance.reasoning)}</span>
+          <Checkbox
+            checked={draft.image}
+            onChange={(next) => onStage({ image: next })}
+            label={t('modalityImage')}
+            disabled={disabled}
+          />
+          {overrides.includes('input') ? <Tag tone="neutral">{t('overridden')}</Tag> : null}
         </div>
+        <span className="dap-hint">{sourceOf(model.provenance.input)}</span>
+      </div>
+      <div className="dap-editGroup">
+        <span className="dap-editGroupTitle">{t('editReasoning')}</span>
+        {/* 显式给出 `Value`：`options` 里的字面量会被拓宽成 `string`，不给的话 `onChange`
+            拿到的就是 `string`，与草稿上的字面量联合对不上。 */}
+        <SegmentedControl<RowDraft['reasoning']>
+          id={`dap-${model.id}-reasoning`}
+          className="dap-controlStart"
+          label={t('editReasoning')}
+          value={draft.reasoning}
+          options={[
+            { value: 'auto', label: t('reasoningFollow') },
+            { value: 'on', label: t('reasoningOn') },
+            { value: 'off', label: t('reasoningOff') },
+          ]}
+          onChange={(next) => onStage({ reasoning: next })}
+          disabled={disabled}
+        />
+        <span className="dap-hint">{sourceOf(model.provenance.reasoning)}</span>
       </div>
       {model.endpoints.length === 0
         ? null
