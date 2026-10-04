@@ -95,11 +95,19 @@ Aperture (OpenAI Chat Completions)  Custom                  Edit
 + Add model provider
 ```
 
-**The instance address and the registration toggle** are two fields of one official settings form: where a field says "overridden", a "Reset to default" right beside it drops that key from your settings file (the same two words in the same position as the official plugin-config page), and Save writes only the fields you actually changed. Headings and spacing separate the groups, while a model row is a card (a hairline outline with a large radius, coloured only with theme tokens this page really defines), and the only thing you can expand is a model row.
+**The instance address and the registration toggle** are two fields of one official settings form: where a field says "overridden", a "Reset to default" right beside it drops that key from your settings file (the same two words in the same position as the official plugin-config page), and Save writes only the fields you actually changed.
+
+Headings and spacing separate the groups, while a model row is a card (a hairline outline with a large radius, coloured only with theme tokens this page really defines), and the only thing you can expand is a model row.
 
 (English labels are shown above; both pages are bilingual.)
 
-**The model list hangs off an extension seat inside this plugin's own rows on the official Models page** (the page owner's own name for them is Extension slots): every route this plugin registers is one row on that page, and that row gets a block of its own drawing **that one route's** models — so a model listed on that page always really has a route. The models no route can serve (the ones written by hand in the configuration, the ones the catalog never listed) take up no seat there; the Plugins page says one sentence about them instead: how many, which ones, and where to give them a protocol. That block **starts collapsed**: the header (a row of this plugin's own drawing, under a hairline) carries the title and the model count on the left and a permanent chevron on the right, and one click unfolds this block — every row on that page has this block, and unfolded it is a dozen lines, so collapsed is what keeps it from taking over. Inside a route card every row serves the same route, which the card head already names, so those rows leave "route / protocol" out.
+**The model list hangs off an extension seat inside this plugin's own rows on the official Models page** (the page owner's own name for them is Extension slots): every route this plugin registers is one row on that page, and that row gets a block of its own drawing **that one route's** models — so a model listed on that page always really has a route.
+
+The models no route can serve (the ones written by hand in the configuration, the ones the catalog never listed) take up no seat there; the Plugins page says one sentence about them instead: how many, which ones, and where to give them a protocol.
+
+That block **starts collapsed**: the header (a row of this plugin's own drawing, under a hairline) carries the title and the model count on the left and a permanent chevron on the right, and one click unfolds this block — every row on that page has this block, and unfolded it is a dozen lines, so collapsed is what keeps it from taking over.
+
+Inside a route card every row serves the same route, which the card head already names, so those rows leave "route / protocol" out.
 
 ## Usage
 
@@ -120,7 +128,11 @@ The address, the toggle and the per-model parameters stay drafts until you press
 | Models page · Save / Clear overrides / Cancel | write that row only, clear only the fields the backend report says really were overridden, or drop that row's draft; Save likewise waits for a round of re-discovery, so what you see afterwards is the new value |
 | Plugins page · Unserved models | how many models the report found with no route to serve them, and their names (at most five, then "and N more"): give them a `models[].protocol` and they get a route, anything that cannot be served can simply be deleted; when no route got registered at all, one sentence says that instead |
 
-In-place edits are configuration: capacities and input types land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog. Capacities accept the `1M` / `100K` spelling (decimal suffixes, the same vocabulary as the official Models page: `1M` is 1000000, not 1048576); what gets stored is still a plain token count, and the field spells it back in the shortest form that survives a round trip (`384000` → `384K`, while `1048576` is not a whole thousand and stays written out). An unserved model does not appear on this page; its way out is in the configuration — write a `protocol` on that `models` entry and a model that only answers on its native endpoint gets published under the matching route.
+In-place edits are configuration: capacities and input types land on the matching `aperture.models` entry, the catalog alias lands on `aperture.modelAliases[id]`, and writes merge per field — a field the interface never mentions (say `reasoningEfforts`) survives untouched, while an emptied field drops that override and falls back to discovery and the catalog.
+
+Capacities accept the `1M` / `100K` spelling (decimal suffixes, the same vocabulary as the official Models page: `1M` is 1000000, not 1048576); what gets stored is still a plain token count, and the field spells it back in the shortest form that survives a round trip (`384000` → `384K`, while `1048576` is not a whole thousand and stays written out).
+
+An unserved model does not appear on this page; its way out is in the configuration — write a `protocol` on that `models` entry and a model that only answers on its native endpoint gets published under the matching route.
 
 ## Configuration
 
@@ -141,30 +153,44 @@ Every key lives under that row's `config:` in the profile patch document (user l
 | `sync` | `true` | `false` discovers without registering routes (the configuration page still reports) |
 | `refreshIntervalMinutes` | `0` | Periodic refresh; `0` refreshes only at load and on change |
 
-Missing capacity and reasoning levels are filled in from Aperture's own fields → [models.dev](https://models.dev) → a conservative default (the fallback capacity, 128000, the 20s per-request timeout, and the five-minute streaming idle cap are constants in the code, not configuration). `maxTokens` is reported to the Host as a **default output cap** only when the model declares one itself: nothing is reported when it does not, and inventing a value would truncate every request to it.
+Missing capacity and reasoning levels are filled in from Aperture's own fields → [models.dev](https://models.dev) → a conservative default (the fallback capacity, 128000, the 20s per-request timeout, and the five-minute streaming idle cap are constants in the code, not configuration).
+
+`maxTokens` is reported to the Host as a **default output cap** only when the model declares one itself: nothing is reported when it does not, and inventing a value would truncate every request to it.
 
 ## Troubleshooting
 
-**The first `add` from git fails, saying build scripts were ignored?** Add the `allowBuilds` line from the git part of step 1, then re-run — or install from npm, which needs no authorization at all.
+### The first `add` from git fails, saying build scripts were ignored?
 
-**`Issues with peer dependencies found` during install?** Expected: the `@deepseek-ai/cordis`, `@deepseek-ai/schemastery` and `@deepseek-ai/dsh-settings` packages this plugin peers on ship with DSH and are resolved by DSH itself (they never enter the profile's `node_modules`), so pnpm not seeing them does not affect running the plugin.
+Add the `allowBuilds` line from the git part of step 1, then re-run — or install from npm, which needs no authorization at all.
 
-**`Failed to resolve dependency: The filename, directory name, or volume label syntax is incorrect. (os error 123)`?** The git spec is scp-style (`git@github.com:he0119/dsh-aperture.git`) — on Windows the colon reads as a drive letter, so it is parsed as a **local path**. Use a spec pnpm recognises: `github:he0119/dsh-aperture`, `git+https://…` or `git+ssh://…`.
+### `Issues with peer dependencies found` during install?
 
-**git over HTTPS is unusable on this machine (schannel / `SEC_E_NO_CREDENTIALS`)?**
+Expected: the `@deepseek-ai/cordis`, `@deepseek-ai/schemastery` and `@deepseek-ai/dsh-settings` packages this plugin peers on ship with DSH and are resolved by DSH itself (they never enter the profile's `node_modules`), so pnpm not seeing them does not affect running the plugin.
+
+### `Failed to resolve dependency: The filename, directory name, or volume label syntax is incorrect. (os error 123)`?
+
+The git spec is scp-style (`git@github.com:he0119/dsh-aperture.git`) — on Windows the colon reads as a drive letter, so it is parsed as a **local path**. Use a spec pnpm recognises: `github:he0119/dsh-aperture`, `git+https://…` or `git+ssh://…`.
+
+### git over HTTPS is unusable on this machine (schannel / `SEC_E_NO_CREDENTIALS`)?
 
 ```sh
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-**Some models never show up in the selector?** Look at the sentence on this plugin's configuration page at **Plugins → dsh-aperture** — it says how many models have no route to serve them and what they are called (the route cards on the Models page list only the models that route really serves). Models that only offer Gemini's native `generateContent` endpoint cannot be attached — this plugin can publish OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, but does not translate Gemini's native protocol. Using the wrong endpoint fails loudly, and Aperture names the right one:
+### Some models never show up in the selector?
+
+Look at the sentence on this plugin's configuration page at **Plugins → dsh-aperture** — it says how many models have no route to serve them and what they are called (the route cards on the Models page list only the models that route really serves).
+
+Models that only offer Gemini's native `generateContent` endpoint cannot be attached — this plugin can publish OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, but does not translate Gemini's native protocol. Using the wrong endpoint fails loudly, and Aperture names the right one:
 
 ```
 404 model "gemini-2.5-flash" is available via gemini_generate_content, not openai_chat
 404 model "MiniMax-M3" is available via anthropic_messages, not openai_chat
 ```
 
-**Want more reasoning levels for a model?** Only two conservative levels are offered by default (DeepSeek family `off/high/max`, every other reasoning model `off/high`). Add your own:
+### Want more reasoning levels for a model?
+
+Only two conservative levels are offered by default (DeepSeek family `off/high/max`, every other reasoning model `off/high`). Add your own:
 
 ```yaml
 # ~/.dsh/profiles/web/cordis.patch.yml
@@ -181,7 +207,9 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
           max: max
 ```
 
-**Want a model the gateway did not list?** Add it explicitly with `models` — for instance the Gemini models that sentence on the configuration page reports, if you know they work on an OpenAI-compatible endpoint after all:
+### Want a model the gateway did not list?
+
+Add it explicitly with `models` — for instance the Gemini models that sentence on the configuration page reports, if you know they work on an OpenAI-compatible endpoint after all:
 
 ```yaml
 # ~/.dsh/profiles/web/cordis.patch.yml
@@ -192,7 +220,9 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
         api: openai-completions
 ```
 
-**Capacity or reasoning flags were not filled in?** Gateways rename things, and models.dev may not match (in practice `deepseek-flash` and `k3` are `deepseek/deepseek-v4-flash` and `moonshotai/kimi-k3` there). Bridge it explicitly:
+### Capacity or reasoning flags were not filled in?
+
+Gateways rename things, and models.dev may not match (in practice `deepseek-flash` and `k3` are `deepseek/deepseek-v4-flash` and `moonshotai/kimi-k3` there). Bridge it explicitly:
 
 ```yaml
 # ~/.dsh/profiles/web/cordis.patch.yml
@@ -203,21 +233,53 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
       k3: moonshotai/kimi-k3
 ```
 
-**The interface says `没注册（路由 aperture-openai-responses 已被另一个适配器注册…）`?** One of the route keys it asks for is already served by someone else — most often by an **older version of this plugin**: 0.2 and earlier only discovered, and it wrote the routes it found into `llm-pi-ai.providers`. This plugin will not rewrite someone else's configuration for you, so fix it by hand following the key name that line gives you: delete the matching `providers.<key>` from the `llm-pi-ai` section, or, if that route name belongs to another plugin, change this plugin's `routePrefix` (all three route keys move with it). The next change to the adapter set — a reload after that edit, or pressing the "Refresh now" action on the Plugins page — retries registration; no restart is needed. (The host writes that line in Chinese, as do its action summaries.)
+### The interface says `没注册（路由 aperture-openai-responses 已被另一个适配器注册…）`?
 
-**Coming from 0.2 or earlier, do I have to delete those `aperture*` keys in `llm-pi-ai.providers` myself?** Yes — and this time no key will point them out for you: the plugin's route keys are now the prefix plus the protocol name (by default `aperture-openai-chat-completions`, `aperture-openai-responses`, `aperture-anthropic-messages`), none of which matches the `aperture`, `aperture-responses` or `aperture-anthropic` written back then, so registration never collides. Leaving them behind only lets `llm-pi-ai` keep serving a stale route (duplicate models in the selector); delete them while upgrading.
+One of the route keys it asks for is already served by someone else — most often by an **older version of this plugin**: 0.2 and earlier only discovered, and it wrote the routes it found into `llm-pi-ai.providers`.
 
-**Where did the `route` key go?** It was renamed to `routePrefix`. The old key raises no error — the schema ignores it, so the prefix quietly falls back to the default `aperture`. If you had renamed the prefix (`route: my-gateway`), copy it onto `routePrefix` after upgrading; if you only ever wrote the default, just delete the old key.
+This plugin will not rewrite someone else's configuration for you, so fix it by hand following the key name that line gives you: delete the matching `providers.<key>` from the `llm-pi-ai` section, or, if that route name belongs to another plugin, change this plugin's `routePrefix` (all three route keys move with it). The next change to the adapter set — a reload after that edit, or pressing the "Refresh now" action on the Plugins page — retries registration; no restart is needed. (The host writes that line in Chinese, as do its action summaries.)
 
-**Saved but not in effect?** DSH's patch layers stack: above the profile patch document sit higher-priority layers such as `$DSH_HOME/cordis.patch.yml`. If the `aperture` row is written there too, a save from the configuration page lands in the profile patch document but is shadowed by that layer (the settings service may also refuse the write outright, in which case the page says so). Delete the row from the higher-priority layer, or edit it there instead.
+### Coming from 0.2 or earlier, do I have to delete those `aperture*` keys in `llm-pi-ai.providers` myself?
 
-**Upgrading from 0.2 — where did my `settings.yaml` go?** As of 0.1.7 settings no longer live in a file of their own; they live in the profile patch document. On the first start `$DSH_HOME/settings.yaml` is renamed to `settings.yaml.imported` and each section is moved into the patch document under its settings namespace — the `aperture:` section moves as-is, and every key and value that still passes the schema is unchanged, so the address and the per-model overrides are all still there. From then on only the patch document is read, and `settings.yaml.imported` is just an archive; editing it does nothing. A section whose values no longer validate stays in that archive too, with a line in the log saying so.
+Yes — and this time no key will point them out for you.
 
-**No Plugins page / no GUI in this deployment?** Both interfaces only exist in the Web GUI (the Plugins-page half works over Typert Remote endpoints). A headless profile still discovers and still registers routes, it just has no clickable page. The models also show up as rows on the official Models page (only the protocols that really carry models take a row): that row's own editor is read-only for this plugin (its settings section is `aperture`, not the Models page's generic form), but this plugin hangs one editor of its own inside that row, so editing a model is still that page's business (models no route can serve do not appear there; when the GUI is around, the Plugins page's sentence covers them); with no GUI, edit the configuration.
+The plugin's route keys are now the prefix plus the protocol name (by default `aperture-openai-chat-completions`, `aperture-openai-responses`, `aperture-anthropic-messages`), none of which matches the `aperture`, `aperture-responses` or `aperture-anthropic` written back then, so registration never collides. Leaving them behind only lets `llm-pi-ai` keep serving a stale route (duplicate models in the selector); delete them while upgrading.
 
-**Need a real key instead of the placeholder credential?** Aperture authenticates by network identity (Tailscale) and needs none; the plugin sends `authorization: Bearer dsh-aperture` on every request (the Anthropic route sends `x-api-key: dsh-aperture`), only to make pi-ai willing to send the request. It is **not a key**. When a real credential is needed, point `apiKeyEnv` at a credential-seam record and the placeholder credential is no longer sent.
+### Where did the `route` key go?
 
-**Is the old route still there after changing `routePrefix`?** The plugin only knows the three keys it currently asks for (`<prefix>-openai-chat-completions`, `<prefix>-openai-responses`, `<prefix>-anthropic-messages`); once the process exits, the old key has no one serving it. It no longer appears in the selector and needs no cleanup, unless another adapter takes that key over.
+It was renamed to `routePrefix`. The old key raises no error — the schema ignores it, so the prefix quietly falls back to the default `aperture`.
+
+If you had renamed the prefix (`route: my-gateway`), copy it onto `routePrefix` after upgrading; if you only ever wrote the default, just delete the old key.
+
+### Saved but not in effect?
+
+DSH's patch layers stack: above the profile patch document sit higher-priority layers such as `$DSH_HOME/cordis.patch.yml`.
+
+If the `aperture` row is written there too, a save from the configuration page lands in the profile patch document but is shadowed by that layer (the settings service may also refuse the write outright, in which case the page says so). Delete the row from the higher-priority layer, or edit it there instead.
+
+### Upgrading from 0.2 — where did my `settings.yaml` go?
+
+As of 0.1.7 settings no longer live in a file of their own; they live in the profile patch document.
+
+On the first start `$DSH_HOME/settings.yaml` is renamed to `settings.yaml.imported` and each section is moved into the patch document under its settings namespace — the `aperture:` section moves as-is, and every key and value that still passes the schema is unchanged, so the address and the per-model overrides are all still there.
+
+From then on only the patch document is read, and `settings.yaml.imported` is just an archive; editing it does nothing. A section whose values no longer validate stays in that archive too, with a line in the log saying so.
+
+### No Plugins page / no GUI in this deployment?
+
+Both interfaces only exist in the Web GUI (the Plugins-page half works over Typert Remote endpoints). A headless profile still discovers and still registers routes, it just has no clickable page.
+
+The models also show up as rows on the official Models page (only the protocols that really carry models take a row): that row's own editor is read-only for this plugin (its settings section is `aperture`, not the Models page's generic form), but this plugin hangs one editor of its own inside that row, so editing a model is still that page's business (models no route can serve do not appear there; when the GUI is around, the Plugins page's sentence covers them); with no GUI, edit the configuration.
+
+### Need a real key instead of the placeholder credential?
+
+Aperture authenticates by network identity (Tailscale) and needs none; the plugin sends `authorization: Bearer dsh-aperture` on every request (the Anthropic route sends `x-api-key: dsh-aperture`), only to make pi-ai willing to send the request. It is **not a key**.
+
+When a real credential is needed, point `apiKeyEnv` at a credential-seam record and the placeholder credential is no longer sent.
+
+### Is the old route still there after changing `routePrefix`?
+
+The plugin only knows the three keys it currently asks for (`<prefix>-openai-chat-completions`, `<prefix>-openai-responses`, `<prefix>-anthropic-messages`); once the process exits, the old key has no one serving it. It no longer appears in the selector and needs no cleanup, unless another adapter takes that key over.
 
 ## What it does
 
