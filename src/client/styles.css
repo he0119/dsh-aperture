@@ -303,12 +303,6 @@
   color: var(--dsw-alias-label-tertiary, #8b8b8b);
   cursor: default;
 }
-[data-dsh-aperture] .dap-grid2 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 14px 16px;
-  align-items: start;
-}
 [data-dsh-aperture] .dap-endpoints {
   display: flex;
   flex-direction: column;
@@ -341,6 +335,11 @@
   gap: 8px;
   font-size: 13px;
   line-height: 1.5;
+}
+/* flex 列的默认 `align-items: stretch` 会把分段控件从「贴着标签宽」撑成整行宽；官方自己是把它
+   放进 `align-items: flex-start` 的容器里用的，这里用一条 `align-self` 还原。 */
+[data-dsh-aperture] .dap-controlStart {
+  align-self: flex-start;
 }
 [data-dsh-aperture] .dap-actions {
   display: flex;

@@ -1432,7 +1432,7 @@ describe('Web Client 端', () => {
     assert.equal(harness.panelCalls.includes('refresh'), false, '读报告不该顺手刷新');
     const tree = mini.tree();
     assert.match(text(tree), /Aperture 的地址/u);
-    assert.match(text(tree), /模型的清单与逐模型覆盖在「设置 → 模型」页里/u, '模型在另一页上，这一页说清去哪儿改');
+    assert.match(text(tree), /模型目录与逐模型覆盖在「设置 → 模型」页里/u, '模型在另一页上，这一页说清去哪儿改');
     assert.equal(findAll(tree, (node) => node.type === 'li' && node.props.className === 'dap-card').length, 0, '这一页不再画模型行');
     assert.equal(findById(tree, 'dap-base-url').props.value, 'https://ai.example.ts.net');
     assert.equal(syncSwitch(mini).props['aria-checked'], 'true');
@@ -1946,7 +1946,7 @@ describe('模型行与刷新', () => {
     await mountModels(mini, element);
 
     await openRow(mini, 'deepseek-flash');
-    assert.ok(text(rowOf(mini, 'deepseek-flash')).includes('推理档位'), '不认识的键也要报出来');
+    assert.ok(text(rowOf(mini, 'deepseek-flash')).includes('推理等级'), '不认识的键也要报出来');
     click(rowButton(mini, 'deepseek-flash', '清空覆盖'));
     await mini.flush();
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', null]]);
@@ -1965,7 +1965,7 @@ describe('模型行与刷新', () => {
     await mountModels(mini, element);
     await openRow(mini, 'deepseek-flash');
 
-    for (const [illegal, field] of [['1G', '上下文容量'], ['1.5', '上下文容量'], ['0', '上下文容量']] as const) {
+    for (const [illegal, field] of [['1G', '上下文窗口'], ['1.5', '上下文窗口'], ['0', '上下文窗口']] as const) {
       change(findById(mini.tree(), 'dap-deepseek-flash-contextWindow'), illegal);
       await mini.flush();
       assert.ok(text(rowOf(mini, 'deepseek-flash')).includes(t('invalidField')), `${illegal} 应当在输入框上标出来`);
@@ -1997,7 +1997,7 @@ describe('模型行与刷新', () => {
     assert.deepEqual(plain(harness.editCalls), [['deepseek-flash', { contextWindow: 1_000_000 }]], '384k 与 384K 是同一个数');
   });
 
-  it('这一轮哪里不对就说一句：清单读不到、该写的没写进去', async () => {
+  it('这一轮哪里不对就说一句：目录读不到、该写的没写进去', async () => {
     // 报告那一块删掉之后，这两句话本来只写在报告事实表里——现在挂在模型那一段的提示语下面。
     const brokenCatalog = report({
       refresh: {
@@ -2008,7 +2008,7 @@ describe('模型行与刷新', () => {
     const first = driveModels({ report: brokenCatalog });
     first.mini.mount(first.element);
     await first.mini.flush();
-    assert.match(text(first.mini.tree()), /清单不可用（网关没回应）/u);
+    assert.match(text(first.mini.tree()), /目录不可用（网关没回应）/u);
 
     const skipped = report({
       refresh: {
