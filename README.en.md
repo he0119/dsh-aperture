@@ -71,13 +71,13 @@ In-place edits are configuration: capacities and input types land on the matchin
 
 ## Configuration
 
-Every key lives under that row's `config:` in the profile patch document; anything you leave out falls back to the defaults below. `baseUrl` and `sync` can be edited in place on the Plugins page, and the per-model parameters inside `models` and `modelAliases` on the Settings → Models page; every other key needs the file.
+Every key lives under that row's `config:` in the profile patch document; anything you leave out falls back to the defaults below (a `—` in the Default column means the key has no default: leaving it out leaves it absent). `baseUrl` and `sync` can be edited in place on the Plugins page, and the per-model parameters inside `models` and `modelAliases` on the Settings → Models page; every other key needs the file.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture instance root. A trailing `/v1` is tolerated and stripped; empty leaves the plugin dormant (no discovery, no registration) |
 | `routePrefix` | `aperture` | Common prefix of the three route names: a route key is the prefix plus its protocol name in lowercase with dashes (`aperture-openai-chat-completions`, `aperture-openai-responses`, `aperture-anthropic-messages`), and the three selector labels come from the same prefix, spelling out the official Models page's product names for the protocols word for word: `Aperture (OpenAI Chat Completions)`, `Aperture (OpenAI Responses)`, `Aperture (Anthropic Messages)` |
-| `apiKeyEnv` | `''` | Credential-seam reference; non-empty stops sending the placeholder credential |
+| `apiKeyEnv` | `—` | Credential-seam reference (must match `^[A-Za-z_][A-Za-z0-9_]*$`); leave the key out to keep sending the placeholder credential. An empty string is not a reference — do not write one |
 | `headers` | `{}` | Extra request headers; on a name collision the **attribution header** and the **placeholder credential** are still filled in per protocol |
 | `enabledModelIds` | `[]` | Non-empty restricts discovery to these ids (explicit `models` entries are exempt) |
 | `modelAliases` | `{}` | Gateway id → models.dev id |
