@@ -86,7 +86,7 @@ export interface Config {
    * Chat Completions)`）。
    */
   routePrefix?: string;
-  /** 按请求解析的凭据引用；留空则改为发布一个占位请求头。 */
+  /** 按请求解析的凭据引用；未设置时按协议带占位请求头。 */
   apiKeyEnv?: string;
   /** 每条路由的请求都会带上的额外请求头；它们优先于占位凭据。 */
   headers?: Dict<string>;
@@ -127,7 +127,9 @@ export interface Config {
 export const Config = z.object({
   baseUrl: z.string().default(''),
   routePrefix: z.string().default('aperture'),
-  apiKeyEnv: z.string().default(''),
+  // 没有 `.default('')`：空串不是合法的凭据引用名（见 schema 的 `role`），而设置段的值会原样
+  // 流到别的插件那里——只要这一项存在，把「字符串」当引用的客户端就会拿空串去批量查凭据。
+  apiKeyEnv: z.string().role('credential-ref'),
   headers: z.dict(z.string()).default({}),
   enabledModelIds: z.array(z.string()).default([]),
   modelAliases: z.dict(z.string()).default({}),

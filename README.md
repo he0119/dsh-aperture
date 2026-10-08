@@ -71,13 +71,13 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 
 ## 配置
 
-所有键都写在 profile 补丁文档里那一行的 `config:` 下，不写的键回落下面的缺省值。`baseUrl` 与 `sync` 能在插件页上就地编辑，`models`、`modelAliases` 里的逐模型参数能在「设置 → 模型」页里就地编辑；其余键只有配置文件这一条路。
+所有键都写在 profile 补丁文档里那一行的 `config:` 下，不写的键回落下面的缺省值（默认一栏写 `—` 的键没有缺省值，不写就是缺失）。`baseUrl` 与 `sync` 能在插件页上就地编辑，`models`、`modelAliases` 里的逐模型参数能在「设置 → 模型」页里就地编辑；其余键只有配置文件这一条路。
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture 实例地址。末尾 `/v1` 会被容忍并去掉；空值表示休眠（不探测、不注册） |
 | `routePrefix` | `aperture` | 三条路由名的共同前缀：路由键是前缀加协议名的小写连字符写法（`aperture-openai-chat-completions`、`aperture-openai-responses`、`aperture-anthropic-messages`），三个选择器名称同样由它推出来，逐字取官方「模型」页给协议用的产品名：`Aperture (OpenAI Chat Completions)`、`Aperture (OpenAI Responses)`、`Aperture (Anthropic Messages)` |
-| `apiKeyEnv` | `''` | 凭据 seam 里的引用名；非空时不再带占位凭据 |
+| `apiKeyEnv` | `—` | 凭据 seam 里的引用名（须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`）；不写这一项就按协议带占位凭据。空串不是引用名，别写 |
 | `headers` | `{}` | 每条请求额外带的头；同名时**归因头**与**占位凭据**仍会按协议补齐 |
 | `enabledModelIds` | `[]` | 非空时只保留这些 id（`models` 里显式列出的不受限） |
 | `modelAliases` | `{}` | 网关 id → models.dev id |
