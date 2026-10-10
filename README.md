@@ -1,4 +1,14 @@
+<p align="center">
+  <img src="icon.svg" width="88" alt="">
+</p>
+
+<div align="center">
+
 # dsh-aperture
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
+
+</div>
 
 把 [Aperture](https://tailscale.com/kb/1542/aperture) 网关上的模型自动发现出来，按模型自己在哪个端点上应答，注册成 DeepSeek Harness 里本插件自己的 provider 路由，让它们直接出现在模型选择器里。装好后你只需要填一个 Aperture 地址。
 

@@ -1,4 +1,14 @@
+<p align="center">
+  <img src="icon.svg" width="88" alt="">
+</p>
+
+<div align="center">
+
 # dsh-aperture
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
+
+</div>
 
 Discover the models an [Aperture](https://tailscale.com/kb/1542/aperture) gateway serves and, by the endpoint each one answers on, register them as this plugin's own provider routes in DeepSeek Harness — so they simply appear in the model selector. Once installed, one Aperture address is all you configure.
 
