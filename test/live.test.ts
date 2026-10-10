@@ -280,6 +280,47 @@ describe('live Aperture routes', () => {
     assert.equal(off.body.reasoning_effort, undefined);
   });
 
+  wireIt('system 提示与工具声明都到线上', async () => {
+    await drain(ctx.llm.stream({
+      provider: CHAT_ROUTE,
+      model: 'deepseek-flash',
+      system: '你是这条用例的验证助手',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }],
+      tools: [
+        {
+          name: 'probe_tool',
+          description: '验证工具声明真的到线上',
+          parameters: {
+            type: 'object',
+            properties: { value: { type: 'string' } },
+            required: ['value'],
+          },
+        },
+      ],
+    }));
+
+    const call = lastCall(gateway, '/v1/chat/completions');
+    // pi-ai 1.x 的 provider 只读 transcript：system 提示与工具声明必须先折进头部那条指令消息，
+    // 原样传 `Context` 不会报错，只是这两样从请求里整个消失（见 `src/adapter/index.ts` 的
+    // `normalizeContext`）。这条用例钉的就是那一步。
+    //
+    // 那条消息的角色名不是本插件定的：pi-ai 对推理模型按 `supportsDeveloperRole` 发 `developer`
+    // （0.85.1 起就是如此），因此这里只钉「首位那条指令消息带着这段提示」。
+    const messages = call.body.messages as Array<{ role: string; content: unknown }>;
+    const instruction = messages.find(
+      (message) => message.role === 'system' || message.role === 'developer',
+    );
+    assert.ok(instruction !== undefined, `expected an instruction message, saw ${JSON.stringify(call.body.messages)}`);
+    assert.equal(messages[0], instruction, 'system 提示必须落在整个对话的最前面');
+    assert.match(JSON.stringify(instruction.content), /你是这条用例的验证助手/u);
+    assert.deepEqual(
+      (call.body.tools as Array<{ name?: string; function?: { name?: string } }> | undefined)
+        ?.map((tool) => tool.function?.name ?? tool.name),
+      ['probe_tool'],
+      `expected the tool declaration on the wire, saw ${JSON.stringify(call.body.tools)}`,
+    );
+  });
+
   wireIt('Anthropic 的思考签名经重放信封回到下一轮', async () => {
     const first = await run(ctx, `${APERTURE}-anthropic-messages`, 'MiniMax-M3', { assemble: true });
     assert.ok(first.message !== undefined, 'expected an assembled assistant message');
