@@ -29,7 +29,7 @@ import {
 } from '@deepseek-ai/dsh-llm';
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout';
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment';
-import type { Api, Model as PiModel } from '@earendil-works/pi-ai';
+import { normalizeContext, type Api, type Model as PiModel } from '@earendil-works/pi-ai';
 import type { PlannedRoute, ProviderModel, ProviderRoute } from '../plan.ts';
 import type { RuntimeLogger } from '../runtime.ts';
 import { toPiContext } from './context.ts';
@@ -238,8 +238,13 @@ export class ApertureAdapter extends LlmAdapter {
         ),
       );
 
+      // pi-ai 1.x 的 provider 只认 `TranscriptContext`：system 提示与工具声明必须先折进
+      // transcript 头部那条指令消息（推理模型发 `developer`，其余发 `system`）。把
+      // `toPiContext` 交出来的 `Context` 原样递进去既编译不过（`TranscriptContext` 带一个
+      // 不导出的 brand），运行时也会把这两样整个丢掉——线上只剩一段没有工具、没有系统提示的
+      // 对话。
       const iterator = toStreamChunks(
-        protocolApi(route.provider.protocol).streamSimple(pi, context, {
+        protocolApi(route.provider.protocol).streamSimple(pi, normalizeContext(context), {
           ...(apiKey === undefined ? {} : { apiKey }),
           headers: requestHeaders(route.provider.headers),
           ...(options.temperature === undefined ? {} : { temperature: options.temperature }),

@@ -34,6 +34,7 @@ import type {
   AssistantMessage as PiAssistantMessage,
   Context as PiContext,
   ImageContent,
+  JsonObject,
   Message as PiMessage,
   TextContent,
   Tool as PiTool,
@@ -375,12 +376,12 @@ function hasThinkingSignature(block: ReplayBlock | undefined): block is ReplayBl
  * 解析不了就抛：这条历史是模型自己产出的，解析不了说明记录被改过，静默替换成 `{}` 会把一次
  * 工具调用悄悄改成另一次。
  */
-function parseArguments(raw: string): Record<string, unknown> {
+function parseArguments(raw: string): JsonObject {
   if (raw.trim().length === 0) return {};
   try {
     const parsed: unknown = JSON.parse(raw);
     return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
+      ? (parsed as JsonObject)
       : {};
   } catch (error) {
     throw new LlmError(

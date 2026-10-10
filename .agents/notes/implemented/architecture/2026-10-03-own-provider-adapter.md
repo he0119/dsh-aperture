@@ -67,11 +67,17 @@ schema 表达不了的东西（兼容开关、`thinkingLevelMap` 的逐档位写
 
 - 安装重量大幅上升：`@earendil-works/pi-ai` 把 `openai`、`@anthropic-ai/sdk`、`@google/genai`、
   AWS Bedrock、typebox、partial-json 与 pi-telemetry 一起带进来。换来的是三种协议不用自己维护。
-- 版本线**故意钉在 0.85.x**：1.0.0 已经发布，导出映射兼容，但类型不兼容（本插件用到的事件与模型
-  描述符形状都变了）。升级时要连同 `test/adapter.test.ts` 的事件形状一起改。
+- 版本线跟着宿主的 pi-ai 走：`dependencies` 里写 `^1.0.2`（与 `dsh-llm-pi-ai` 同一行，实装
+  1.1.0）。0.85.x 只是最初的落点——0.86.0 起 `ProviderStreams` 只收带 brand 的
+  `TranscriptContext`，`Context` 不再能被直接派发。迁移就两处：`streamSimple` 之前先过 pi-ai 的
+  `normalizeContext()`（system 提示与工具声明必须折进 transcript 头部那条指令消息，否则它们不
+  报错、只是从线上请求里整个消失），以及 `ToolCall.arguments` 收紧成 `JsonObject`。再动这条
+  版本线时先看三样：`.lazy` 入口、事件词汇、`Model` 描述符；`test/live.test.ts` 里那条「system
+  提示与工具声明都到线上」的用例钉的是 `normalizeContext` 这一步。
 - `engines.node` 跟着 pi-ai 提到 `>= 22.19.0`。
-- pi-ai 的工具参数解析是 O(n²)（每个增量都重解析一次累积的 JSON），0.85.1 与 1.0.0 都如此：
-  正确性不受影响，长工具调用会慢一点。这是上游的事，本插件只记录。
+- pi-ai 的工具参数解析是 O(n²)（每个增量都重解析一次累积的 JSON），0.85.1 与 1.1.0 都如此
+  （`utils/json-parse.js` 逐字节没变）：正确性不受影响，长工具调用会慢一点。这是上游的事，
+  本插件只记录。
 - pi-ai 的失败是流里的终态事件而不是抛出，因此「该不该重试」的机器码由 `src/adapter/stream.ts`
   按文本分类给出；分类表是这一层唯一的猜测，宁可给 `PI_AI_ERROR` 也不要错报成可重试的类别。
 - 本插件从此要跟 pi-ai 的模型描述符与事件词汇走：`reasoning` 的档位名、`thinkingLevelMap` 的
