@@ -164,4 +164,11 @@ pnpm test && pnpm run typecheck && pnpm run build
 - `main` 上的 ruleset **没有 bypass actor**：只能开 PR，`check` 绿了才合得了，`git push origin main`
   会被 `GH013` 拒掉（`--force` 更不行）。因此改完就推一个分支、开 PR，把 PR 链接与验证结果交给
   维护者，由他决定合不合、发不发版——发布流程见 [docs/releasing.md](docs/releasing.md)。
+- **合并方式用 squash**：ruleset 要求线性历史，`merge` 这类会留下 merge commit 的方式被拒，可用的是
+  squash 与 rebase；在服务端放行的两种里选 squash，main 上每个 PR 只留一笔，提交信息就是 PR 标题，
+  所以分支内部怎么切、有几个提交都不影响 main 的形状。
+- **PR 小而单一**：squash 之后 main 上只剩 PR 标题，所以那个标题必须是这一笔改动的完整说明，一个 PR
+  一件事。一个分支上凑了几件事就拆成多个 PR；后面的改动依赖前面的改动时**叠成 stacked PR**（各自
+  以它前面那个分支为 base，前一个合了再把自己的 base 改回 main），不要为了少开 PR 把它们压进同一个
+  标题里。
 - 改写历史前先留一个备份 ref，并在报告里给出新旧 sha 的对应关系，以及「树有没有变化」的核对方式。
