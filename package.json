@@ -57,7 +57,7 @@
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "dsh": "^0.1.7-rc.1 || ^0.2.0-rc.1"
+    "dsh": "^0.2.3-alpha.2"
   },
   "dsh": {
     "bundle": {
@@ -77,17 +77,17 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.4 || ^4.2.0-alpha.1",
-    "@deepseek-ai/cordis-plugin-loader": "^1.0.5 || ^1.2.0-alpha.1",
-    "@deepseek-ai/dsh-attachment": "^0.1.7-rc.1 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.7-rc.1 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-settings-models": "^0.1.7-rc.1 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-credentials": "^0.1.7-rc.1 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.1.7-rc.1 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-settings": "^0.1.7-rc.1 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-timeout": "^0.1.7-rc.1 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.7-rc.1 || ^0.2.0-rc.1",
-    "@deepseek-ai/schemastery": "^3.18.4 || ^3.20.0-alpha.1"
+    "@deepseek-ai/cordis": "^4.2.0-alpha.1",
+    "@deepseek-ai/cordis-plugin-loader": "^1.2.0-alpha.1",
+    "@deepseek-ai/dsh-attachment": "^0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.2.3-alpha.2",
+    "@deepseek-ai/dsh-client-ui-settings-models": "^0.2.3-alpha.2",
+    "@deepseek-ai/dsh-credentials": "^0.2.3-alpha.2",
+    "@deepseek-ai/dsh-llm": "^0.2.3-alpha.2",
+    "@deepseek-ai/dsh-settings": "^0.2.3-alpha.2",
+    "@deepseek-ai/dsh-timeout": "^0.2.3-alpha.2",
+    "@deepseek-ai/dsh-typert-protocol": "^0.2.3-alpha.2",
+    "@deepseek-ai/schemastery": "^3.20.0-alpha.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.2.0-alpha.1",

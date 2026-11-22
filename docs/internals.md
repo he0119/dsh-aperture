@@ -58,6 +58,8 @@
 - [端点描述符手写，线格式只有一层直通](../.agents/notes/implemented/architecture/2026-09-24-handwritten-passthrough-remote-codecs.md)。
 - [端点名不得与 RemoteNamespaceService 的保留成员重名](../.agents/notes/implemented/bug-fix/2026-09-23-reserved-remote-endpoint-names.md)。
 - [peer 范围是一条并集](../.agents/notes/implemented/architecture/2026-09-28-peer-range-is-a-union.md)。
+- [只支持一条 DSH 版本线](../.agents/notes/implemented/architecture/2026-11-22-single-supported-dsh-line.md)：
+  `engines.dsh`、peer 范围与 `devDependencies` 写同一条线，旧宿主在预检处被拒。
 - [cosmokit 写成直接依赖](../.agents/notes/implemented/process/2026-09-23-cosmokit-as-a-direct-dependency.md)：
   pnpm 的隔离布局下声明生成会报 TS2742。
 
