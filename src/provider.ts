@@ -15,7 +15,6 @@
 
 import {
   LlmError,
-  assertUsableApiKey,
   type AdapterRegistrationHandle,
   type DirectoryRegistrationHandle,
   type LlmConfigurableProvider,
@@ -27,6 +26,43 @@ import { ApertureAdapter } from './adapter/index.ts';
 import { APERTURE_NAMESPACE } from './config.ts';
 import type { PlannedRoute, ProviderRoute, RoutePlan } from './plan.ts';
 import type { RuntimeLogger } from './runtime.ts';
+
+/**
+ * 一个密钥要放进 HTTP 头，每个字符都必须落在可见 ASCII 里。
+ *
+ * 与宿主 `assertUsableApiKey` 内部那份判定同源（`/^[\x21-\x7E]+$/`），空白与 DEL 都不行。
+ */
+const LEGAL_API_KEY = /^[\x21-\x7E]+$/;
+
+/**
+ * 判定解析出来的密钥能不能放进请求头，能就返回去掉首尾空白的值。
+ *
+ * 这个判定早先是 `@deepseek-ai/dsh-llm` 的 `assertUsableApiKey`。0.2.3-alpha.1 起该包不再导出它，
+ * 替代的 `normalizeApiKey` 只在 `@deepseek-ai/dsh-credentials` 的新版里，而本插件仍要装在 0.1.7
+ * 与 0.2.0 的宿主上——两边都够不着，判定因此留在这里，语义与上游保持一致：只去掉首尾空白，
+ * 空值与含非法字符的值都在发请求之前拒绝，而不是让 `fetch` 抛一个说不清是谁的错。
+ *
+ * @param raw - 凭据服务或环境变量给出的原值。
+ * @param ref - 这条值来自哪个凭据引用，写进诊断。
+ * @returns 去掉首尾空白、可以放进请求头的值。
+ * @throws {LlmError} 值为空白或含 HTTP 头不能携带的字符时。
+ */
+export function usableApiKey(raw: string, ref: string): string {
+  const value = raw.trim();
+  if (value.length === 0) {
+    throw new LlmError(
+      `dsh-aperture: 凭据 ${ref} 的值是空白；请通过凭据服务存入原始密钥（模型页可写入），或在启动环境里导出它`,
+      'INVALID_CREDENTIAL',
+    );
+  }
+  if (!LEGAL_API_KEY.test(value)) {
+    throw new LlmError(
+      `dsh-aperture: 凭据 ${ref} 含有 HTTP 头不能携带的字符；请只存原始密钥，不要带引号、换行或其它空白`,
+      'INVALID_CREDENTIAL',
+    );
+  }
+  return value;
+}
 
 /** 一次发布的结果。 */
 export interface PublishOutcome {
@@ -214,7 +250,7 @@ export class ApertureProvider {
       ? process.env[ref]
       : (await credentials.resolve(credentialRef(ref)))?.value;
     if (resolved !== undefined && resolved.length > 0) {
-      return assertUsableApiKey(resolved, 'dsh-aperture', ref);
+      return usableApiKey(resolved, ref);
     }
     throw new LlmError(
       `dsh-aperture: 路由 "${provider}" 的 apiKeyEnv 指向 ${ref}，但它没有值；`

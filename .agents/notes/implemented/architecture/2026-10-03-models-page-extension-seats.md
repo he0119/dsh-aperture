@@ -45,7 +45,7 @@ Status: implemented
 
 两个座位都由「模型」页声明，本插件只注册内容；页主不给内部状态，因此「这一条路由是谁」只能从
 owner props 读，而「该画哪些模型」只能从报告算。为此模型页那个包作为**类型依赖**进
-`devDependencies` / `peerDependencies`（`^0.1.7-rc.1 || ^0.2.0-rc.1`）与 `dsh.client.inject`：
+`devDependencies` / `peerDependencies`（同 `engines.dsh` 那条并集）与 `dsh.client.inject`：
 `import type {} from '@deepseek-ai/dsh-client-ui-settings-models/client'` 只取槽位声明，运行时不
 require 它。
 

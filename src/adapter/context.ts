@@ -28,6 +28,7 @@ import {
   requestImageDimensions,
   type AttachmentStore,
   type ImageAttachmentRef,
+  type ImageRequestTarget,
   type RequestImageAttachment,
 } from '@deepseek-ai/dsh-attachment';
 import type {
@@ -47,11 +48,12 @@ import { readReplayState, type ReplayBlock } from './replay.ts';
 /**
  * 一张图片在请求里的目标版本。
  *
- * 与 `dsh-llm-pi-ai` 自己的默认值一致：4 Mi 像素的上限（等价于 2048×2048）与 1 MiB 的
- * 单张编码字节上限。网关不通过任何接口声明它接受什么，而这两个数字是当前发布物里已经被
- * 验证过的那一组。
+ * 4 Mi 像素的上限（等价于 2048×2048）与 1 MiB 的单张编码字节硬上限，是 0.2.0 那版发布物上
+ * 验证过的一组。`dsh-llm-pi-ai` 现在按请求预算给每张图分 0.75 MiB（20 MiB 预算、20 份），
+ * 本插件沿用自己一直用的 1 MiB 单张上限；软目标与硬上限同值，缩尺寸仍由编码器按质量阶梯
+ * 先试，超过 1 MiB 才继续缩。
  */
-const REQUEST_IMAGE_POLICY = { maxPixels: 4_194_304, maxBytes: 1_048_576 } as const;
+const REQUEST_IMAGE_POLICY = { maxPixels: 4_194_304, maxImageBytes: 1_048_576 } as const;
 
 /** 一次请求里图片累积后的 base64 字节上限；超过就要求上层先卸载最旧的几张。 */
 const MAX_REQUEST_IMAGE_BYTES = 20_971_520;
@@ -288,10 +290,11 @@ async function prepareRequestImages(
 }
 
 /** 一张图片在本次请求里的目标尺寸。 */
-function requestImageTarget(ref: ImageAttachmentRef): { width: number; height: number; maxBytes: number } {
+function requestImageTarget(ref: ImageAttachmentRef): ImageRequestTarget {
   return {
     ...requestImageDimensions(ref.width, ref.height, REQUEST_IMAGE_POLICY.maxPixels),
-    maxBytes: REQUEST_IMAGE_POLICY.maxBytes,
+    maxImageBytes: REQUEST_IMAGE_POLICY.maxImageBytes,
+    imageTargetBytes: REQUEST_IMAGE_POLICY.maxImageBytes,
   };
 }
 
