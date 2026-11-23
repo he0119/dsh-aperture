@@ -109,7 +109,6 @@ describe('声明的兼容范围', () => {
           '@deepseek-ai/dsh-attachment',
           '@deepseek-ai/dsh-client-ui-primitives',
           '@deepseek-ai/dsh-client-ui-settings-models',
-          '@deepseek-ai/dsh-credentials',
           '@deepseek-ai/dsh-llm',
           '@deepseek-ai/dsh-settings',
           '@deepseek-ai/dsh-timeout',

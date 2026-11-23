@@ -60,15 +60,18 @@ describe('planRoutes', () => {
     assert.deepEqual(route(plan(), 'aperture-anthropic-messages')?.provider.headers, { 'x-api-key': 'dsh-aperture' });
   });
 
-  it('配置了凭据引用之后就去掉占位凭据', () => {
-    const result = plan({ apiKeyEnv: 'APERTURE_API_KEY' });
-    assert.equal(route(result, 'aperture-openai-chat-completions')?.provider.apiKeyEnv, 'APERTURE_API_KEY');
-    assert.equal(route(result, 'aperture-openai-chat-completions')?.provider.headers, undefined);
-  });
-
   it('允许配置的请求头替换占位凭据', () => {
     const result = plan({ headers: { authorization: 'Bearer real-token' } });
     assert.deepEqual(route(result, 'aperture-openai-chat-completions')?.provider.headers, { authorization: 'Bearer real-token' });
+  });
+
+  it('配置头的名字大小写不同时，也不会和占位凭据并存', () => {
+    // HTTP 头名不区分大小写：留着 `authorization` 占位头再加一个 `Authorization`，网关收到的
+    // 是两个同名的头，行为由实现决定。
+    const result = plan({ headers: { Authorization: 'Bearer real-token' } });
+    assert.deepEqual(route(result, 'aperture-openai-chat-completions')?.provider.headers, {
+      Authorization: 'Bearer real-token',
+    });
   });
 
   it('为 DeepSeek 模型描述 DeepSeek 的思考方言', () => {

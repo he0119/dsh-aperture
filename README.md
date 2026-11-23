@@ -87,7 +87,6 @@ npx @deepseek-ai/dsh --profile web --dump-config   # 应出现 "# == dsh-apertur
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture 实例地址。末尾 `/v1` 会被容忍并去掉；空值表示休眠（不探测、不注册） |
 | `routePrefix` | `aperture` | 三条路由名的共同前缀：路由键是前缀加协议名的小写连字符写法（`aperture-openai-chat-completions`、`aperture-openai-responses`、`aperture-anthropic-messages`），三个选择器名称同样由它推出来，逐字取官方「模型」页给协议用的产品名：`Aperture (OpenAI Chat Completions)`、`Aperture (OpenAI Responses)`、`Aperture (Anthropic Messages)` |
-| `apiKeyEnv` | `—` | 凭据 seam 里的引用名（须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`）；不写这一项就按协议带占位凭据。空串不是引用名，别写 |
 | `headers` | `{}` | 每条请求额外带的头；同名时**归因头**与**占位凭据**仍会按协议补齐 |
 | `enabledModelIds` | `[]` | 非空时只保留这些 id（`models` 里显式列出的不受限） |
 | `modelAliases` | `{}` | 网关 id → models.dev id |
@@ -182,7 +181,7 @@ DSH 的补丁层是叠加的：profile 的补丁文档之上还有 `$DSH_HOME/co
 
 ### 需要真密钥而不是占位凭据？
 
-不需要：Aperture 靠网络身份（Tailscale）认证。插件默认在每条请求上带 `authorization: Bearer dsh-aperture`（Anthropic 路由是 `x-api-key: dsh-aperture`），只是让 pi-ai 愿意把请求发出去，**不是密钥**。真要密钥时把 `apiKeyEnv` 指向凭据 seam 里的记录，占位凭据就不再带。
+不需要，插件也不提供密钥配置：Aperture 靠网络身份（Tailscale）认证。每条请求按协议带 `authorization: Bearer dsh-aperture`（Anthropic 路由是 `x-api-key: dsh-aperture`），只是让 pi-ai 愿意把请求发出去，**不是密钥**。网关若真的要求静态令牌，用 `headers` 写死这两个头之一，占位凭据就不再带。
 
 ### 改了 `routePrefix` 之后旧路由还在？
 

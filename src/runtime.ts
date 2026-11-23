@@ -226,7 +226,6 @@ export class ApertureRuntime {
     const plan = planRoutes(registry.models, {
       instanceRoot: config.instanceRoot,
       routes: config.routes,
-      ...(config.apiKeyEnv === undefined ? {} : { apiKeyEnv: config.apiKeyEnv }),
       headers: config.headers,
       configured: config.models,
     });

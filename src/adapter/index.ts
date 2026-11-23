@@ -52,8 +52,6 @@ const IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT';
 export interface AdapterDeps {
   /** 当前这一代要服务的路由；换一份新数组就是新一代。 */
   readonly routes: () => readonly PlannedRoute[];
-  /** 解析一条路由的凭据；未配置 `apiKeyEnv` 时返回 `undefined`（该路由用占位凭据）。 */
-  readonly resolveApiKey: (provider: string, route: ProviderRoute) => Promise<string | undefined>;
   /** 附件服务；没有它的部署里图片不可转换。 */
   readonly attachments: () => AttachmentStore | undefined;
   /** 诊断。 */
@@ -205,8 +203,6 @@ export class ApertureAdapter extends LlmAdapter {
         'UNSUPPORTED_REASONING_EFFORT',
       );
     }
-    const apiKey = await this.deps.resolveApiKey(options.provider, route.provider);
-
     // 消费者侧的取消：宿主停止迭代时我们要把底层请求也停掉，否则一次被放弃的对话会把连接
     // 一直挂到网关自己超时。
     const consumer = new AbortController();
@@ -245,7 +241,6 @@ export class ApertureAdapter extends LlmAdapter {
       // 对话。
       const iterator = toStreamChunks(
         protocolApi(route.provider.protocol).streamSimple(pi, normalizeContext(context), {
-          ...(apiKey === undefined ? {} : { apiKey }),
           headers: requestHeaders(route.provider.headers),
           ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
           ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),

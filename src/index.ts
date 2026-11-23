@@ -33,10 +33,9 @@ import type { Context } from '@deepseek-ai/cordis';
 // 只为一个类型而来：`loader/volatile-update` 这个事件名由 cordis-plugin-loader 声明合并
 // 进 `Events`，而本包在运行时并不需要它——空导入让编译期能看见那条声明。
 import type {} from '@deepseek-ai/cordis-plugin-loader';
-// 同理：这三个包把 `llm` / `credentials` / `attachments` 声明合并进 `Context`，
-// 空导入让 `ctx.llm`、`ctx.get('credentials')` 有类型。运行时它们由宿主提供。
+// 同理：这两个包把 `llm` / `attachments` 声明合并进 `Context`，空导入让 `ctx.llm`、
+// `ctx.get('attachments')` 有类型。运行时它们由宿主提供。
 import type {} from '@deepseek-ai/dsh-llm';
-import type {} from '@deepseek-ai/dsh-credentials';
 import type {} from '@deepseek-ai/dsh-attachment';
 import { fetchModelsListing } from './aperture.ts';
 import { ModelCatalog } from './catalog.ts';
@@ -115,7 +114,6 @@ export function apply(ctx: Context, config: ConfigRef): void {
 
   const provider = new ApertureProvider({
     llm: ctx.llm,
-    credentials: () => ctx.get('credentials'),
     attachments: () => ctx.get('attachments'),
     logger,
   });

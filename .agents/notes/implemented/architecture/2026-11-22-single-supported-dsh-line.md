@@ -31,7 +31,5 @@ Status: implemented
 - 装到 0.2.2 及更早的宿主上会被预检拒掉，诊断点名 `engines.dsh`，不再是静默失败。
 - 与 [peer 范围是一条并集](2026-09-28-peer-range-is-a-union.md) 相反：那份并集不再适用；
   拒绝记录读 `requirements`、预检先读 `engines.dsh` 这两条仍然成立。
-- 密钥判定改用 `dsh-credentials` 的 `normalizeApiKey`，见
-  [密钥判定跟随 dsh-credentials](../bug-fix/2026-11-22-api-key-check-follows-credentials.md)。
 - 下次升支持线时，`test/manifest.test.ts` 的 `OUTSIDE` 名单与 `devDependencies` 要一起改；
   两份声明任何一份漏改，用例会红。
