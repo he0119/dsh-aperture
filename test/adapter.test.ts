@@ -64,7 +64,6 @@ function model(overrides: Partial<ProviderModel> = {}): ProviderModel {
 function adapter(plans: readonly PlannedRoute[]): ApertureAdapter {
   return new ApertureAdapter({
     routes: () => plans,
-    resolveApiKey: () => Promise.resolve(undefined),
     attachments: () => undefined,
     logger: quiet,
   });
@@ -249,7 +248,6 @@ describe('适配器的派发边界', () => {
     })];
     const built = new ApertureAdapter({
       routes: () => plans,
-      resolveApiKey: () => Promise.resolve(undefined),
       attachments: () => undefined,
       logger: quiet,
     });

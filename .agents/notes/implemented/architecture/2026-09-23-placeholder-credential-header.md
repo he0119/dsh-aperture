@@ -10,7 +10,7 @@ pi-ai 在既没有请求级密钥、又没有非空的 `authorization` / `x-api-
 
 ## Decision
 
-没有配 `apiKeyEnv` 的路由，按协议带一个占位请求头，让适配器愿意发请求：
+每条路由按协议带一个占位请求头，让适配器愿意发请求：
 
 - `aperture` 路由 → `authorization: Bearer dsh-aperture`
 - `aperture-anthropic-messages` 路由 → `x-api-key: dsh-aperture`
@@ -28,6 +28,8 @@ pi-ai 在既没有请求级密钥、又没有非空的 `authorization` / `x-api-
 
 ## Consequences
 
-- 配置里带 `apiKeyEnv`（指向凭据 seam 里的记录）时不带占位头，真密钥照常生效。
-- 占位值会随请求发到网关上，因此必须叫得像占位，不能长得像真凭据；它不落进任何配置，用户层里
-  只有 `apiKeyEnv` 这个名字（见[不写任何配置](../simplification/2026-10-03-no-configuration-writes.md)）。
+- 配置里的 `headers` 写了 `authorization` / `x-api-key` / `cf-aig-authorization` 时不带占位头，
+  网关要求的静态令牌照常生效。
+- 占位值会随请求发到网关上，因此必须叫得像占位，不能长得像真凭据；它不落进任何配置，本插件也
+  没有凭据相关的配置键（见[不写任何配置](../simplification/2026-10-03-no-configuration-writes.md)、
+  [不提供密钥配置](../simplification/2026-11-23-no-api-key-config.md)）。

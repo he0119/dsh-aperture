@@ -153,7 +153,7 @@ describe('live Aperture routes', () => {
       cwd: REPO,
       home,
       startedBundles: [],
-      overlays: [],
+      overlayPaths: [],
       telemetryDisabledEnv: undefined,
     };
     ctx = await boot(

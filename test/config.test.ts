@@ -91,8 +91,6 @@ describe('配置 schema', () => {
     ]);
     assert.equal(value.baseUrl, '');
     assert.equal(value.routePrefix, 'aperture');
-    // `apiKeyEnv` 不在名单里，也没有默认值：未设置就是整项缺失，不是空串（下一条用例）。
-    assert.equal('apiKeyEnv' in value, false);
     assert.deepEqual(value.headers, {});
     assert.deepEqual(value.enabledModelIds, []);
     assert.deepEqual(value.modelAliases, {});
@@ -102,16 +100,6 @@ describe('配置 schema', () => {
     assert.equal(value.reasoning, 'auto');
     assert.equal(value.sync, true);
     assert.equal(value.refreshIntervalMinutes, 0);
-  });
-
-  it('把 apiKeyEnv 声明成凭据引用，未设置时整项缺失', () => {
-    // 设置段的值会原样流到别的插件那里，而空串不是合法的引用名（`^[A-Za-z_][A-Za-z0-9_]*$`）：
-    // 只要这一项存在，把「字符串」当成引用批量查询的客户端就会让整次查询被拒。
-    assert.equal(schemaMeta('apiKeyEnv').role, 'credential-ref');
-    assert.equal('default' in schemaMeta('apiKeyEnv'), false);
-    assert.equal('apiKeyEnv' in defaults(), false);
-    // 显式写过的那一份照旧原样保留，修剪留给 `resolveConfig`。
-    assert.equal(configured({ apiKeyEnv: 'APERTURE_API_KEY' }).apiKeyEnv, 'APERTURE_API_KEY');
   });
 
   it('不再是配置项的那两个数字仍然钉着值', () => {
@@ -220,14 +208,6 @@ describe('resolveConfig', () => {
       () => resolveConfig(configured({ models: [{ id: 'gemini-2.5-pro', protocol: 'gemini' }] })),
       /无法服务/,
     );
-  });
-
-  it('把空白的 apiKeyEnv 视为未配置', () => {
-    assert.equal(resolveConfig(configured({ apiKeyEnv: '   ' })).apiKeyEnv, undefined);
-  });
-
-  it('修剪传入的凭据引用', () => {
-    assert.equal(resolveConfig(configured({ apiKeyEnv: ' APERTURE_API_KEY ' })).apiKeyEnv, 'APERTURE_API_KEY');
   });
 
   it('把已禁用的清单 URL 默认为空值，而非内置值', () => {

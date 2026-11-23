@@ -14,18 +14,15 @@
  */
 
 import {
-  LlmError,
-  assertUsableApiKey,
   type AdapterRegistrationHandle,
   type DirectoryRegistrationHandle,
   type LlmConfigurableProvider,
   type LlmRuntime,
 } from '@deepseek-ai/dsh-llm';
-import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials';
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment';
 import { ApertureAdapter } from './adapter/index.ts';
 import { APERTURE_NAMESPACE } from './config.ts';
-import type { PlannedRoute, ProviderRoute, RoutePlan } from './plan.ts';
+import type { PlannedRoute, RoutePlan } from './plan.ts';
 import type { RuntimeLogger } from './runtime.ts';
 
 /** 一次发布的结果。 */
@@ -40,8 +37,6 @@ export interface PublishOutcome {
 export interface ProviderDeps {
   /** LLM 服务。 */
   readonly llm: LlmRuntime;
-  /** 凭据服务；未挂载时为缺失。 */
-  readonly credentials: () => CredentialProvider | undefined;
   /** 附件服务；没有它的部署里图片不可转换。 */
   readonly attachments: () => AttachmentStore | undefined;
   /** 诊断。 */
@@ -70,7 +65,6 @@ export class ApertureProvider {
     this.deps = deps;
     this.adapter = new ApertureAdapter({
       routes: () => this.routes,
-      resolveApiKey: (provider, profile) => this.resolveApiKey(provider, profile),
       attachments: () => this.deps.attachments(),
       logger: this.deps.logger,
     });
@@ -200,26 +194,4 @@ export class ApertureProvider {
       + '请把本插件配置里的 routePrefix 改成另一个名字（三条路由键一起变）。';
   }
 
-  /**
-   * 解析一条路由的凭据。
-   *
-   * 配置了 `apiKeyEnv` 就**必须**解析出可用的值：那是一个明确的声明，悄悄退回占位凭据会让
-   * 一次配错了密钥的部署看起来像一次网关拒绝。
-   */
-  private async resolveApiKey(provider: string, route: ProviderRoute): Promise<string | undefined> {
-    const ref = route.apiKeyEnv;
-    if (ref === undefined) return undefined;
-    const credentials = this.deps.credentials();
-    const resolved = credentials === undefined
-      ? process.env[ref]
-      : (await credentials.resolve(credentialRef(ref)))?.value;
-    if (resolved !== undefined && resolved.length > 0) {
-      return assertUsableApiKey(resolved, 'dsh-aperture', ref);
-    }
-    throw new LlmError(
-      `dsh-aperture: 路由 "${provider}" 的 apiKeyEnv 指向 ${ref}，但它没有值；`
-      + `请通过凭据服务存入 ${ref}（模型页可写入），或在启动环境里导出它`,
-      'MISSING_CREDENTIAL',
-    );
-  }
 }

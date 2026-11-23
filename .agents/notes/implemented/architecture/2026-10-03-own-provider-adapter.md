@@ -31,8 +31,8 @@ schema 表达不了的东西（兼容开关、`thinkingLevelMap` 的逐档位写
   `index.ts`（`ApertureAdapter`：元数据查询、快照、派发）。注册那一层在 `src/provider.ts`。
 - 派发直接调 `ProviderStreams.streamSimple(model, context, options)`，不走 pi-ai 的
   `Models` / `Provider` 封装：那一层为「一个集合里的多个 provider」服务，而本插件只有自己声明
-  的三条路由，凭据由宿主的凭据接缝解析、头由本插件自己拼齐。
-- 每次请求都带上归因头；没有 `apiKeyEnv` 的路由按协议带占位凭据（见[占位凭据]
+  的三条路由，头由本插件自己拼齐（占位凭据或配置里的 `headers`）。
+- 每次请求都带上归因头；每条路由按协议带占位凭据，除非配置的 `headers` 已经给出凭据头（见[占位凭据]
   (2026-09-23-placeholder-credential-header.md)）——pi-ai 在既无密钥、又无非空
   `authorization` / `x-api-key` 头时会拒绝派发。
 - 重放元数据用自己的信封（`kind: 'aperture'`）。升级上来的部署里，同一条历史可能是

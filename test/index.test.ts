@@ -216,7 +216,7 @@ function harness(options: { readonly typert?: boolean } = {}): Harness {
     logger: { error: log('error'), info: log('info'), warn: log('warn'), debug: log('debug') },
     settings,
     llm,
-    // 凭据与附件是可选服务：没有它们的部署照样注册路由（配置里没写 apiKeyEnv 时用占位凭据）。
+    // 附件是可选服务：没有它的部署照样注册路由，请求按协议带占位凭据。
     get: (_name: string): undefined => undefined,
     fiber,
     effect,

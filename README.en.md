@@ -87,7 +87,6 @@ Every key lives under that row's `config:` in the profile patch document; anythi
 | --- | --- | --- |
 | `baseUrl` | `''` | Aperture instance root. A trailing `/v1` is tolerated and stripped; empty leaves the plugin dormant (no discovery, no registration) |
 | `routePrefix` | `aperture` | Common prefix of the three route names: a route key is the prefix plus its protocol name in lowercase with dashes (`aperture-openai-chat-completions`, `aperture-openai-responses`, `aperture-anthropic-messages`), and the three selector labels come from the same prefix, spelling out the official Models page's product names for the protocols word for word: `Aperture (OpenAI Chat Completions)`, `Aperture (OpenAI Responses)`, `Aperture (Anthropic Messages)` |
-| `apiKeyEnv` | `—` | Credential-seam reference (must match `^[A-Za-z_][A-Za-z0-9_]*$`); leave the key out to keep sending the placeholder credential. An empty string is not a reference — do not write one |
 | `headers` | `{}` | Extra request headers; on a name collision the **attribution header** and the **placeholder credential** are still filled in per protocol |
 | `enabledModelIds` | `[]` | Non-empty restricts discovery to these ids (explicit `models` entries are exempt) |
 | `modelAliases` | `{}` | Gateway id → models.dev id |
@@ -181,7 +180,7 @@ Both interfaces only exist in the Web GUI. A headless profile still discovers an
 
 ### Need a real key instead of the placeholder credential?
 
-No: Aperture authenticates by network identity (Tailscale). The plugin sends `authorization: Bearer dsh-aperture` on every request (the Anthropic route sends `x-api-key: dsh-aperture`), only to make pi-ai willing to send the request — this is **not a key**. When a real credential is needed, point `apiKeyEnv` at a credential-seam record and the placeholder credential is no longer sent.
+No — and the plugin has no key setting at all: Aperture authenticates by network identity (Tailscale). Every request carries `authorization: Bearer dsh-aperture` (the Anthropic route sends `x-api-key: dsh-aperture`), only to make pi-ai willing to send the request — this is **not a key**. If a gateway really demands a static token, put one of those two headers in `headers` and the placeholder credential is no longer sent.
 
 ### Is the old route still there after changing `routePrefix`?
 

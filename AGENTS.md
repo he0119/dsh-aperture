@@ -76,9 +76,10 @@ pnpm test && pnpm run typecheck && pnpm run build
   的单元测试钉端到端测不到的细节（请求头、URL 归一化、事件流的失败路径、历史重放的降级分支、
   注册撞键的分支）；`test/client.test.ts` 测的是**打包产物** `lib/client.js`。
 - `test/manifest.test.ts` 不属于上面那三层，它核的是**声明**：拿宿主自己的
-  `evaluatePluginCompatibility` 走一遍 `package.json` 的 peer 范围与 `engines.dsh`，要求它们接受
-  devDependencies 装的那条版本线、又不接受更早的宿主。**升级 devDependencies 而忘了跟 peer 范围**，
-  真机上就是插件整行被预检拒掉、界面上什么也不出现，而其余检查全绿——这份用例挡的就是它。
+  `evaluatePluginCompatibility` 走一遍 `package.json` 的 `engines.dsh`（预检先读它，缺省时才回退到
+  DSH peer 范围），要求两者接受 devDependencies 装的那条版本线、又不接受更早的宿主。**升级
+  devDependencies 而忘了跟 `engines.dsh` 或 peer 范围**，真机上就是插件整行被预检拒掉、界面上什么
+  也不出现，而其余检查全绿——这份用例挡的就是它。
 - `test/notes.test.ts` 同样只核**声明**：`.agents/notes/` 下的路径形状、头部三行、`Status:` 与所在
   目录是否一致、`## Problem` 是不是第一个二级标题、必备章节在不在、`implemented/` 里有没有混进
   提案用语、相对链接能不能解析。改笔记格式就同一次改动里改它。

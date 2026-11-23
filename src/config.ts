@@ -86,8 +86,6 @@ export interface Config {
    * Chat Completions)`）。
    */
   routePrefix?: string;
-  /** 按请求解析的凭据引用；未设置时按协议带占位请求头。 */
-  apiKeyEnv?: string;
   /** 每条路由的请求都会带上的额外请求头；它们优先于占位凭据。 */
   headers?: Dict<string>;
   /** 非空时，只发现这些模型 id。 */
@@ -127,9 +125,6 @@ export interface Config {
 export const Config = z.object({
   baseUrl: z.string().default(''),
   routePrefix: z.string().default('aperture'),
-  // 没有 `.default('')`：空串不是合法的凭据引用名（见 schema 的 `role`），而设置段的值会原样
-  // 流到别的插件那里——只要这一项存在，把「字符串」当引用的客户端就会拿空串去批量查凭据。
-  apiKeyEnv: z.string().role('credential-ref'),
   headers: z.dict(z.string()).default({}),
   enabledModelIds: z.array(z.string()).default([]),
   modelAliases: z.dict(z.string()).default({}),
@@ -180,8 +175,6 @@ export interface ResolvedConfig {
   readonly routePrefix: string;
   /** 这一代的三条路由（短名、协议、注册键、显示名），顺序固定。 */
   readonly routes: readonly ResolvedRoute[];
-  /** 凭据引用；未配置时为 `undefined`。 */
-  readonly apiKeyEnv: string | undefined;
   readonly headers: Readonly<Record<string, string>>;
   readonly enabledModelIds: readonly string[];
   readonly modelAliases: Readonly<Record<string, string>>;
@@ -240,14 +233,11 @@ export function resolveConfig(config: Config): ResolvedConfig {
     }
   }
 
-  const apiKeyEnv = (config.apiKeyEnv ?? '').trim();
-
   return {
     instanceRoot,
     rawBaseUrl,
     routePrefix,
     routes: resolveRoutes(routePrefix),
-    apiKeyEnv: apiKeyEnv.length === 0 ? undefined : apiKeyEnv,
     headers: config.headers ?? {},
     enabledModelIds: config.enabledModelIds ?? [],
     modelAliases: config.modelAliases ?? {},

@@ -10,7 +10,7 @@
  * 传输。
  *
  * 两件网关事实塑造了本模块：pi-ai 的 OpenAI 兼容路径在既无凭据、又无非空 `authorization`
- * 头时拒绝派发，所以没有配 `apiKeyEnv` 的路由会带上一个占位头；pi-ai 的 `Model.maxTokens`
+ * 头时拒绝派发，所以每条路由都按协议带上一个占位头；pi-ai 的 `Model.maxTokens`
  * 是必填的，而没有谁声明过输出上限的模型不该被钉上一个凭空的数字，因此缺省值只作为
  * pi-ai 侧的请求上限，同时**不**作为本插件向宿主声明的默认值（见 `defaultMaxTokens`）。
  *
@@ -79,8 +79,6 @@ export interface ProviderRoute {
   readonly baseURL: string;
   /** 每条请求带上的头；没有时为缺失。 */
   readonly headers?: Readonly<Record<string, string>>;
-  /** 该路由解析凭据用的引用；没有时以占位凭据发出。 */
-  readonly apiKeyEnv?: string;
   /** 该路由承载的模型。 */
   readonly models: readonly ProviderModel[];
 }
@@ -96,8 +94,6 @@ export interface RoutePlanOptions {
    * 不可能与发出去的东西对不上。
    */
   readonly routes: readonly ResolvedRoute[];
-  /** 凭据引用；部署配置了才有。 */
-  readonly apiKeyEnv?: string;
   /** 额外的路由头；它们优先于占位头。 */
   readonly headers: Readonly<Record<string, string>>;
   /** 已配置的逐模型覆盖项，用于查询显式的推理档位。 */
@@ -160,7 +156,6 @@ function buildProviderRoute(
     protocol: route.protocol,
     baseURL: buildRouteBaseUrl(options.instanceRoot, route.protocol),
     ...(headers === undefined ? {} : { headers }),
-    ...(options.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.apiKeyEnv }),
     models: models.map((model) => buildModelEntry(model, route.protocol, options)),
   };
 }
@@ -168,8 +163,8 @@ function buildProviderRoute(
 /**
  * 一条路由发送的头。
  *
- * 已配置的 `apiKeyEnv` 完全取代占位头——此后由凭据接缝提供。插件自身配置里的部署头在两种
- * 情况下都优先于占位头，需要真实静态令牌的网关正是借此拿到它。
+ * 部署配置里的头（`headers`）优先于占位头：需要真实静态令牌的网关正是借此拿到它；没有配
+ * 这类头时，按协议带一个占位凭据，让 pi-ai 愿意把请求发出去。
  *
  * @param protocol - 该路由的协议。
  * @param options - 配置。
@@ -180,12 +175,10 @@ function routeHeaders(
   options: RoutePlanOptions,
 ): Record<string, string> | undefined {
   const headers: Record<string, string> = {};
-  const hasCredential =
-    options.apiKeyEnv !== undefined ||
-    Object.keys(options.headers).some((name) => {
-      const lower = name.toLowerCase();
-      return lower === 'authorization' || lower === 'x-api-key' || lower === 'cf-aig-authorization';
-    });
+  const hasCredential = Object.keys(options.headers).some((name) => {
+    const lower = name.toLowerCase();
+    return lower === 'authorization' || lower === 'x-api-key' || lower === 'cf-aig-authorization';
+  });
 
   if (!hasCredential) {
     if (protocol === 'anthropic-messages') {
